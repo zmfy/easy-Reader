@@ -275,6 +275,11 @@ onMounted(fetchBook)
   gap: 10px;
 }
 
+.cover-actions :deep(.el-button) {
+  width: 100%;
+  margin-left: 0 !important;
+}
+
 .info-header {
   display: flex;
   justify-content: space-between;

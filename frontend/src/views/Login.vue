@@ -10,7 +10,7 @@
       <div class="login-card" :class="{ 'shake': hasError }">
         <div class="card-header">
           <div class="brand-icon">📖</div>
-          <h1 class="brand-title">夜航书房</h1>
+          <h1 class="brand-title">{{ siteName }}</h1>
           <p class="brand-subtitle">Night Reader · NAS Novel Platform</p>
         </div>
 
@@ -57,16 +57,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { User, Lock, Warning } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { settingsApi } from '@/api/settings'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
+const siteName = ref('夜航书房')
 const loading = ref(false)
+
+onMounted(async () => {
+  try {
+    const resp = await settingsApi.getPublic()
+    if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
+  } catch { /* keep default */ }
+})
 const errorMsg = ref('')
 const hasError = ref(false)
 
@@ -270,5 +279,13 @@ function triggerError(msg: string) {
 .submit-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(124, 92, 255, 0.4);
+}
+
+:deep(.el-input__prefix-inner) {
+  margin-right: 6px;
+}
+
+:deep(.el-input__inner) {
+  padding-left: 4px;
 }
 </style>

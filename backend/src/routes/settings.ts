@@ -9,6 +9,13 @@ import nodemailer from 'nodemailer';
 
 const router = Router();
 
+// GET /api/settings/public — no auth required, returns public-facing site info
+router.get('/public', (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'site_name'").get() as { value: string } | undefined;
+  successResponse(res, { site_name: row?.value || '' });
+});
+
 // GET /api/settings
 router.get('/', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();

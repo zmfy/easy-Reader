@@ -376,6 +376,9 @@ async function saveSettings(tab: string) {
       smtpPassSet.value = smtpPassSet.value || !!smtpForm.smtp_pass
       smtpForm.smtp_pass = ''
     }
+    if (tab === 'system' && sysForm.site_name) {
+      document.title = sysForm.site_name
+    }
     ElMessage.success('设置已保存')
   } finally {
     saving.value = false
