@@ -58,6 +58,26 @@ router.get('/reader-plugins', authMiddleware, (_req: Request, res: Response) => 
   ]);
 });
 
+// GET /api/settings/reader-prefs  (per-user reader settings)
+router.get('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(`reader_prefs_${req.user!.userId}`) as { value: string } | undefined;
+  if (row) {
+    try { successResponse(res, JSON.parse(row.value)); return; } catch { /* fall through */ }
+  }
+  successResponse(res, null);
+});
+
+// PUT /api/settings/reader-prefs
+router.put('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+    `reader_prefs_${req.user!.userId}`,
+    JSON.stringify(req.body)
+  );
+  successResponse(res, null, '阅读设置已保存');
+});
+
 // GET /api/settings/users
 router.get('/users', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();

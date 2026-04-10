@@ -80,13 +80,16 @@ export interface PaginatedResponse<T> {
   }
 }
 
+export type ReaderTheme = 'white' | 'eye-care' | 'night' | 'dark' | 'light-green' | 'light-blue' | 'light-gray' | 'light-yellow' | 'light-brown'
+
 export interface ReaderSettings {
   fontFamily: string
   fontSize: number
   letterSpacing: number
   lineHeight: number
-  theme: 'white' | 'eye-care' | 'night' | 'dark'
+  pageWidth: number       // 20–98 (percentage of container width)
+  theme: ReaderTheme
   backgroundColor: string
   fontColor: string
-  pageMode: 'scroll' | 'flip'
+  pageMode: 'scroll' | 'waterfall'
 }

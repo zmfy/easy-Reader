@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, ReaderSettings } from '@/types'
 
 export const settingsApi = {
   get: () =>
@@ -25,4 +25,10 @@ export const settingsApi = {
 
   updateUserRole: (id: string, role: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/role`, { role }),
+
+  getReaderPrefs: () =>
+    http.get<ApiResponse<ReaderSettings | null>>('/settings/reader-prefs'),
+
+  saveReaderPrefs: (settings: ReaderSettings) =>
+    http.put<ApiResponse<null>>('/settings/reader-prefs', settings),
 }

@@ -57,6 +57,11 @@ export function useReader(bookId: string) {
     ElMessage.success('书签已删除')
   }
 
+  async function fetchChapterContent(index: number): Promise<string> {
+    const resp = await readerApi.getChapterContent(bookId, index)
+    return resp.data.data?.content || ''
+  }
+
   async function prevChapter() {
     if (currentChapterIndex.value > 0) {
       await loadChapter(currentChapterIndex.value - 1)
@@ -74,7 +79,7 @@ export function useReader(bookId: string) {
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
     loading, currentChapter,
-    loadChapters, loadChapter, loadProgress, saveProgress,
+    loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
   }
 }
