@@ -1,0 +1,33 @@
+# Claude Code settings
+.claude/
+
+# Project metadata
+.project/
+
+# Book files (user data, not versioned)
+books/
+
+# Data directory (SQLite database)
+data/
+
+# Node modules
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+backend/dist/
+frontend/dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

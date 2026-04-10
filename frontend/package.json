@@ -1,0 +1,33 @@
+{
+  "name": "novel-reader-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .vue,.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "vue": "^3.4.27",
+    "vue-router": "^4.3.3",
+    "pinia": "^2.1.7",
+    "axios": "^1.7.2",
+    "element-plus": "^2.7.5",
+    "@element-plus/icons-vue": "^2.3.1",
+    "@vueuse/core": "^10.11.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.5",
+    "vite": "^5.3.1",
+    "typescript": "^5.4.5",
+    "vue-tsc": "^2.0.21",
+    "@types/node": "^20.14.0",
+    "vitest": "^1.6.0",
+    "@vue/test-utils": "^2.4.6",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38"
+  }
+}
