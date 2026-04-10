@@ -192,6 +192,7 @@ const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
 const chapterListVisible = ref(false)
+const isRestoringProgress = ref(false)
 
 // ── Computed styles ──────────────────────────────────────────
 const readerStyle = computed(() => ({
@@ -244,11 +245,7 @@ async function initWaterfall() {
   await nextTick()
   // Restore scroll position in waterfall mode
   const savedScrollTop = reader.progress.value.scrollTop
-  if (savedScrollTop > 0 && contentRef.value) {
-    requestAnimationFrame(() => {
-      if (contentRef.value) contentRef.value.scrollTop = savedScrollTop
-    })
-  }
+  restoreScrollPosition(savedScrollTop)
 }
 
 // ── Toolbar auto-hide ────────────────────────────────────────
@@ -267,7 +264,7 @@ watchEffect(() => {
 // ── Scroll handler ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout>
 function handleScroll() {
-  if (!contentRef.value) return
+  if (!contentRef.value || isRestoringProgress.value) return
   const scrollTop = contentRef.value.scrollTop
 
   if (readerStore.settings.pageMode === 'waterfall') {
@@ -276,8 +273,57 @@ function handleScroll() {
 
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    reader.saveProgress(scrollTop)
+    reader.saveProgress(getProgressScrollTop(scrollTop))
   }, 2000)
+}
+
+function getProgressScrollTop(scrollTop: number): number {
+  if (readerStore.settings.pageMode !== 'waterfall' || !contentRef.value) {
+    return scrollTop
+  }
+
+  // In waterfall mode, persist chapter-local offset instead of page-global scrollTop.
+  // This keeps resume behavior consistent when switching between modes.
+  const activeChapterEl = contentRef.value.querySelector<HTMLElement>(
+    `[data-chapter-index="${reader.currentChapterIndex.value}"]`,
+  )
+  if (!activeChapterEl) {
+    return scrollTop
+  }
+
+  return Math.max(0, scrollTop - activeChapterEl.offsetTop)
+}
+
+function restoreScrollPosition(targetScrollTop: number) {
+  if (!contentRef.value || targetScrollTop <= 0) return
+
+  isRestoringProgress.value = true
+  let tries = 0
+  const maxTries = 8
+
+  const apply = () => {
+    const el = contentRef.value
+    if (!el) {
+      isRestoringProgress.value = false
+      return
+    }
+
+    const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
+    const nextTop = Math.min(targetScrollTop, maxScrollTop)
+    el.scrollTop = nextTop
+
+    const canFitTarget = maxScrollTop >= targetScrollTop - 2
+    const reached = Math.abs(el.scrollTop - nextTop) <= 2
+    if ((canFitTarget && reached) || tries >= maxTries) {
+      isRestoringProgress.value = false
+      return
+    }
+
+    tries += 1
+    requestAnimationFrame(apply)
+  }
+
+  requestAnimationFrame(apply)
 }
 
 function handleWaterfallScroll(scrollTop: number) {
@@ -363,12 +409,8 @@ onMounted(async () => {
   } else {
     await reader.loadChapter(reader.progress.value.chapterIndex)
     const savedScrollTop = reader.progress.value.scrollTop
-    if (savedScrollTop > 0) {
-      await nextTick()
-      requestAnimationFrame(() => {
-        if (contentRef.value) contentRef.value.scrollTop = savedScrollTop
-      })
-    }
+    await nextTick()
+    restoreScrollPosition(savedScrollTop)
   }
 })
 
