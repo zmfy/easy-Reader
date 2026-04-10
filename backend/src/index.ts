@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import fs from 'fs';
 import { getDb } from './db';
 import authRoutes from './routes/auth';
 import libraryRoutes from './routes/library';
@@ -17,11 +19,17 @@ const PORT = process.env.PORT || 3000;
 getDb();
 
 // Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:8080',
-  credentials: true,
-}));
+app.use(helmet({ contentSecurityPolicy: false }));
+const frontendUrl = process.env.FRONTEND_URL;
+if (frontendUrl) {
+  app.use(cors({ origin: frontendUrl, credentials: true }));
+}
+
+// Serve frontend static files (when built into the same container)
+const publicDir = path.join(__dirname, '../public');
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
 
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
@@ -45,9 +53,19 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 404 handler
-app.use((_req, res) => {
+// API 404 handler
+app.use('/api/*', (_req: express.Request, res: express.Response) => {
   res.status(404).json({ success: false, code: 'RESOURCE_NOT_FOUND', message: '接口不存在' });
+});
+
+// SPA catch-all: serve index.html for all non-API routes
+app.get('*', (_req: express.Request, res: express.Response) => {
+  const indexPath = path.join(__dirname, '../public/index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Not found');
+  }
 });
 
 // Error handler

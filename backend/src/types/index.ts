@@ -36,6 +36,7 @@ export interface ReadingProgress {
   user_id: string;
   book_id: string;
   chapter_index: number;
+  chapter_title?: string;
   scroll_top: number;
   updated_at: string;
 }
