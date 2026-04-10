@@ -32,3 +32,8 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+backend/src/routes/settings.ts
+frontend/src/App.vue
+frontend/src/api/settings.ts
+frontend/src/assets/styles/main.css
+frontend/src/views/Settings.vue
