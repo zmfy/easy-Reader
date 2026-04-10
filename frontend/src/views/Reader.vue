@@ -262,7 +262,30 @@ watchEffect(() => {
 })
 
 // ── Scroll handler ───────────────────────────────────────────
-let saveTimer: ReturnType<typeof setTimeout>
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingScrollTop = 0
+const SAVE_INTERVAL_MS = 250
+
+function scheduleProgressSave(scrollTop: number) {
+  pendingScrollTop = scrollTop
+  if (saveTimer) return
+
+  saveTimer = setTimeout(async () => {
+    const target = pendingScrollTop
+    saveTimer = null
+    await reader.saveProgress(getProgressScrollTop(target))
+  }, SAVE_INTERVAL_MS)
+}
+
+async function saveProgressNow(scrollTop: number) {
+  pendingScrollTop = scrollTop
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  await reader.saveProgress(getProgressScrollTop(scrollTop))
+}
+
 function handleScroll() {
   if (!contentRef.value || isRestoringProgress.value) return
   const scrollTop = contentRef.value.scrollTop
@@ -271,10 +294,7 @@ function handleScroll() {
     handleWaterfallScroll(scrollTop)
   }
 
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    reader.saveProgress(getProgressScrollTop(scrollTop))
-  }, 2000)
+  scheduleProgressSave(scrollTop)
 }
 
 function getProgressScrollTop(scrollTop: number): number {
@@ -352,12 +372,14 @@ async function goToPrevChapter() {
   await reader.prevChapter()
   await nextTick()
   if (contentRef.value) contentRef.value.scrollTop = 0
+  await saveProgressNow(0)
 }
 
 async function goToNextChapter() {
   await reader.nextChapter()
   await nextTick()
   if (contentRef.value) contentRef.value.scrollTop = 0
+  await saveProgressNow(0)
 }
 
 async function jumpToChapter(index: number) {
@@ -415,7 +437,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  clearTimeout(saveTimer)
+  if (saveTimer) clearTimeout(saveTimer)
   clearTimeout(toolbarTimer)
 })
 </script>
