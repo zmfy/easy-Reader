@@ -16,10 +16,11 @@ const authStore = useAuthStore()
 async function applySiteTitle() {
   try {
     const resp = await settingsApi.getPublic()
-    const name = resp.data.data?.site_name
-    if (name) document.title = name
+    const { site_name, site_theme } = resp.data.data || {}
+    if (site_name) document.title = site_name
+    if (site_theme) document.documentElement.dataset.theme = site_theme
   } catch {
-    // keep default title from index.html
+    // keep defaults
   }
 }
 

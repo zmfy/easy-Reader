@@ -3,7 +3,7 @@ import type { ApiResponse, ReaderSettings } from '@/types'
 
 export const settingsApi = {
   getPublic: () =>
-    http.get<ApiResponse<{ site_name: string }>>('/settings/public'),
+    http.get<ApiResponse<{ site_name: string; site_theme: string }>>('/settings/public'),
 
   get: () =>
     http.get<ApiResponse<Record<string, string>>>('/settings'),

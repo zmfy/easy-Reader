@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap');
 
-:root {
+/* ── 暗夜（默认）── */
+:root,
+[data-theme="dark"] {
   --bg-0: #0b1020;
   --bg-1: #121a2b;
   --bg-2: #1a263d;
@@ -14,6 +16,44 @@
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(8, 12, 24, 0.45);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 烛光（暖琥珀）── */
+[data-theme="warm"] {
+  --bg-0: #16100a;
+  --bg-1: #221810;
+  --bg-2: #30221a;
+  --text-0: #f5e8c8;
+  --text-1: #d4b890;
+  --text-2: #9a7e5a;
+  --accent: #e8923a;
+  --accent-2: #c4b254;
+  --warning: #f0c040;
+  --danger: #e05050;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(16, 8, 4, 0.5);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 冷月（冰蓝银）── */
+[data-theme="cool"] {
+  --bg-0: #060c14;
+  --bg-1: #0c1622;
+  --bg-2: #122030;
+  --text-0: #d8eeff;
+  --text-1: #90b4cc;
+  --text-2: #507888;
+  --accent: #38c8e8;
+  --accent-2: #30e8b0;
+  --warning: #e8b840;
+  --danger: #e05070;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(4, 8, 16, 0.5);
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -64,17 +104,20 @@ body::before {
   transform: translateY(-8px);
 }
 
-/* Element Plus override */
+/* Element Plus override — uses CSS vars so all themes apply automatically */
 .el-button--primary {
   --el-button-bg-color: var(--accent);
   --el-button-border-color: var(--accent);
-  --el-button-hover-bg-color: #9174ff;
-  --el-button-hover-border-color: #9174ff;
+  --el-button-hover-bg-color: var(--accent);
+  --el-button-hover-border-color: var(--accent);
+  filter: brightness(1);
+  transition: filter 0.2s ease;
 }
+.el-button--primary:hover { filter: brightness(1.2); }
 
 .el-input__wrapper {
   background-color: var(--bg-2) !important;
-  border-color: rgba(124, 92, 255, 0.2) !important;
+  border-color: rgba(128, 128, 128, 0.2) !important;
   box-shadow: none !important;
 }
 
@@ -85,6 +128,6 @@ body::before {
 
 .el-card {
   background-color: var(--bg-1) !important;
-  border-color: rgba(124, 92, 255, 0.1) !important;
+  border-color: rgba(128, 128, 128, 0.1) !important;
   color: var(--text-1) !important;
 }

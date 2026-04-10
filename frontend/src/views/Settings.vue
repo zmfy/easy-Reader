@@ -33,6 +33,39 @@
                 <el-input v-model="sysForm.books_dir" placeholder="/app/books" />
               </div>
             </div>
+
+            <!-- 主题选择 -->
+            <div class="form-field theme-field">
+              <label>网站主题</label>
+              <div class="theme-cards">
+                <div
+                  v-for="t in siteThemes"
+                  :key="t.key"
+                  class="theme-card"
+                  :class="{ active: sysForm.site_theme === t.key }"
+                  @click="sysForm.site_theme = t.key"
+                >
+                  <div class="theme-preview" :style="{ background: t.bg }">
+                    <div class="theme-preview-bar" :style="{ background: t.panel }">
+                      <div class="theme-preview-dot" :style="{ background: t.accent }" />
+                      <div class="theme-preview-dot" :style="{ background: t.accent, opacity: 0.5 }" />
+                    </div>
+                    <div class="theme-preview-lines">
+                      <div class="theme-preview-line" :style="{ background: t.text, width: '70%' }" />
+                      <div class="theme-preview-line" :style="{ background: t.text, width: '90%', opacity: 0.6 }" />
+                      <div class="theme-preview-line" :style="{ background: t.text, width: '55%', opacity: 0.4 }" />
+                    </div>
+                    <div class="theme-preview-accent" :style="{ background: t.accent }" />
+                  </div>
+                  <div class="theme-card-info">
+                    <span class="theme-name">{{ t.label }}</span>
+                    <span class="theme-desc">{{ t.desc }}</span>
+                  </div>
+                  <div v-if="sysForm.site_theme === t.key" class="theme-check">✓</div>
+                </div>
+              </div>
+            </div>
+
             <el-button type="primary" :loading="saving" @click="saveSettings('system')">保存系统设置</el-button>
           </div>
 
@@ -248,7 +281,38 @@ const settingsData = ref<Record<string, string>>({})
 const sysForm = reactive({
   site_name: '',
   books_dir: '/app/books',
+  site_theme: 'dark',
 })
+
+const siteThemes = [
+  {
+    key: 'dark',
+    label: '暗夜',
+    desc: '深邃宇宙蓝',
+    bg: '#0b1020',
+    panel: '#121a2b',
+    accent: '#7c5cff',
+    text: '#c9d3ea',
+  },
+  {
+    key: 'warm',
+    label: '烛光',
+    desc: '温暖琥珀棕',
+    bg: '#16100a',
+    panel: '#221810',
+    accent: '#e8923a',
+    text: '#d4b890',
+  },
+  {
+    key: 'cool',
+    label: '冷月',
+    desc: '清冷冰蓝银',
+    bg: '#060c14',
+    panel: '#0c1622',
+    accent: '#38c8e8',
+    text: '#90b4cc',
+  },
+]
 
 const smtpForm = reactive({
   smtp_host: '',
@@ -317,6 +381,7 @@ async function loadSettings() {
 
   sysForm.site_name = data['site_name'] || ''
   sysForm.books_dir = data['books_dir'] || '/app/books'
+  sysForm.site_theme = data['site_theme'] || 'dark'
 
   smtpForm.smtp_host = data['smtp_host'] || ''
   smtpForm.smtp_port = data['smtp_port'] || '587'
@@ -376,8 +441,9 @@ async function saveSettings(tab: string) {
       smtpPassSet.value = smtpPassSet.value || !!smtpForm.smtp_pass
       smtpForm.smtp_pass = ''
     }
-    if (tab === 'system' && sysForm.site_name) {
-      document.title = sysForm.site_name
+    if (tab === 'system') {
+      if (sysForm.site_name) document.title = sysForm.site_name
+      document.documentElement.dataset.theme = sysForm.site_theme
     }
     ElMessage.success('设置已保存')
   } finally {
@@ -649,5 +715,112 @@ onMounted(async () => {
 .smtp-tip {
   font-size: 13px;
   color: var(--text-2);
+}
+
+/* ── Site theme selector ── */
+.theme-field {
+  margin-bottom: 20px;
+}
+
+.theme-cards {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.theme-card {
+  position: relative;
+  width: 130px;
+  border-radius: var(--radius-md);
+  border: 2px solid rgba(128, 128, 128, 0.2);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+.theme-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(128, 128, 128, 0.5);
+}
+.theme-card.active {
+  border-color: var(--accent);
+}
+
+.theme-preview {
+  height: 80px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.theme-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+
+.theme-preview-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.theme-preview-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 4px;
+}
+
+.theme-preview-line {
+  height: 3px;
+  border-radius: 2px;
+}
+
+.theme-preview-accent {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  width: 20px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.theme-card-info {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px 8px;
+  background: var(--bg-2);
+  gap: 2px;
+}
+
+.theme-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.theme-desc {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.theme-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
 }
 </style>
