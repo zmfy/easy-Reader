@@ -3,7 +3,7 @@
     <nav class="sidebar">
       <div class="sidebar-logo">
         <span class="logo-icon">📖</span>
-        <span class="logo-text">夜航书房</span>
+        <span class="logo-text">{{ siteName }}</span>
       </div>
       <div class="sidebar-nav">
         <router-link
@@ -35,12 +35,23 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { settingsApi } from '@/api/settings'
 
 const authStore = useAuthStore()
 const router = useRouter()
+
+const siteName = ref('夜航书房')
+
+onMounted(async () => {
+  try {
+    const resp = await settingsApi.getPublic()
+    if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
+  } catch { /* keep default */ }
+})
 
 const navItems = [
   { path: '/library', label: '书库', icon: 'Collection' },
