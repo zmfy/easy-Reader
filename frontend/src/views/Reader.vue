@@ -173,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watchEffect, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Star, Setting, List, Loading } from '@element-plus/icons-vue'
 const Bookmark = Star
@@ -242,13 +242,11 @@ async function initWaterfall() {
   const startIndex = reader.currentChapterIndex.value
   await loadWaterfallChapter(startIndex)
   await nextTick()
-  // Restore scroll position in waterfall mode
-  const savedScrollTop = reader.progress.value.scrollTop
-  if (savedScrollTop > 0 && contentRef.value) {
-    requestAnimationFrame(() => {
-      if (contentRef.value) contentRef.value.scrollTop = savedScrollTop
-    })
-  }
+  if (contentRef.value) contentRef.value.scrollTop = 0
+  // Belt-and-suspenders: also reset after a frame in case fonts/transitions shift layout
+  requestAnimationFrame(() => {
+    if (contentRef.value) contentRef.value.scrollTop = 0
+  })
 }
 
 // ── Toolbar auto-hide ────────────────────────────────────────
@@ -266,23 +264,24 @@ watchEffect(() => {
 
 // ── Scroll handler ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout>
+
 function handleScroll() {
   if (!contentRef.value) return
   const scrollTop = contentRef.value.scrollTop
 
   if (readerStore.settings.pageMode === 'waterfall') {
     handleWaterfallScroll(scrollTop)
+  } else {
+    // Debounce-save chapter index only (scrollTop always 0 — restore to beginning)
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      reader.saveProgress(0)
+    }, 2000)
   }
-
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    reader.saveProgress(scrollTop)
-  }, 2000)
 }
 
 function handleWaterfallScroll(scrollTop: number) {
   const container = contentRef.value!
-  // Determine currently visible chapter
   const chapterEls = container.querySelectorAll<HTMLElement>('[data-chapter-index]')
   const viewportMid = scrollTop + container.clientHeight / 2
   let visibleIdx = reader.currentChapterIndex.value
@@ -291,7 +290,13 @@ function handleWaterfallScroll(scrollTop: number) {
       visibleIdx = parseInt(el.getAttribute('data-chapter-index') || '0')
     }
   }
-  reader.currentChapterIndex.value = visibleIdx
+
+  // When entering a new chapter, immediately save (chapterIdx, scrollTop=0).
+  // This ensures exit-right-after-chapter-entry always restores to chapter beginning.
+  if (visibleIdx !== reader.currentChapterIndex.value) {
+    reader.currentChapterIndex.value = visibleIdx
+    reader.saveProgress(0)  // fire-and-forget
+  }
 
   // Auto-load next chapter when near bottom
   const nearBottom = scrollTop + container.clientHeight >= container.scrollHeight - 300
@@ -362,18 +367,24 @@ onMounted(async () => {
     await initWaterfall()
   } else {
     await reader.loadChapter(reader.progress.value.chapterIndex)
-    const savedScrollTop = reader.progress.value.scrollTop
-    if (savedScrollTop > 0) {
-      await nextTick()
-      requestAnimationFrame(() => {
-        if (contentRef.value) contentRef.value.scrollTop = savedScrollTop
-      })
-    }
+    // Always start at chapter beginning
+    await nextTick()
+    if (contentRef.value) contentRef.value.scrollTop = 0
+    // Belt-and-suspenders: reset again after a frame to counter font/transition layout shifts
+    requestAnimationFrame(() => {
+      if (contentRef.value) contentRef.value.scrollTop = 0
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(saveTimer)
+  if (!reader.loading.value) {
+    reader.saveProgress(0)
   }
 })
 
 onUnmounted(() => {
-  clearTimeout(saveTimer)
   clearTimeout(toolbarTimer)
 })
 </script>
@@ -423,6 +434,7 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 60px 0;
+  overflow-anchor: none;
 }
 
 .content-wrapper {
