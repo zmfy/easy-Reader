@@ -2,8 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { errorResponse } from '../utils/response';
 import { JwtPayload } from '../types';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
+import { JWT_SECRET } from '../secret';
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
