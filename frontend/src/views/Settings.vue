@@ -604,9 +604,25 @@ async function openInviteDialog() {
 }
 
 function copyInviteLink() {
-  navigator.clipboard.writeText(inviteUrl.value).then(() => {
-    ElMessage.success('邀请链接已复制')
-  })
+  const text = inviteUrl.value
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('邀请链接已复制')
+    }).catch(() => fallbackCopy(text))
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0'
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+  ElMessage.success('邀请链接已复制')
 }
 
 async function sendInviteEmail() {
