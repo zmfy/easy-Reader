@@ -29,6 +29,11 @@
                 <el-input v-model="sysForm.site_name" placeholder="夜航书房" />
               </div>
               <div class="form-field">
+                <label>站点公开地址</label>
+                <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
+                <div class="field-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
+              </div>
+              <div class="form-field">
                 <label>书库目录</label>
                 <el-input v-model="sysForm.books_dir" placeholder="/app/books" />
               </div>
@@ -393,6 +398,7 @@ const settingsData = ref<Record<string, string>>({})
 
 const sysForm = reactive({
   site_name: '',
+  site_url: '',
   books_dir: '/app/books',
   site_theme: 'dark',
 })
@@ -483,7 +489,8 @@ const currentAiPlugin = computed(() =>
 
 const inviteUrl = computed(() => {
   if (!inviteCode.value) return ''
-  return `${window.location.origin}/register?code=${inviteCode.value}`
+  const base = sysForm.site_url?.replace(/\/$/, '') || window.location.origin
+  return `${base}/register?code=${inviteCode.value}`
 })
 
 function formatIcon(format: string) {
@@ -511,6 +518,7 @@ async function loadSettings() {
   settingsData.value = data
 
   sysForm.site_name = data['site_name'] || ''
+  sysForm.site_url = data['site_url'] || ''
   sysForm.books_dir = data['books_dir'] || '/app/books'
   sysForm.site_theme = data['site_theme'] || 'dark'
 
@@ -744,6 +752,13 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--text-2);
   font-weight: 500;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-3, var(--text-2));
+  opacity: 0.7;
+  margin-top: -2px;
 }
 
 .users-table {
