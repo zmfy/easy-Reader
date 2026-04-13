@@ -58,6 +58,44 @@
   --font-serif: 'Noto Serif SC', serif;
 }
 
+/* ── 晴空（清爽白蓝）── */
+[data-theme="sky"] {
+  --bg-0: #f0f4ff;
+  --bg-1: #ffffff;
+  --bg-2: #e4ecff;
+  --text-0: #1a2340;
+  --text-1: #3a4a6a;
+  --text-2: #6a7a9a;
+  --accent: #4a6cf7;
+  --accent-2: #06b6d4;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(60, 80, 160, 0.12);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 素纸（暖白米黄）── */
+[data-theme="paper"] {
+  --bg-0: #faf6f0;
+  --bg-1: #ffffff;
+  --bg-2: #ede8dc;
+  --text-0: #2a2018;
+  --text-1: #4a3828;
+  --text-2: #8a7060;
+  --accent: #b85c38;
+  --accent-2: #7a9a50;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(80, 60, 20, 0.12);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;

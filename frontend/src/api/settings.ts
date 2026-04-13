@@ -29,6 +29,9 @@ export const settingsApi = {
   updateUserRole: (id: string, role: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/role`, { role }),
 
+  changeUserPassword: (id: string, password: string) =>
+    http.put<ApiResponse<null>>(`/settings/users/${id}/password`, { password }),
+
   getReaderPrefs: () =>
     http.get<ApiResponse<ReaderSettings | null>>('/settings/reader-prefs'),
 

@@ -156,7 +156,7 @@
                   {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作">
+              <el-table-column label="操作" width="200">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.id !== authStore.user?.id"
@@ -164,6 +164,9 @@
                     @click="toggleRole(row)"
                   >
                     {{ row.role === 'admin' ? '降为普通' : '升为管理员' }}
+                  </el-button>
+                  <el-button size="small" type="warning" @click="openPwdDialog(row)">
+                    修改密码
                   </el-button>
                 </template>
               </el-table-column>
@@ -248,6 +251,70 @@
         <el-button @click="inviteDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- Change Password Dialog -->
+    <el-dialog
+      v-model="pwdDialogVisible"
+      :title="`修改密码 — ${changingPwdUser?.username}`"
+      width="440px"
+      :close-on-click-modal="false"
+      @closed="resetPwdForm"
+    >
+      <div class="pwd-dialog-body">
+        <div class="form-field">
+          <label>新密码</label>
+          <el-input
+            v-model="pwdForm.newPassword"
+            type="password"
+            show-password
+            placeholder="请输入新密码"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="form-field">
+          <label>确认新密码</label>
+          <el-input
+            v-model="pwdForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="再次输入新密码"
+            autocomplete="new-password"
+            @keyup.enter="submitChangePassword"
+          />
+        </div>
+        <div class="pwd-rules">
+          <div class="pwd-rule" :class="pwdRules.minLen ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.minLen ? '✓' : '✗' }}</span> 至少 8 位
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasUpper ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasUpper ? '✓' : '✗' }}</span> 至少 1 个大写字母
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasLower ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasLower ? '✓' : '✗' }}</span> 至少 1 个小写字母
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasNumber ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasNumber ? '✓' : '✗' }}</span> 至少 1 个数字
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasSpecial ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasSpecial ? '✓' : '✗' }}</span> 至少 1 个特殊字符（如 !@#$%^&*）
+          </div>
+          <div class="pwd-rule" :class="pwdRules.matched ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.matched ? '✓' : '✗' }}</span> 两次密码一致
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="pwdDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="changingPwd"
+          :disabled="!pwdValid"
+          @click="submitChangePassword"
+        >
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </DefaultLayout>
 </template>
 
@@ -266,6 +333,52 @@ const saving = ref(false)
 const creatingInvite = ref(false)
 const sendingEmail = ref(false)
 const inviteDialogVisible = ref(false)
+
+// ── Password Dialog ──
+const pwdDialogVisible = ref(false)
+const changingPwd = ref(false)
+const changingPwdUser = ref<{ id: string; username: string } | null>(null)
+const pwdForm = reactive({ newPassword: '', confirmPassword: '' })
+
+const pwdRules = computed(() => {
+  const p = pwdForm.newPassword
+  return {
+    minLen: p.length >= 8,
+    hasUpper: /[A-Z]/.test(p),
+    hasLower: /[a-z]/.test(p),
+    hasNumber: /[0-9]/.test(p),
+    hasSpecial: /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?`~]/.test(p),
+    matched: p.length > 0 && p === pwdForm.confirmPassword,
+  }
+})
+
+const pwdValid = computed(() => Object.values(pwdRules.value).every(Boolean))
+
+function openPwdDialog(user: { id: string; username: string }) {
+  changingPwdUser.value = user
+  pwdDialogVisible.value = true
+}
+
+function resetPwdForm() {
+  pwdForm.newPassword = ''
+  pwdForm.confirmPassword = ''
+  changingPwdUser.value = null
+}
+
+async function submitChangePassword() {
+  if (!pwdValid.value || !changingPwdUser.value) return
+  changingPwd.value = true
+  try {
+    await settingsApi.changeUserPassword(changingPwdUser.value.id, pwdForm.newPassword)
+    ElMessage.success('密码已修改')
+    pwdDialogVisible.value = false
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '修改失败'
+    ElMessage.error(msg)
+  } finally {
+    changingPwd.value = false
+  }
+}
 const inviteCode = ref('')
 const inviteExpiry = ref('')
 const inviteEmail = ref('')
@@ -311,6 +424,24 @@ const siteThemes = [
     panel: '#0c1622',
     accent: '#38c8e8',
     text: '#90b4cc',
+  },
+  {
+    key: 'sky',
+    label: '晴空',
+    desc: '清爽白蓝',
+    bg: '#f0f4ff',
+    panel: '#ffffff',
+    accent: '#4a6cf7',
+    text: '#3a4a6a',
+  },
+  {
+    key: 'paper',
+    label: '素纸',
+    desc: '暖白米黄',
+    bg: '#faf6f0',
+    panel: '#ffffff',
+    accent: '#b85c38',
+    text: '#4a3828',
   },
 ]
 
@@ -822,5 +953,44 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   font-weight: 700;
+}
+
+/* ── Password Dialog ── */
+.pwd-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pwd-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.pwd-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: color 0.2s ease;
+}
+
+.pwd-rule.pass {
+  color: #22c55e;
+}
+
+.pwd-rule.fail {
+  color: var(--text-2);
+}
+
+.rule-icon {
+  font-size: 12px;
+  font-weight: 700;
+  width: 14px;
+  flex-shrink: 0;
 }
 </style>
