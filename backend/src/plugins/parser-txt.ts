@@ -1,4 +1,6 @@
 import fs from 'fs';
+import chardet from 'chardet';
+import iconv from 'iconv-lite';
 import { ReaderPlugin } from '../types';
 
 interface ChapterMeta {
@@ -8,15 +10,36 @@ interface ChapterMeta {
   endByte: number;
 }
 
+function detectEncoding(filePath: string): string {
+  const stat = fs.statSync(filePath);
+  const sampleSize = Math.min(8 * 1024, stat.size);
+  const fd = fs.openSync(filePath, 'r');
+  const sample = Buffer.alloc(sampleSize);
+  fs.readSync(fd, sample, 0, sampleSize, 0);
+  fs.closeSync(fd);
+
+  const detected = chardet.detect(sample) || 'UTF-8';
+  const enc = detected.toLowerCase();
+
+  if (enc.includes('gb') || enc === 'big5') {
+    // gb2312 / gbk / gb18030 / big5 — all handled by gb18030 (superset)
+    return enc.includes('big5') ? 'big5' : 'gb18030';
+  }
+  // default to utf8 for everything else
+  return 'utf8';
+}
+
 export class TxtParser implements ReaderPlugin {
   format = 'txt';
   private filePath = '';
   private chapters: ChapterMeta[] = [];
   private fileSize = 0;
+  private encoding = 'utf8';
 
   async load(filePath: string): Promise<void> {
     this.filePath = filePath;
     this.fileSize = fs.statSync(filePath).size;
+    this.encoding = detectEncoding(filePath);
     await this.scanChapters();
   }
 
@@ -27,16 +50,16 @@ export class TxtParser implements ReaderPlugin {
   private scanChapters(): Promise<void> {
     const chapterPattern = /^第[零一二三四五六七八九十百千万\d]+[章节卷集]/;
     const chapters: ChapterMeta[] = [];
+    const encoding = this.encoding;
 
     return new Promise((resolve, reject) => {
-      // processedBytes = absolute byte offset of the start of `remainder`
       let processedBytes = 0;
       let remainder = Buffer.alloc(0);
 
       const stream = fs.createReadStream(this.filePath, { highWaterMark: 256 * 1024 });
 
       const checkLine = (lineBuffer: Buffer, absoluteStart: number) => {
-        const lineText = lineBuffer.toString('utf8').trim();
+        const lineText = iconv.decode(lineBuffer, encoding).trim();
         if (chapterPattern.test(lineText) && lineText.length < 60) {
           if (chapters.length > 0) {
             chapters[chapters.length - 1].endByte = absoluteStart;
@@ -63,13 +86,11 @@ export class TxtParser implements ReaderPlugin {
           searchFrom = nlPos + 1;
         }
 
-        // Update: how many bytes from `data` have been fully processed
         processedBytes += searchFrom;
         remainder = data.slice(searchFrom);
       });
 
       stream.on('end', () => {
-        // Handle last line (no trailing newline)
         if (remainder.length > 0) {
           checkLine(remainder, processedBytes);
         }
@@ -122,9 +143,9 @@ export class TxtParser implements ReaderPlugin {
       fs.closeSync(fd);
     }
 
-    const text = buffer.toString('utf8');
-    const paragraphs = text.split(/\n+/).filter(p => p.trim());
-    return paragraphs.map(p => `<p>${p.trim()}</p>`).join('\n');
+    const text = iconv.decode(buffer, this.encoding);
+    const paragraphs = text.split(/\r?\n+/).filter((p: string) => p.trim());
+    return paragraphs.map((p: string) => `<p>${p.trim()}</p>`).join('\n');
   }
 
   async getTotalProgress(): Promise<number> {
