@@ -189,6 +189,28 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
     const lookupRequest = `书名：${cleanedTitle}\n原文件名（仅参考）：${book.title}\n文本节选（仅作辅助参考）：\n${contentHint}`;
 
     const info = await aiManager.fillBookInfo(lookupRequest, db);
+    const infoRaw = info as Record<string, unknown>;
+
+    // Filename-based completion heuristic (fallback when AI doesn't return is_finished)
+    const finishedKeywords = /完本|完结|全集|全本|完整版|精校版|完稿/;
+    const isFinishedByFilename = finishedKeywords.test(book.title);
+
+    // Determine effective completion status (AI takes priority)
+    const effectiveIsFinished = (info.is_finished !== undefined) ? !!info.is_finished : isFinishedByFilename;
+
+    // Build serialization note and append to summary
+    const startDate = infoRaw.start_date as string | undefined;
+    const endDate = infoRaw.end_date as string | undefined;
+    const platform = infoRaw.platform as string | undefined;
+
+    if (info.summary && startDate) {
+      const platformPart = platform ? `在${platform}` : '';
+      const startPart = `从${startDate}开始${platformPart}连载`;
+      const serializationNote = effectiveIsFinished
+        ? (endDate ? `${startPart}，于${endDate}完本。` : `${startPart}，已完本。`)
+        : `${startPart}，目前还在连载中。`;
+      info.summary = info.summary + '\n' + serializationNote;
+    }
 
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -197,6 +219,11 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
     if (info.author) { updates.push('author = ?'); values.push(info.author); }
     if (info.summary) { updates.push('summary = ?'); values.push(info.summary); }
     if (info.category) { updates.push('category = ?'); values.push(info.category); }
+
+    // Set is_finished: AI result takes priority, filename heuristic as fallback
+    const isFinished = (info.is_finished !== undefined) ? (info.is_finished ? 1 : 0)
+      : isFinishedByFilename ? 1 : null;
+    if (isFinished !== null) { updates.push('is_finished = ?'); values.push(isFinished); }
 
     if (updates.length > 0) {
       values.push(req.params.id);
