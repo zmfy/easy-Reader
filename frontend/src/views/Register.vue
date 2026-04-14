@@ -191,6 +191,9 @@ function triggerError(msg: string) {
 .login-container {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  padding: 0 20px;
   animation: slideUp 0.4s ease forwards;
 }
 
@@ -200,7 +203,7 @@ function triggerError(msg: string) {
 }
 
 .login-card {
-  width: 400px;
+  width: 100%;
   background: var(--card-bg);
   backdrop-filter: blur(20px);
   border: 1px solid var(--card-border);
@@ -208,6 +211,39 @@ function triggerError(msg: string) {
   padding: 40px;
   box-shadow: var(--shadow-soft);
   transition: transform 0.1s ease;
+}
+
+@media (max-width: 480px) {
+  .register-page {
+    align-items: center;
+    padding: 32px 0;
+    min-height: 100dvh;
+  }
+  .login-container {
+    padding: 0 16px;
+  }
+  .login-card {
+    padding: 28px 20px;
+    border-radius: 16px;
+  }
+  .brand-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+  .brand-title {
+    font-size: 22px;
+    letter-spacing: 2px;
+  }
+  .card-header {
+    margin-bottom: 20px;
+  }
+  .login-form {
+    gap: 12px;
+  }
+  .submit-btn {
+    height: 44px !important;
+    font-size: 15px !important;
+  }
 }
 
 .login-card.shake {
