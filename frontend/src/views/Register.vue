@@ -201,12 +201,12 @@ function triggerError(msg: string) {
 
 .login-card {
   width: 400px;
-  background: rgba(18, 26, 43, 0.85);
+  background: var(--card-bg);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(124, 92, 255, 0.2);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
   padding: 40px;
-  box-shadow: var(--shadow-soft), 0 0 60px rgba(124, 92, 255, 0.05);
+  box-shadow: var(--shadow-soft);
   transition: transform 0.1s ease;
 }
 
@@ -239,10 +239,11 @@ function triggerError(msg: string) {
 
 .brand-title {
   font-size: 28px;
-  font-weight: 600;
-  color: var(--text-0);
+  font-weight: 700;
+  color: var(--card-title);
   letter-spacing: 3px;
   margin-bottom: 6px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
 }
 
 .brand-subtitle {
@@ -293,7 +294,7 @@ function triggerError(msg: string) {
   letter-spacing: 2px;
   font-weight: 600;
   border-radius: var(--radius-md) !important;
-  background: linear-gradient(135deg, var(--accent), #5a3dcc) !important;
+  background: var(--accent) !important;
   border: none !important;
   margin-top: 4px;
   transition: all 0.2s ease !important;
