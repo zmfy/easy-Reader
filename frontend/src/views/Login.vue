@@ -11,7 +11,7 @@
         <div class="card-header">
           <div class="brand-icon">📖</div>
           <h1 class="brand-title">{{ siteName }}</h1>
-          <p class="brand-subtitle">Night Reader · NAS Novel Platform</p>
+          <p class="brand-subtitle">{{ siteSubtitle }}</p>
         </div>
 
         <form class="login-form" @submit.prevent="handleSubmit">
@@ -68,12 +68,14 @@ const authStore = useAuthStore()
 const router = useRouter()
 
 const siteName = ref('夜航书房')
+const siteSubtitle = ref('Night Reader · NAS Novel Platform')
 const loading = ref(false)
 
 onMounted(async () => {
   try {
     const resp = await settingsApi.getPublic()
     if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
+    if (resp.data.data?.site_subtitle) siteSubtitle.value = resp.data.data.site_subtitle
   } catch { /* keep default */ }
 })
 const errorMsg = ref('')

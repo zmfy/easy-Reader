@@ -29,6 +29,10 @@
                 <el-input v-model="sysForm.site_name" placeholder="夜航书房" />
               </div>
               <div class="form-field">
+                <label>站点副标题</label>
+                <el-input v-model="sysForm.site_subtitle" placeholder="Night Reader · NAS Novel Platform" />
+              </div>
+              <div class="form-field">
                 <label>站点公开地址</label>
                 <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
                 <div class="field-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
@@ -410,6 +414,7 @@ const settingsData = ref<Record<string, string>>({})
 
 const sysForm = reactive({
   site_name: '',
+  site_subtitle: '',
   site_url: '',
   books_dir: '/app/books',
   site_theme: 'dark',
@@ -530,6 +535,7 @@ async function loadSettings() {
   settingsData.value = data
 
   sysForm.site_name = data['site_name'] || ''
+  sysForm.site_subtitle = data['site_subtitle'] || ''
   sysForm.site_url = data['site_url'] || ''
   sysForm.books_dir = data['books_dir'] || '/app/books'
   sysForm.site_theme = data['site_theme'] || 'dark'

@@ -13,10 +13,10 @@ const router = Router();
 // GET /api/settings/public — no auth required, returns public-facing site info
 router.get('/public', (req: Request, res: Response) => {
   const db = getDb();
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('site_name', 'site_theme')").all() as Array<{ key: string; value: string }>;
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('site_name', 'site_subtitle', 'site_theme')").all() as Array<{ key: string; value: string }>;
   const data: Record<string, string> = {};
   for (const r of rows) data[r.key] = r.value;
-  successResponse(res, { site_name: data['site_name'] || '', site_theme: data['site_theme'] || 'dark' });
+  successResponse(res, { site_name: data['site_name'] || '', site_subtitle: data['site_subtitle'] || '', site_theme: data['site_theme'] || 'dark' });
 });
 
 // GET /api/settings
