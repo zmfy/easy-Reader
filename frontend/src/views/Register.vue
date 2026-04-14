@@ -10,7 +10,7 @@
       <div class="login-card" :class="{ shake: hasError }">
         <div class="card-header">
           <div class="brand-icon">📖</div>
-          <h1 class="brand-title">夜航书房</h1>
+          <h1 class="brand-title">{{ siteName }}</h1>
           <p class="brand-subtitle">注册新账号</p>
         </div>
 
