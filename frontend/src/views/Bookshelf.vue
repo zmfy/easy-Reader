@@ -358,4 +358,79 @@ onMounted(fetchShelf)
   flex-direction: column;
   gap: 12px;
 }
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .shelf-page {
+    padding: 16px;
+  }
+
+  /* Recent cards: single column, no absolute button */
+  .recent-books {
+    grid-template-columns: 1fr;
+  }
+
+  .recent-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    padding-bottom: 12px;
+  }
+
+  .recent-info {
+    width: calc(100% - 72px); /* cover 60px + gap 12px */
+  }
+
+  .recent-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .continue-btn {
+    position: static;
+    align-self: flex-end;
+    margin-left: auto;
+  }
+
+  /* Book rows: wrap actions to second line */
+  .book-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 12px;
+    padding: 12px;
+  }
+
+  .row-info {
+    width: calc(100% - 52px); /* cover 40px + gap 12px */
+  }
+
+  .row-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-bottom: 3px;
+  }
+
+  .row-author {
+    font-size: 13px;
+  }
+
+  /* Actions wrap below, indented past the cover */
+  .row-actions {
+    width: 100%;
+    padding-left: 52px;
+    margin-top: 0;
+    justify-content: flex-start;
+  }
+}
 </style>
