@@ -5,7 +5,22 @@
         <h1 class="page-title">系统设置</h1>
       </div>
 
+      <!-- 手机端顶部横向标签栏 -->
+      <div class="settings-tabs-mobile">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="tab-chip"
+          :class="{ active: activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          <el-icon><component :is="tab.icon" /></el-icon>
+          <span>{{ tab.label }}</span>
+        </button>
+      </div>
+
       <div class="settings-layout">
+        <!-- 桌面端左侧竖向导航 -->
         <nav class="settings-nav">
           <button
             v-for="tab in tabs"
@@ -906,6 +921,92 @@ onMounted(async () => {
 .smtp-tip {
   font-size: 13px;
   color: var(--text-2);
+}
+
+/* ── 手机端横向标签栏 ── */
+.settings-tabs-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* 顶部横向标签栏：仅手机显示 */
+  .settings-tabs-mobile {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 12px 16px;
+    background: var(--bg-0);
+    border-bottom: 1px solid rgba(124, 92, 255, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .settings-tabs-mobile::-webkit-scrollbar { display: none; }
+
+  .tab-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border: 1px solid rgba(124, 92, 255, 0.18);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+  }
+  .tab-chip .el-icon {
+    font-size: 14px;
+  }
+  .tab-chip:hover {
+    border-color: var(--accent);
+    color: var(--text-1);
+  }
+  .tab-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 500;
+    box-shadow: 0 2px 10px rgba(124, 92, 255, 0.35);
+  }
+
+  /* 桌面左侧导航：手机隐藏 */
+  .settings-nav {
+    display: none;
+  }
+
+  /* 内容区改为单列 */
+  .settings-layout {
+    display: block;
+    gap: 0;
+  }
+
+  .settings-content {
+    border-radius: var(--radius-md);
+    padding: 20px 16px;
+  }
+
+  .settings-page {
+    padding: 16px;
+  }
+
+  /* 主题卡片在手机上更紧凑 */
+  .theme-cards {
+    gap: 10px;
+  }
+  .theme-card {
+    width: 100px;
+  }
+
+  /* 表单网格单列 */
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Site theme selector ── */
