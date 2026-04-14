@@ -67,7 +67,7 @@ import { settingsApi } from '@/api/settings'
 const authStore = useAuthStore()
 const router = useRouter()
 
-const siteName = ref('夜航书房')
+const siteName = ref('简单书房')
 const siteSubtitle = ref('Night Reader · NAS Novel Platform')
 const loading = ref(false)
 

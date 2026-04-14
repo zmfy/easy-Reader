@@ -81,7 +81,7 @@ import { settingsApi } from '@/api/settings'
 const router = useRouter()
 const route = useRoute()
 
-const siteName = ref('夜航书房')
+const siteName = ref('简单书房')
 const loading = ref(false)
 const errorMsg = ref('')
 const hasError = ref(false)
