@@ -228,6 +228,106 @@ onMounted(fetchBook)
   }
 }
 
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .book-detail-page {
+    padding: 16px;
+  }
+
+  .detail-header {
+    margin-bottom: 12px;
+  }
+
+  .detail-main {
+    gap: 0;
+  }
+
+  /* Cover + action buttons side by side */
+  .cover-section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 16px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  .book-cover-large {
+    width: 110px;
+    border-radius: var(--radius-md);
+  }
+
+  .cover-placeholder-large {
+    gap: 8px;
+    padding: 10px 6px;
+  }
+
+  .format-label {
+    font-size: 11px;
+  }
+
+  .title-label {
+    font-size: 11px;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .cover-actions {
+    margin-top: 0;
+    align-self: end;
+    gap: 8px;
+  }
+
+  .cover-actions :deep(.el-button) {
+    font-size: 14px;
+    height: 40px;
+  }
+
+  /* Info: title stacks above edit buttons */
+  .info-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .book-title {
+    font-size: 20px;
+    line-height: 1.4;
+    word-break: break-all;
+  }
+
+  .book-author {
+    font-size: 14px;
+    margin-top: -4px;
+  }
+
+  .edit-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .info-tags {
+    margin-bottom: 14px;
+  }
+
+  .info-meta {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .summary-section {
+    padding: 16px;
+  }
+
+  .summary-text {
+    font-size: 14px;
+    line-height: 1.9;
+  }
+}
+
 .book-cover-large {
   width: 100%;
   aspect-ratio: 3/4;
