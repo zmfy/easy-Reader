@@ -68,7 +68,7 @@ const authStore = useAuthStore()
 const router = useRouter()
 
 const siteName = ref('简单书房')
-const siteSubtitle = ref('Night Reader · NAS Novel Platform')
+const siteSubtitle = ref('Easy Reader · NAS Novel Platform')
 const loading = ref(false)
 
 onMounted(async () => {
