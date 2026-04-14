@@ -161,7 +161,7 @@
                   {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="200">
+              <el-table-column label="操作" width="260">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.id !== authStore.user?.id"
@@ -173,6 +173,18 @@
                   <el-button size="small" type="warning" @click="openPwdDialog(row)">
                     修改密码
                   </el-button>
+                  <el-popconfirm
+                    v-if="row.id !== authStore.user?.id"
+                    title="确定删除该用户？此操作不可恢复。"
+                    confirm-button-text="删除"
+                    cancel-button-text="取消"
+                    confirm-button-type="danger"
+                    @confirm="deleteUser(row.id)"
+                  >
+                    <template #reference>
+                      <el-button size="small" type="danger" plain>删除</el-button>
+                    </template>
+                  </el-popconfirm>
                 </template>
               </el-table-column>
             </el-table>
@@ -648,6 +660,17 @@ async function toggleRole(user: { id: string; role: string }) {
   await settingsApi.updateUserRole(user.id, newRole)
   user.role = newRole
   ElMessage.success('角色已更新')
+}
+
+async function deleteUser(id: string) {
+  try {
+    await settingsApi.deleteUser(id)
+    users.value = users.value.filter(u => u.id !== id)
+    ElMessage.success('用户已删除')
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '删除失败'
+    ElMessage.error(msg)
+  }
 }
 
 onMounted(async () => {

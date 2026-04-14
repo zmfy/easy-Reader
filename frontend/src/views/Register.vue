@@ -76,10 +76,12 @@ import { User, Lock, Key, Warning } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
+import { settingsApi } from '@/api/settings'
 
 const router = useRouter()
 const route = useRoute()
 
+const siteName = ref('夜航书房')
 const loading = ref(false)
 const errorMsg = ref('')
 const hasError = ref(false)
@@ -90,9 +92,13 @@ const form = reactive({
   inviteCode: '',
 })
 
-onMounted(() => {
+onMounted(async () => {
   const code = route.query.code as string
   if (code) form.inviteCode = code
+  try {
+    const resp = await settingsApi.getPublic()
+    if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
+  } catch { /* keep default */ }
 })
 
 async function handleSubmit() {

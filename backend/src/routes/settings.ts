@@ -202,4 +202,17 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
   successResponse(res, null, '密码已修改');
 });
 
+// DELETE /api/settings/users/:id
+router.delete('/users/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  // Prevent self-deletion
+  const self = (req as Request & { user?: User }).user;
+  if (self && String(self.id) === String(req.params.id)) {
+    errorResponse(res, 400, 'BUSINESS_CONFLICT', '不能删除自己的账号'); return;
+  }
+  const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
+  successResponse(res, null, '用户已删除');
+});
+
 export default router;

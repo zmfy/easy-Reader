@@ -29,6 +29,9 @@ export const settingsApi = {
   updateUserRole: (id: string, role: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/role`, { role }),
 
+  deleteUser: (id: string) =>
+    http.delete<ApiResponse<null>>(`/settings/users/${id}`),
+
   changeUserPassword: (id: string, password: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/password`, { password }),
 
