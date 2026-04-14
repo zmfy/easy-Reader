@@ -171,16 +171,24 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
   }
 
   try {
-    // Read first 2000 chars of the file
-    let rawText = '';
-    if (fs.existsSync(book.file_path)) {
-      if (book.file_format === 'txt') {
-        const content = fs.readFileSync(book.file_path, 'utf-8');
-        rawText = content.slice(0, 2000);
-      }
+    // Clean book title: remove edition/version markers like (精校版)(完本)[全本] etc.
+    const cleanedTitle = book.title
+      .replace(/[(\uff08][^)\uff09]{0,20}[)\uff09]/g, '')  // remove (xxx) （xxx）
+      .replace(/[[\u3010][^\]\u3011]{0,20}[\]\u3011]/g, '')  // remove [xxx] 【xxx】
+      .replace(/[-_\s]*(完本|精校版?|全本|完整版|最新版|修订版|番外|特别版|典藏版)$/i, '')
+      .trim() || book.title;
+
+    // Read first 600 chars as a content hint
+    let contentHint = '';
+    if (fs.existsSync(book.file_path) && book.file_format === 'txt') {
+      const content = fs.readFileSync(book.file_path, 'utf-8');
+      contentHint = content.slice(0, 600);
     }
 
-    const info = await aiManager.fillBookInfo(rawText || book.title, db);
+    // Build structured lookup request for AI
+    const lookupRequest = `书名：${cleanedTitle}\n原文件名（仅参考）：${book.title}\n文本节选（仅作辅助参考）：\n${contentHint}`;
+
+    const info = await aiManager.fillBookInfo(lookupRequest, db);
 
     const updates: string[] = [];
     const values: unknown[] = [];

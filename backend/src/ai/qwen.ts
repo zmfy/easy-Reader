@@ -15,10 +15,13 @@ const qwenPlugin: AiPlugin = {
     const model = config.model || 'qwen-plus';
 
 
-    const prompt = `根据以下小说文本，请提取并返回JSON格式的书籍信息：
-文本：${rawText.slice(0, 1000)}
+    const prompt = `你是一个熟悉中文网络小说的助手。请根据书名从你的知识库中查找该小说的准确信息，优先使用你已知的信息，不要从下方文本中分析。
 
-请返回：{"title": "书名", "author": "作者", "summary": "100字以内简介", "category": "分类（如玄幻/都市/历史等）"}`;
+${rawText}
+
+只返回如下JSON格式，不含其他任何文字：
+{"title":"正确书名","author":"作者名","summary":"100字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）"}
+如果不确定某字段，省略该字段，不要猜测。`;
 
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
