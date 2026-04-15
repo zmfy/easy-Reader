@@ -24,7 +24,12 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   try {
     const plugin = await getReaderPlugin(book);
     const chapters = await plugin.getChapters();
-    successResponse(res, { chapters, format: book.file_format });
+    const extra: Record<string, unknown> = { chapters, format: book.file_format };
+    if (book.file_format.toLowerCase() === 'pdf') {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;
+      extra.pdfUsePlugin = row?.value === 'true';
+    }
+    successResponse(res, extra);
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节: ' + (err instanceof Error ? err.message : ''));
   }

@@ -221,7 +221,8 @@ const settingsPanelVisible = ref(false)
 const chapterListVisible = ref(false)
 
 // ── PDF native rendering ─────────────────────────────────────
-const isPdf = computed(() => reader.bookFormat.value === 'pdf')
+// isPdf: true 表示使用浏览器原生 iframe 打开（插件未启用时的默认行为）
+const isPdf = computed(() => reader.bookFormat.value === 'pdf' && !reader.pdfUsePlugin.value)
 const pdfBlobUrl = ref('')
 const pdfLoading = ref(false)
 
