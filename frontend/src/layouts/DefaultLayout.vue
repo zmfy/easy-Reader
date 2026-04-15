@@ -78,11 +78,19 @@ const sidebarOpen = ref(false)
 const keepAlive = ref(localStorage.getItem('keepAlive') === 'true')
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null
 
+async function doRefresh() {
+  const refreshToken = localStorage.getItem('refreshToken')
+  if (!refreshToken) return
+  try {
+    const resp = await authApi.refresh(refreshToken)
+    const data = resp.data.data!
+    authStore.storeTokens(data)
+  } catch { /* 刷新失败时由 http 拦截器处理 */ }
+}
+
 function startKeepAlive() {
   if (keepAliveTimer) return
-  keepAliveTimer = setInterval(async () => {
-    try { await authApi.me() } catch { /* ignore */ }
-  }, 5 * 60 * 1000)
+  keepAliveTimer = setInterval(doRefresh, 5 * 60 * 1000)
 }
 
 function stopKeepAlive() {

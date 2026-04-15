@@ -10,19 +10,29 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!accessToken.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
+  function storeTokens(data: { accessToken: string; refreshToken: string }) {
+    accessToken.value = data.accessToken
+    sessionStorage.setItem('accessToken', data.accessToken)
+    localStorage.setItem('refreshToken', data.refreshToken)
+  }
+
+  function clearTokens() {
+    accessToken.value = null
+    user.value = null
+    sessionStorage.removeItem('accessToken')
+    localStorage.removeItem('refreshToken')
+  }
+
   async function login(username: string, password: string) {
     const resp = await authApi.login({ username, password })
     const data = resp.data.data!
-    accessToken.value = data.accessToken
     user.value = data.user
-    sessionStorage.setItem('accessToken', data.accessToken)
+    storeTokens(data)
   }
 
   async function logout() {
     try { await authApi.logout() } catch { /* ignore */ }
-    accessToken.value = null
-    user.value = null
-    sessionStorage.removeItem('accessToken')
+    clearTokens()
   }
 
   async function fetchMe() {
@@ -30,11 +40,9 @@ export const useAuthStore = defineStore('auth', () => {
       const resp = await authApi.me()
       user.value = resp.data.data!
     } catch {
-      accessToken.value = null
-      user.value = null
-      sessionStorage.removeItem('accessToken')
+      clearTokens()
     }
   }
 
-  return { user, accessToken, isLoggedIn, isAdmin, login, logout, fetchMe }
+  return { user, accessToken, isLoggedIn, isAdmin, login, logout, fetchMe, storeTokens, clearTokens }
 })

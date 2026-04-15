@@ -31,7 +31,7 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
 
 export function generateTokens(userId: string, role: 'admin' | 'user'): { accessToken: string; refreshToken: string } {
   const payload: JwtPayload = { userId, role };
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '30m' });
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '2h' });
   const refreshToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
   return { accessToken, refreshToken };
 }
