@@ -219,7 +219,16 @@
                   <div class="plugin-name">{{ plugin.label }}</div>
                   <div class="plugin-desc">{{ plugin.description }}</div>
                 </div>
-                <el-tag type="success">已加载</el-tag>
+                <template v-if="plugin.format === 'pdf'">
+                  <div class="plugin-switch">
+                    <span class="plugin-switch-label">{{ plugin.usePlugin ? '插件解析' : '浏览器原生' }}</span>
+                    <el-switch
+                      :model-value="plugin.usePlugin"
+                      @change="(val: boolean) => togglePdfPlugin(val)"
+                    />
+                  </div>
+                </template>
+                <el-tag v-else type="success">已加载</el-tag>
               </div>
             </div>
           </div>
@@ -422,7 +431,7 @@ const smtpConfigured = ref(false)
 const smtpPassSet = ref(false)
 const users = ref<Array<{ id: string; username: string; role: string; created_at: string }>>([])
 const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string> }>>([])
-const readerPlugins = ref<Array<{ format: string; label: string; description: string }>>([])
+const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
@@ -526,8 +535,15 @@ const inviteUrl = computed(() => {
 })
 
 function formatIcon(format: string) {
-  const icons: Record<string, string> = { txt: '📄', epub: '📕', pdf: '📰' }
+  const icons: Record<string, string> = { txt: '📄', epub: '📕', pdf: '📰', umd: '📚' }
   return icons[format] || '📁'
+}
+
+async function togglePdfPlugin(val: boolean) {
+  await settingsApi.update({ pdf_use_plugin: val ? 'true' : 'false' })
+  const plugin = readerPlugins.value.find(p => p.format === 'pdf')
+  if (plugin) plugin.usePlugin = val
+  ElMessage.success(val ? 'PDF 已切换为插件解析模式' : 'PDF 已切换为浏览器原生模式')
 }
 
 function populateAiForm(plugin: string) {
@@ -861,6 +877,19 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-2);
   margin-top: 2px;
+}
+
+.plugin-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.plugin-switch-label {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 /* Invite Dialog */

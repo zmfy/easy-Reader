@@ -1,5 +1,29 @@
 <template>
   <div class="reader-page" :style="readerStyle">
+
+    <!-- ── PDF 原生渲染模式 ── -->
+    <template v-if="isPdf">
+      <div class="pdf-topbar">
+        <el-button :icon="ArrowLeft" circle @click="router.back()" />
+        <span class="pdf-topbar-title">PDF 阅读</span>
+      </div>
+      <div class="pdf-viewer-area">
+        <div v-if="pdfLoading" class="pdf-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>正在加载 PDF…</span>
+        </div>
+        <iframe
+          v-else-if="pdfBlobUrl"
+          :src="pdfBlobUrl"
+          class="pdf-frame"
+          allowfullscreen
+        />
+        <div v-else class="pdf-error">PDF 加载失败，请检查文件是否完整</div>
+      </div>
+    </template>
+
+    <!-- ── 章节阅读模式 ── -->
+    <template v-else>
     <!-- Toolbar Top -->
     <div class="reader-toolbar top" :class="{ visible: toolbarVisible }">
       <el-button :icon="ArrowLeft" circle @click="router.back()" />
@@ -169,6 +193,8 @@
         </div>
       </div>
     </el-drawer>
+
+    </template><!-- end 章节模式 -->
   </div>
 </template>
 
@@ -179,6 +205,7 @@ import { ArrowLeft, ArrowRight, Star, Setting, List, Loading } from '@element-pl
 const Bookmark = Star
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
+import { readerApi } from '@/api/reader'
 import type { ReaderTheme } from '@/types'
 
 const route = useRoute()
@@ -192,6 +219,23 @@ const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
 const chapterListVisible = ref(false)
+
+// ── PDF native rendering ─────────────────────────────────────
+// isPdf: true 表示使用浏览器原生 iframe 打开（插件未启用时的默认行为）
+const isPdf = computed(() => reader.bookFormat.value === 'pdf' && !reader.pdfUsePlugin.value)
+const pdfBlobUrl = ref('')
+const pdfLoading = ref(false)
+
+async function loadPdfBlob() {
+  pdfLoading.value = true
+  try {
+    const resp = await readerApi.getRaw(bookId)
+    const blob = new Blob([resp.data as ArrayBuffer], { type: 'application/pdf' })
+    pdfBlobUrl.value = URL.createObjectURL(blob)
+  } finally {
+    pdfLoading.value = false
+  }
+}
 
 // ── Computed styles ──────────────────────────────────────────
 const readerStyle = computed(() => ({
@@ -361,16 +405,20 @@ async function setPageMode(mode: 'scroll' | 'waterfall') {
 onMounted(async () => {
   await readerStore.loadPrefs()
   await reader.loadChapters()
+
+  if (isPdf.value) {
+    await loadPdfBlob()
+    return
+  }
+
   await reader.loadProgress()
 
   if (readerStore.settings.pageMode === 'waterfall') {
     await initWaterfall()
   } else {
     await reader.loadChapter(reader.progress.value.chapterIndex)
-    // Always start at chapter beginning
     await nextTick()
     if (contentRef.value) contentRef.value.scrollTop = 0
-    // Belt-and-suspenders: reset again after a frame to counter font/transition layout shifts
     requestAnimationFrame(() => {
       if (contentRef.value) contentRef.value.scrollTop = 0
     })
@@ -379,13 +427,14 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
-  if (!reader.loading.value) {
+  if (!isPdf.value && !reader.loading.value) {
     reader.saveProgress(0)
   }
 })
 
 onUnmounted(() => {
   clearTimeout(toolbarTimer)
+  if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
 })
 </script>
 
@@ -539,4 +588,52 @@ onUnmounted(() => {
 .chapter-item.active { background: rgba(124,92,255,0.2); color: var(--accent); font-weight: 500; }
 
 .content-loading { padding: 20px 0; }
+
+/* ── PDF viewer ── */
+.pdf-topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(11, 16, 32, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.pdf-topbar-title {
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+.pdf-viewer-area {
+  position: fixed;
+  inset: 0;
+  padding-top: 48px; /* below topbar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #525659;
+}
+
+.pdf-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.pdf-loading,
+.pdf-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #ccc;
+  font-size: 15px;
+}
+
+.pdf-loading .el-icon {
+  font-size: 32px;
+}
 </style>

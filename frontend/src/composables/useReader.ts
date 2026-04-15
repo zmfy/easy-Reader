@@ -10,12 +10,17 @@ export function useReader(bookId: string) {
   const bookmarks = ref<Bookmark[]>([])
   const progress = ref<ReadingProgress>({ chapterIndex: 0, scrollTop: 0 })
   const loading = ref(false)
+  const bookFormat = ref('')
+  const pdfUsePlugin = ref(false)
 
   const currentChapter = computed(() => chapters.value[currentChapterIndex.value])
 
   async function loadChapters() {
     const resp = await readerApi.getChapters(bookId)
-    chapters.value = resp.data.data || []
+    const data = resp.data.data
+    chapters.value = data?.chapters || []
+    bookFormat.value = data?.format || ''
+    pdfUsePlugin.value = !!data?.pdfUsePlugin
   }
 
   async function loadChapter(index: number) {
@@ -78,7 +83,7 @@ export function useReader(bookId: string) {
 
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
-    loading, currentChapter,
+    loading, currentChapter, bookFormat, pdfUsePlugin,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
   }

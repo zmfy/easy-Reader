@@ -61,10 +61,12 @@ router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
 
 // GET /api/settings/reader-plugins
 router.get('/reader-plugins', authMiddleware, (_req: Request, res: Response) => {
+  const db = getDb();
+  const pdfUsePlugin = (db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined)?.value === 'true';
   successResponse(res, [
     { format: 'txt', label: 'TXT 纯文本', description: '支持 UTF-8/GBK 编码的纯文本小说' },
     { format: 'epub', label: 'EPUB 电子书', description: '支持 EPUB 2/3 格式' },
-    { format: 'pdf', label: 'PDF 文档', description: '支持 PDF 文档格式' },
+    { format: 'pdf', label: 'PDF 文档', description: '支持 PDF 文档格式', usePlugin: pdfUsePlugin },
     { format: 'umd', label: 'UMD 小说', description: '支持 UMD 格式中文电子书' },
   ]);
 });

@@ -3,7 +3,10 @@ import type { ApiResponse, Chapter, ReadingProgress, Bookmark } from '@/types'
 
 export const readerApi = {
   getChapters: (bookId: string) =>
-    http.get<ApiResponse<Chapter[]>>(`/reader/${bookId}/chapters`),
+    http.get<ApiResponse<{ chapters: Chapter[]; format: string; pdfUsePlugin?: boolean }>>(`/reader/${bookId}/chapters`),
+
+  getRaw: (bookId: string) =>
+    http.get(`/reader/${bookId}/raw`, { responseType: 'arraybuffer' }),
 
   getChapterContent: (bookId: string, index: number) =>
     http.get<ApiResponse<{ index: number; content: string }>>(`/reader/${bookId}/chapter/${index}`),
