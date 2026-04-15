@@ -32,7 +32,17 @@
             <div class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
           </div>
         </div>
-        <el-button link class="logout-btn" @click="handleLogout">退出</el-button>
+        <div class="action-row" @click="toggleKeepAlive">
+          <el-icon><component is="Stopwatch" /></el-icon>
+          <span>保持连接</span>
+          <div class="toggle-track" :class="{ on: keepAlive }">
+            <div class="toggle-knob" />
+          </div>
+        </div>
+        <div class="action-row action-row--logout" @click="handleLogout">
+          <el-icon><component is="SwitchButton" /></el-icon>
+          <span>退出登录</span>
+        </div>
       </div>
     </nav>
 
@@ -53,23 +63,57 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { settingsApi } from '@/api/settings'
+import { authApi } from '@/api/auth'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
 const siteName = ref('简单书房')
 const sidebarOpen = ref(false)
+const keepAlive = ref(localStorage.getItem('keepAlive') === 'true')
+let keepAliveTimer: ReturnType<typeof setInterval> | null = null
+
+function startKeepAlive() {
+  if (keepAliveTimer) return
+  keepAliveTimer = setInterval(async () => {
+    try { await authApi.me() } catch { /* ignore */ }
+  }, 5 * 60 * 1000)
+}
+
+function stopKeepAlive() {
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer)
+    keepAliveTimer = null
+  }
+}
+
+function toggleKeepAlive() {
+  keepAlive.value = !keepAlive.value
+  localStorage.setItem('keepAlive', String(keepAlive.value))
+  if (keepAlive.value) {
+    startKeepAlive()
+    ElMessage.success('保活已开启')
+  } else {
+    stopKeepAlive()
+    ElMessage.info('保活已关闭')
+  }
+}
 
 onMounted(async () => {
   try {
     const resp = await settingsApi.getPublic()
     if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
   } catch { /* keep default */ }
+  if (keepAlive.value) startKeepAlive()
+})
+
+onUnmounted(() => {
+  stopKeepAlive()
 })
 
 const navItems = [
@@ -153,7 +197,9 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(124, 92, 255, 0.08);
 }
 
 .user-avatar {
@@ -183,12 +229,46 @@ async function handleLogout() {
 
 .user-role { font-size: 11px; color: var(--text-2); }
 
-.logout-btn {
-  color: var(--text-2) !important;
-  font-size: 12px;
-  padding: 0 !important;
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 4px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+  transition: all 0.15s ease;
+  user-select: none;
 }
-.logout-btn:hover { color: var(--danger) !important; }
+.action-row span { flex: 1; }
+.action-row .el-icon { font-size: 15px; flex-shrink: 0; }
+.action-row:hover { color: var(--text-1); background: rgba(124, 92, 255, 0.08); }
+.action-row--logout:hover { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.07); }
+
+/* CSS toggle switch */
+.toggle-track {
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  transition: background 0.22s ease;
+  flex-shrink: 0;
+}
+.toggle-track.on { background: var(--accent); }
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.22s ease;
+}
+.toggle-track.on .toggle-knob { transform: translateX(13px); }
 
 /* ── Main content ── */
 .main-content {
