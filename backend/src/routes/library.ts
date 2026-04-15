@@ -13,7 +13,7 @@ const router = Router();
 
 const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
-const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
+const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
 // GET /api/library
 router.get('/', authMiddleware, (req: Request, res: Response) => {

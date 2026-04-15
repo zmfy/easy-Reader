@@ -65,6 +65,7 @@ router.get('/reader-plugins', authMiddleware, (_req: Request, res: Response) => 
     { format: 'txt', label: 'TXT 纯文本', description: '支持 UTF-8/GBK 编码的纯文本小说' },
     { format: 'epub', label: 'EPUB 电子书', description: '支持 EPUB 2/3 格式' },
     { format: 'pdf', label: 'PDF 文档', description: '支持 PDF 文档格式' },
+    { format: 'umd', label: 'UMD 小说', description: '支持 UMD 格式中文电子书' },
   ]);
 });
 
