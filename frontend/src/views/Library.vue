@@ -69,7 +69,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
@@ -78,25 +78,35 @@ import { useAuthStore } from '@/stores/auth'
 import type { Book } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const books = ref<Book[]>([])
 const loading = ref(false)
 const scanning = ref(false)
-const searchQuery = ref('')
-const selectedCategory = ref('')
+const searchQuery = ref((route.query.search as string) || '')
+const selectedCategory = ref((route.query.category as string) || '')
 
 const categories = ['玄幻', '修真', '都市', '历史', '科幻', '悬疑', '言情', '武侠', '游戏', '综合']
 
 const pagination = reactive({
-  page: 1,
+  page: Number(route.query.page) || 1,
   pageSize: 24,
   total: 0,
   totalPages: 0,
 })
 
+function syncQuery() {
+  const query: Record<string, string> = {}
+  if (pagination.page > 1) query.page = String(pagination.page)
+  if (searchQuery.value) query.search = searchQuery.value
+  if (selectedCategory.value) query.category = selectedCategory.value
+  router.replace({ query })
+}
+
 async function fetchBooks() {
   loading.value = true
+  syncQuery()
   try {
     const resp = await libraryApi.list({
       page: pagination.page,
