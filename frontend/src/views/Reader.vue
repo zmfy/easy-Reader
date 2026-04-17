@@ -4,7 +4,7 @@
     <!-- ── PDF 原生渲染模式 ── -->
     <template v-if="isPdf">
       <div class="pdf-topbar">
-        <el-button :icon="ArrowLeft" circle @click="router.back()" />
+        <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
         <span class="pdf-topbar-title">PDF 阅读</span>
       </div>
       <div class="pdf-viewer-area">
@@ -26,12 +26,12 @@
     <template v-else>
     <!-- Toolbar Top -->
     <div class="reader-toolbar top" :class="{ visible: toolbarVisible }">
-      <el-button :icon="ArrowLeft" circle @click="router.back()" />
+      <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
       <span class="chapter-title">{{ currentChapter?.title || '加载中...' }}</span>
       <div class="toolbar-actions">
-        <el-button :icon="Bookmark" circle @click="addBookmarkQuick" />
-        <el-button :icon="Setting" circle @click="settingsPanelVisible = true" />
-        <el-button :icon="List" circle @click="chapterListVisible = true" />
+        <el-button :icon="Bookmark" circle title="添加书签" @click="addBookmarkQuick" />
+        <el-button :icon="Setting" circle title="阅读设置" @click="settingsPanelVisible = true" />
+        <el-button :icon="List" circle title="章节目录" @click="chapterListVisible = true" />
       </div>
     </div>
 
