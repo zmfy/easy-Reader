@@ -136,6 +136,15 @@ router.post('/:bookId/bookmarks', authMiddleware, (req: Request, res: Response) 
   db.prepare('INSERT INTO bookmarks (id, user_id, book_id, chapter_index, scroll_top, note) VALUES (?, ?, ?, ?, ?, ?)').run(
     id, req.user!.userId, req.params.bookId, parsed.data.chapterIndex, parsed.data.scrollTop, parsed.data.note || null
   );
+
+  // Auto-prune: keep only the 10 most recent bookmarks per user per book
+  db.prepare(`
+    DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND id NOT IN (
+      SELECT id FROM bookmarks WHERE user_id = ? AND book_id = ?
+      ORDER BY created_at DESC LIMIT 10
+    )
+  `).run(req.user!.userId, req.params.bookId, req.user!.userId, req.params.bookId);
+
   const bookmark = db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id);
   successResponse(res, bookmark, '书签已添加', 201);
 });

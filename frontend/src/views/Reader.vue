@@ -29,7 +29,7 @@
       <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
       <span class="chapter-title">{{ currentChapter?.title || '加载中...' }}</span>
       <div class="toolbar-actions">
-        <el-button :icon="Bookmark" circle title="添加书签" @click="addBookmarkQuick" />
+        <el-button :icon="Bookmark" circle title="书签" @click="bookmarkDrawerVisible = true" />
         <el-button :icon="Setting" circle title="阅读设置" @click="settingsPanelVisible = true" />
         <el-button :icon="List" circle title="章节目录" @click="chapterListVisible = true" />
       </div>
@@ -95,6 +95,12 @@
           {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }} 章 · 瀑布流
         </div>
       </template>
+    </div>
+
+    <!-- Bookmark FAB -->
+    <div class="bookmark-fab" title="添加书签 (B)" @click.stop="handleAddBookmark">
+      <el-icon><Bookmark /></el-icon>
+      <span class="fab-hotkey">B</span>
     </div>
 
     <!-- Settings Panel -->
@@ -194,6 +200,33 @@
       </div>
     </el-drawer>
 
+    <!-- Bookmark Drawer -->
+    <el-drawer
+      v-model="bookmarkDrawerVisible"
+      title="书签"
+      direction="ltr"
+      size="280px"
+    >
+      <div class="bookmark-panel">
+        <el-button type="primary" size="small" style="width:100%;margin-bottom:12px" @click="handleAddBookmark">
+          + 添加当前位置
+        </el-button>
+        <div v-if="reader.bookmarks.value.length === 0" class="bookmark-empty">
+          暂无书签
+        </div>
+        <div v-else class="bookmark-list">
+          <div v-for="bm in reader.bookmarks.value" :key="bm.id" class="bookmark-item">
+            <div class="bookmark-info" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
+              <div class="bookmark-chapter">{{ reader.chapters.value[bm.chapter_index]?.title || `第 ${bm.chapter_index + 1} 章` }}</div>
+              <div v-if="bm.note" class="bookmark-note">{{ bm.note }}</div>
+              <div class="bookmark-time">{{ new Date(bm.created_at).toLocaleString() }}</div>
+            </div>
+            <el-button :icon="Delete" circle size="small" text @click="reader.deleteBookmark(bm.id)" />
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     </template><!-- end 章节模式 -->
   </div>
 </template>
@@ -201,7 +234,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, Star, Setting, List, Loading } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Star, Setting, List, Loading, Delete } from '@element-plus/icons-vue'
 const Bookmark = Star
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
@@ -219,6 +252,7 @@ const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
 const chapterListVisible = ref(false)
+const bookmarkDrawerVisible = ref(false)
 
 // ── PDF native rendering ─────────────────────────────────────
 // isPdf: true 表示使用浏览器原生 iframe 打开（插件未启用时的默认行为）
@@ -380,8 +414,36 @@ async function jumpToChapter(index: number) {
   }
 }
 
-async function addBookmarkQuick() {
+async function handleAddBookmark() {
   await reader.addBookmark(contentRef.value?.scrollTop || 0)
+}
+
+async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
+  bookmarkDrawerVisible.value = false
+  if (readerStore.settings.pageMode === 'waterfall') {
+    reader.currentChapterIndex.value = chapterIndex
+    waterfallChapters.value = []
+    await loadWaterfallChapter(chapterIndex)
+    await nextTick()
+    if (contentRef.value) contentRef.value.scrollTop = 0
+    return
+  }
+  // 不同章节才重新加载；同章节只需滚动，跳过会导致 scrollTop 归零的 loading 切换
+  if (chapterIndex !== reader.currentChapterIndex.value) {
+    await reader.loadChapter(chapterIndex)
+  }
+  await nextTick()
+  // 等待网络字体渲染完成，否则字体换行导致布局偏移后 scrollTop 失效
+  await document.fonts.ready
+  const el = contentRef.value
+  if (!el) return
+  // 读取 scrollHeight 强制同步 layout，再赋值
+  void el.scrollHeight
+  el.scrollTop = scrollTop
+  // 再补一帧兜底（字体 fallback 可能还有一次 reflow）
+  requestAnimationFrame(() => {
+    el.scrollTop = scrollTop
+  })
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -402,7 +464,13 @@ async function setPageMode(mode: 'scroll' | 'waterfall') {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────
+function handleKeydown(e: KeyboardEvent) {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+  if (e.key === 'b' || e.key === 'B') handleAddBookmark()
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
@@ -412,6 +480,7 @@ onMounted(async () => {
   }
 
   await reader.loadProgress()
+  reader.loadBookmarks()
 
   if (readerStore.settings.pageMode === 'waterfall') {
     await initWaterfall()
@@ -434,6 +503,7 @@ onBeforeUnmount(() => {
 
 onUnmounted(() => {
   clearTimeout(toolbarTimer)
+  window.removeEventListener('keydown', handleKeydown)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
 })
 </script>
@@ -573,6 +643,24 @@ onUnmounted(() => {
 .progress-info { font-size: 13px; color: var(--text-2); }
 
 .chapter-list { display: flex; flex-direction: column; gap: 2px; }
+
+/* ── Bookmark panel ── */
+.bookmark-panel { display: flex; flex-direction: column; }
+.bookmark-empty { text-align: center; color: var(--text-2); font-size: 13px; padding: 32px 0; }
+.bookmark-list { display: flex; flex-direction: column; gap: 4px; }
+.bookmark-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.bookmark-item:hover { background: rgba(124,92,255,0.08); }
+.bookmark-info { flex: 1; cursor: pointer; overflow: hidden; }
+.bookmark-chapter { font-size: 14px; color: var(--text-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bookmark-note { font-size: 12px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bookmark-time { font-size: 11px; color: var(--text-2); margin-top: 2px; opacity: 0.7; }
 .chapter-item {
   padding: 10px 12px;
   border-radius: 8px;
@@ -635,5 +723,38 @@ onUnmounted(() => {
 
 .pdf-loading .el-icon {
   font-size: 32px;
+}
+
+/* ── Bookmark FAB ── */
+.bookmark-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 9px;
+  background: rgba(11, 16, 32, 0.7);
+  border: 1px solid rgba(124, 92, 255, 0.35);
+  border-radius: 24px;
+  cursor: pointer;
+  z-index: 90;
+  color: var(--accent);
+  font-size: 18px;
+  opacity: 0.55;
+  backdrop-filter: blur(8px);
+  transition: opacity 0.2s, background 0.2s;
+  user-select: none;
+}
+.bookmark-fab:hover {
+  opacity: 1;
+  background: rgba(124, 92, 255, 0.2);
+}
+.fab-hotkey {
+  font-size: 10px;
+  font-family: monospace;
+  color: var(--text-2);
+  line-height: 1;
 }
 </style>
