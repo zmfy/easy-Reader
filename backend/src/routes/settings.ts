@@ -48,6 +48,8 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
   for (const [key, value] of Object.entries(parsed.data)) {
     // Don't overwrite smtp_pass with masked placeholder
     if (key === 'smtp_pass' && (value === '****' || value === '')) continue;
+    // Don't overwrite API keys with masked values (e.g. "sk-12****5678")
+    if (key.toLowerCase().includes('apikey') && value.includes('****')) continue;
     upsert.run(key, value);
   }
   successResponse(res, null, '设置已更新');

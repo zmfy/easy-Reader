@@ -1,16 +1,17 @@
 import { AiPlugin, Book } from '../types';
 
-// MiniMax - OpenAI 兼容接口，支持所有模型（包括 MiniMax M2.7）
+// MiniMax - OpenAI 兼容接口，base URL: https://api.minimaxi.com/v1
+// 当前可用模型：MiniMax-M2、MiniMax-M2.7、MiniMax-M2.7-highspeed 等
 const minmaxPlugin: AiPlugin = {
   name: 'minmax',
   label: 'MiniMax',
   fields: ['apiKey', 'model'],
   placeholders: {
-    model: 'MiniMax-Text-01',
+    model: 'MiniMax-M2 / MiniMax-M2.7 / MiniMax-M2.7-highspeed',
   },
 
   async fillBookInfo(rawText: string, config: Record<string, string>): Promise<Partial<Book>> {
-    const model = config.model || 'MiniMax-Text-01';
+    const model = config.model || 'MiniMax-M2';
 
     const prompt = `你是一个熟悉中文网络小说的助手。请根据书名从你的知识库中查找该小说的准确信息，优先使用你已知的信息，不要从下方文本中分析。
 
@@ -20,7 +21,7 @@ ${rawText}
 {"title":"正确书名","author":"作者名","summary":"100字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）","is_finished":true,"platform":"首发连载平台（如起点中文网）","start_date":"开始连载年月（如2007年12月）","end_date":"完本年月（已完结时填写，如2023年8月）"}
 is_finished为true表示已完结，false表示连载中。如果不确定某字段，省略该字段，不要猜测。`;
 
-    const resp = await fetch('https://api.minimax.chat/v1/chat/completions', {
+    const resp = await fetch('https://api.minimaxi.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -51,13 +52,13 @@ is_finished为true表示已完结，false表示连载中。如果不确定某字
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {
-    const model = config.model || 'MiniMax-Text-01';
+    const model = config.model || 'MiniMax-M2';
 
     const prompt = `书名：${bookInfo.title || '未知'}，简介：${bookInfo.summary || '无'}
 请从以下分类中选一个最合适的：玄幻、修真、都市、历史、科幻、悬疑、言情、武侠、游戏、综合
 只返回分类名，不需要解释。`;
 
-    const resp = await fetch('https://api.minimax.chat/v1/chat/completions', {
+    const resp = await fetch('https://api.minimaxi.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

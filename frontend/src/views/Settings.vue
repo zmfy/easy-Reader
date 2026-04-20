@@ -150,7 +150,7 @@
                 <el-input
                   v-model="aiForm[field]"
                   :type="field === 'apiKey' ? 'password' : 'text'"
-                  :placeholder="getFieldPlaceholder(field)"
+                  :placeholder="field === 'apiKey' ? (aiApiKeySet ? '已设置（输入新 Key 以修改）' : getFieldPlaceholder(field)) : getFieldPlaceholder(field)"
                   :show-password="field === 'apiKey'"
                 />
               </div>
@@ -528,6 +528,11 @@ const currentAiPlugin = computed(() =>
   aiPlugins.value.find(p => p.name === selectedAiPlugin.value)
 )
 
+const aiApiKeySet = computed(() => {
+  if (!selectedAiPlugin.value) return false
+  return !!settingsData.value[`ai_${selectedAiPlugin.value}_apiKey`]
+})
+
 const inviteUrl = computed(() => {
   if (!inviteCode.value) return ''
   const base = sysForm.site_url?.replace(/\/$/, '') || window.location.origin
@@ -551,7 +556,10 @@ function populateAiForm(plugin: string) {
   const prefix = `ai_${plugin}_`
   for (const [key, value] of Object.entries(settingsData.value)) {
     if (key.startsWith(prefix)) {
-      aiForm[key.slice(prefix.length)] = value
+      const field = key.slice(prefix.length)
+      // Don't populate apiKey with masked value — user must re-enter to change it
+      if (field === 'apiKey') continue
+      aiForm[field] = value
     }
   }
 }
