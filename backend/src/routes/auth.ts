@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, generateTokens } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
+import { JWT_SECRET } from '../secret';
 import { User } from '../types';
 
 const router = Router();
@@ -124,8 +126,7 @@ router.post('/refresh', (req: Request, res: Response) => {
     return;
   }
   try {
-    const { JwtPayload: _ignore, ...jwt } = require('jsonwebtoken');
-    const payload = jwt.verify(refreshToken, process.env.JWT_SECRET || 'change-this-secret-in-production') as import('../types').JwtPayload;
+    const payload = jwt.verify(refreshToken, JWT_SECRET) as import('../types').JwtPayload;
     const tokens = generateTokens(payload.userId, payload.role);
     successResponse(res, tokens);
   } catch {

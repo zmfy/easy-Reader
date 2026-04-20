@@ -9,7 +9,7 @@ const http: AxiosInstance = axios.create({
 
 // Request interceptor: attach access token
 http.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('accessToken')
+  const token = localStorage.getItem('accessToken')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -48,12 +48,12 @@ http.interceptors.response.use(
         config.headers.Authorization = `Bearer ${newToken}`
         return http(config)
       } catch {
-        sessionStorage.removeItem('accessToken')
+        localStorage.removeItem('accessToken')
         localStorage.removeItem('refreshToken')
         window.location.href = '/login'
       }
     } else if (is401) {
-      sessionStorage.removeItem('accessToken')
+      localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
       window.location.href = '/login'
     }

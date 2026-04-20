@@ -5,21 +5,21 @@ import type { User } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
-  const accessToken = ref<string | null>(sessionStorage.getItem('accessToken'))
+  const accessToken = ref<string | null>(localStorage.getItem('accessToken'))
 
   const isLoggedIn = computed(() => !!accessToken.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
   function storeTokens(data: { accessToken: string; refreshToken: string }) {
     accessToken.value = data.accessToken
-    sessionStorage.setItem('accessToken', data.accessToken)
+    localStorage.setItem('accessToken', data.accessToken)
     localStorage.setItem('refreshToken', data.refreshToken)
   }
 
   function clearTokens() {
     accessToken.value = null
     user.value = null
-    sessionStorage.removeItem('accessToken')
+    localStorage.removeItem('accessToken')
     localStorage.removeItem('refreshToken')
   }
 
@@ -40,9 +40,24 @@ export const useAuthStore = defineStore('auth', () => {
       const resp = await authApi.me()
       user.value = resp.data.data!
     } catch {
-      clearTokens()
+      // 不在这里清 token，让 http 拦截器的 refresh 机制处理 401
     }
   }
 
-  return { user, accessToken, isLoggedIn, isAdmin, login, logout, fetchMe, storeTokens, clearTokens }
+  // 有 refreshToken 但 accessToken 缺失时，尝试静默刷新
+  async function tryRefresh(): Promise<boolean> {
+    const refreshToken = localStorage.getItem('refreshToken')
+    if (!refreshToken) return false
+    try {
+      const resp = await authApi.refresh(refreshToken)
+      const data = resp.data.data!
+      storeTokens(data)
+      return true
+    } catch {
+      clearTokens()
+      return false
+    }
+  }
+
+  return { user, accessToken, isLoggedIn, isAdmin, login, logout, fetchMe, storeTokens, clearTokens, tryRefresh }
 })

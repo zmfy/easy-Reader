@@ -66,8 +66,12 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   if (!authStore.isLoggedIn) {
-    next('/login')
-    return
+    // accessToken 缺失但 refreshToken 存在时，先尝试静默刷新
+    const refreshed = await authStore.tryRefresh()
+    if (!refreshed) {
+      next('/login')
+      return
+    }
   }
 
   if (!authStore.user) {
