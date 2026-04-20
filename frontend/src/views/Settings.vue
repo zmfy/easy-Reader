@@ -129,6 +129,17 @@
           <!-- AI Settings -->
           <div v-if="activeTab === 'ai'" class="setting-section">
             <h2 class="section-title">AI 插件设置</h2>
+            <div class="ai-tips">
+              <div class="ai-tip-title">已测试通过的配置</div>
+              <div class="ai-tip-item">
+                <span class="ai-tip-name">DeepSeek</span>
+                <span class="ai-tip-desc">模型：<code>deepseek-chat</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
+              </div>
+              <div class="ai-tip-item">
+                <span class="ai-tip-name">MiniMax</span>
+                <span class="ai-tip-desc">模型：<code>MiniMax-M2</code></span>
+              </div>
+            </div>
             <div class="form-field" style="margin-bottom: 20px">
               <label>选择 AI 插件</label>
               <el-select v-model="selectedAiPlugin" style="width: 100%">
@@ -850,6 +861,53 @@ onMounted(async () => {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(124, 92, 255, 0.05);
+}
+
+.ai-tips {
+  background: rgba(0, 212, 184, 0.06);
+  border: 1px solid rgba(0, 212, 184, 0.18);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-tip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-tip-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.ai-tip-name {
+  color: var(--text-1);
+  font-weight: 600;
+  min-width: 64px;
+  flex-shrink: 0;
+}
+
+.ai-tip-desc {
+  color: var(--text-2);
+}
+
+.ai-tip-desc code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: rgba(124, 92, 255, 0.12);
+  color: var(--accent);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 .plugins-grid {
