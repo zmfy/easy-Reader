@@ -51,7 +51,7 @@ export function useReader(bookId: string) {
   }
 
   async function addBookmark(scrollTop: number, note?: string) {
-    await readerApi.addBookmark(bookId, currentChapterIndex.value, scrollTop, note)
+    await readerApi.addBookmark(bookId, currentChapterIndex.value, Math.floor(scrollTop), note)
     await loadBookmarks()
     ElMessage.success('书签已添加')
   }
