@@ -8,6 +8,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, paginatedResponse, errorResponse } from '../utils/response';
 import { Book } from '../types';
 import { aiManager } from '../ai/ai-manager';
+import { fetchAndSaveCover } from '../utils/cover';
 
 const router = Router();
 
@@ -161,6 +162,38 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
   successResponse(res, null, '已从书库移除');
 });
 
+function cleanBookTitle(raw: string): string {
+  return raw
+    .replace(/[《\u300a][^》\u300b]{0,40}[》\u300b]/g, (m) => m.slice(1, -1))  // 《xxx》 → xxx
+    .replace(/作者[：:][^\s，,。]{0,30}/g, '')                                  // 作者：xxx
+    .replace(/[(\uff08][^)\uff09]{0,30}[)\uff09]/g, '')                          // (xxx) （xxx）
+    .replace(/[[\u3010][^\]\u3011]{0,30}[\]\u3011]/g, '')                        // [xxx] 【xxx】
+    .replace(/[-_\s]*(完本|精校版?|全本|完整版|最新版|修订版|番外|特别版|典藏版)[-_\s]*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || raw;
+}
+
+// POST /api/library/:id/cover-test — 直接测试封面抓取，不走 AI 流程
+router.post('/:id/cover-test', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  const searchTitle = cleanBookTitle(book.title);
+  console.log('[cover-test] bookId:', req.params.id, 'raw:', book.title, '→ search:', searchTitle);
+  try {
+    const coverUrl = await fetchAndSaveCover(searchTitle, req.params.id);
+    console.log('[cover-test] 结果:', coverUrl);
+    if (coverUrl) {
+      db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
+    }
+    successResponse(res, { coverUrl, bookTitle: book.title, searchTitle });
+  } catch (e) {
+    console.error('[cover-test] 异常:', e);
+    errorResponse(res, 500, 'INTERNAL_ERROR', String(e));
+  }
+});
+
 // POST /api/library/:id/ai-fill
 router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
@@ -172,11 +205,7 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
 
   try {
     // Clean book title: remove edition/version markers like (精校版)(完本)[全本] etc.
-    const cleanedTitle = book.title
-      .replace(/[(\uff08][^)\uff09]{0,20}[)\uff09]/g, '')  // remove (xxx) （xxx）
-      .replace(/[[\u3010][^\]\u3011]{0,20}[\]\u3011]/g, '')  // remove [xxx] 【xxx】
-      .replace(/[-_\s]*(完本|精校版?|全本|完整版|最新版|修订版|番外|特别版|典藏版)$/i, '')
-      .trim() || book.title;
+    const cleanedTitle = cleanBookTitle(book.title);
 
     // Read first 600 chars as a content hint
     let contentHint = '';
@@ -224,6 +253,16 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
     const isFinished = (info.is_finished !== undefined) ? (info.is_finished ? 1 : 0)
       : isFinishedByFilename ? 1 : null;
     if (isFinished !== null) { updates.push('is_finished = ?'); values.push(isFinished); }
+
+    // 若书籍尚无封面，从豆瓣下载封面到本地
+    if (!book.cover_url) {
+      const coverTitle = (info.title as string | undefined) || cleanedTitle;
+      const coverUrl = await fetchAndSaveCover(coverTitle, req.params.id).catch((e) => {
+        console.error('[ai-fill] 封面获取失败:', e);
+        return undefined;
+      });
+      if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+    }
 
     if (updates.length > 0) {
       values.push(req.params.id);

@@ -40,4 +40,7 @@ export const libraryApi = {
 
   aiFill: (id: string) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),
+
+  coverTest: (id: string) =>
+    http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
 }

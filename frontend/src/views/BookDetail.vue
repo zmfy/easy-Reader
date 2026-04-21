@@ -55,6 +55,13 @@
                     <el-icon><MagicStick /></el-icon>
                     AI 填充
                   </el-button>
+                  <el-button
+                    size="small"
+                    :loading="coverTesting"
+                    @click="handleCoverTest"
+                  >
+                    抓封面
+                  </el-button>
                 </template>
               </div>
             </div>
@@ -121,6 +128,7 @@ const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
+const coverTesting = ref(false)
 const addingShelf = ref(false)
 
 const editForm = reactive({
@@ -181,6 +189,25 @@ async function handleAiFill() {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
     aiFilling.value = false
+  }
+}
+
+async function handleCoverTest() {
+  if (!book.value) return
+  coverTesting.value = true
+  try {
+    const resp = await libraryApi.coverTest(book.value.id)
+    const { coverUrl } = resp.data.data!
+    if (coverUrl) {
+      book.value = { ...book.value, cover_url: coverUrl }
+      ElMessage.success(`封面已抓取: ${coverUrl}`)
+    } else {
+      ElMessage.warning('未找到封面，请查看后端日志')
+    }
+  } catch (err: unknown) {
+    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '抓取失败')
+  } finally {
+    coverTesting.value = false
   }
 }
 

@@ -14,9 +14,15 @@ import settingsRoutes from './routes/settings';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 
 // Initialize DB
 getDb();
+
+// Serve downloaded book covers
+const coversDir = path.join(DATA_DIR, 'covers');
+if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
+app.use('/covers', express.static(coversDir));
 
 // Security middleware
 app.use(helmet({ contentSecurityPolicy: false }));
