@@ -34,7 +34,10 @@
             <div class="info-header">
               <div v-if="!editing">
                 <h1 class="book-title">{{ book.title }}</h1>
-                <p class="book-author">{{ book.author || '未知作者' }}</p>
+                <p class="book-author">
+                  <a v-if="book.author" class="author-link" @click="router.push({ path: '/library', query: { search: book.author } })">{{ book.author }}</a>
+                  <span v-else>未知作者</span>
+                </p>
               </div>
               <div v-else class="edit-fields">
                 <el-input v-model="editForm.title" placeholder="书名" />
@@ -426,6 +429,19 @@ onMounted(fetchBook)
 .book-author {
   font-size: 16px;
   color: var(--text-2);
+}
+
+.author-link {
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.author-link:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .edit-fields {
