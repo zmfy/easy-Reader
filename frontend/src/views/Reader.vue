@@ -186,8 +186,9 @@
       title="章节目录"
       direction="ltr"
       size="280px"
+      @open="scrollChapterListToActive"
     >
-      <div class="chapter-list">
+      <div class="chapter-list" ref="chapterListRef">
         <div
           v-for="ch in reader.chapters.value"
           :key="ch.index"
@@ -249,6 +250,7 @@ const bookId = route.params.bookId as string
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
 const contentRef = ref<HTMLElement | null>(null)
+const chapterListRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
 const chapterListVisible = ref(false)
@@ -443,6 +445,13 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
   // 再补一帧兜底（字体 fallback 可能还有一次 reflow）
   requestAnimationFrame(() => {
     el.scrollTop = scrollTop
+  })
+}
+
+function scrollChapterListToActive() {
+  nextTick(() => {
+    const active = chapterListRef.value?.querySelector<HTMLElement>('.chapter-item.active')
+    active?.scrollIntoView({ block: 'center', behavior: 'instant' })
   })
 }
 
