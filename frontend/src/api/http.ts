@@ -25,8 +25,18 @@ async function doRefresh(): Promise<string> {
   const resp = await axios.post('/api/auth/refresh', { refreshToken })
   const data = resp.data?.data
   if (!data?.accessToken) throw new Error('refresh failed')
-  sessionStorage.setItem('accessToken', data.accessToken)
+
+  // 存到 localStorage（与请求拦截器保持一致）
+  localStorage.setItem('accessToken', data.accessToken)
   localStorage.setItem('refreshToken', data.refreshToken)
+
+  // 同步更新 Pinia store（避免 store 与 localStorage 状态不一致）
+  try {
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    authStore.storeTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken })
+  } catch { /* store 未初始化时忽略 */ }
+
   return data.accessToken
 }
 

@@ -93,37 +93,31 @@
             <el-button type="primary" :loading="saving" @click="saveSettings('system')">保存系统设置</el-button>
           </div>
 
-          <!-- SMTP Settings -->
-          <div v-if="activeTab === 'smtp'" class="setting-section">
-            <h2 class="section-title">邮件设置</h2>
-            <div class="form-grid">
-              <div class="form-field">
-                <label>SMTP 服务器地址</label>
-                <el-input v-model="smtpForm.smtp_host" placeholder="smtp.example.com" />
+          <!-- SMTP Settings (暂时隐藏) -->
+          <!-- <div v-if="activeTab === 'smtp'" class="setting-section"> ... </div> -->
+
+          <!-- Feedback -->
+          <div v-if="activeTab === 'feedback'" class="setting-section">
+            <h2 class="section-title">意见反馈</h2>
+            <p class="section-desc">您的意见将通过邮件发送给开发者，帮助我们改进产品。</p>
+            <div class="form-grid" style="max-width:600px">
+              <div class="form-field" style="grid-column:1/-1">
+                <label>标题</label>
+                <el-input v-model="feedbackForm.subject" placeholder="请简要描述您的问题或建议" />
               </div>
-              <div class="form-field">
-                <label>端口</label>
-                <el-input v-model="smtpForm.smtp_port" placeholder="587" />
-              </div>
-              <div class="form-field">
-                <label>用户名</label>
-                <el-input v-model="smtpForm.smtp_user" placeholder="user@example.com" />
-              </div>
-              <div class="form-field">
-                <label>密码</label>
+              <div class="form-field" style="grid-column:1/-1">
+                <label>内容</label>
                 <el-input
-                  v-model="smtpForm.smtp_pass"
-                  type="password"
-                  show-password
-                  :placeholder="smtpPassSet ? '已设置（输入新密码以修改）' : '请输入密码'"
+                  v-model="feedbackForm.body"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="请详细描述您的意见或建议..."
                 />
               </div>
-              <div class="form-field">
-                <label>发件人地址</label>
-                <el-input v-model="smtpForm.smtp_from" placeholder="noreply@example.com" />
-              </div>
             </div>
-            <el-button type="primary" :loading="saving" @click="saveSettings('smtp')">保存邮件设置</el-button>
+            <el-button type="primary" :disabled="!feedbackForm.subject || !feedbackForm.body" @click="sendFeedback">
+              发送意见
+            </el-button>
           </div>
 
           <!-- AI Settings -->
@@ -513,11 +507,22 @@ const smtpForm = reactive({
 
 const tabs = [
   { key: 'system', label: '系统', icon: Setting },
-  { key: 'smtp', label: '邮件', icon: Message },
+  // { key: 'smtp', label: '邮件', icon: Message },  // 暂时隐藏邮件设置
   { key: 'ai', label: 'AI 设置', icon: MagicStick },
   { key: 'users', label: '用户管理', icon: User },
   { key: 'plugins', label: '插件', icon: Cpu },
+  { key: 'feedback', label: '意见反馈', icon: Message },
 ]
+
+// ── Feedback ─────────────────────────────────────────────────
+const feedbackForm = reactive({ subject: '', body: '' })
+
+function sendFeedback() {
+  const to = 'dls_7788@hotmail.com'
+  const subject = encodeURIComponent(feedbackForm.subject)
+  const body = encodeURIComponent(feedbackForm.body)
+  window.open(`mailto:${to}?subject=${subject}&body=${body}`)
+}
 
 const fieldLabels: Record<string, string> = {
   apiKey: 'API Key',
@@ -823,6 +828,13 @@ onMounted(async () => {
   font-size: 18px;
   font-weight: 600;
   color: var(--text-0);
+  margin-bottom: 20px;
+}
+
+.section-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: -12px;
   margin-bottom: 20px;
 }
 
