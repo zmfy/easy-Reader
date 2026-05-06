@@ -190,15 +190,15 @@ onMounted(fetchBooks)
 
 .books-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px;
   animation: fadeIn 0.3s ease;
 }
 
 .loading-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px;
 }
 
 .skeleton-card {
