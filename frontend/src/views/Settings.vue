@@ -96,28 +96,60 @@
           <!-- SMTP Settings (暂时隐藏) -->
           <!-- <div v-if="activeTab === 'smtp'" class="setting-section"> ... </div> -->
 
-          <!-- Feedback -->
+          <!-- Changelog / Feedback -->
           <div v-if="activeTab === 'feedback'" class="setting-section">
-            <h2 class="section-title">意见反馈</h2>
-            <p class="section-desc">您的意见将通过邮件发送给开发者，帮助我们改进产品。</p>
-            <div class="form-grid" style="max-width:600px">
-              <div class="form-field" style="grid-column:1/-1">
-                <label>标题</label>
-                <el-input v-model="feedbackForm.subject" placeholder="请简要描述您的问题或建议" />
+            <h2 class="section-title">更新说明</h2>
+            <p class="section-desc">以下为最近的版本更新内容。</p>
+            <div class="changelog-list">
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-ui">界面</span>
+                  <span class="changelog-text">优化书库封面图片加载与样式展示</span>
+                </div>
+                <span class="changelog-date">2026-05-06</span>
               </div>
-              <div class="form-field" style="grid-column:1/-1">
-                <label>内容</label>
-                <el-input
-                  v-model="feedbackForm.body"
-                  type="textarea"
-                  :rows="8"
-                  placeholder="请详细描述您的意见或建议..."
-                />
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-lib">书库</span>
+                  <span class="changelog-text">扫描导入时自动清理已删除文件的数据库记录</span>
+                </div>
+                <span class="changelog-date">2026-05-06</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-auth">认证</span>
+                  <span class="changelog-text">重构登录 Token 处理，优化反馈功能</span>
+                </div>
+                <span class="changelog-date">2026-04-24</span>
               </div>
             </div>
-            <el-button type="primary" :disabled="!feedbackForm.subject || !feedbackForm.body" @click="sendFeedback">
-              发送意见
-            </el-button>
+
+            <h3 class="roadmap-title">开发计划</h3>
+            <div class="changelog-list">
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">封面抓取改为用户可选，手动触发</span>
+                </div>
+              </div>
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">书库扫描时对重复书籍进行检测与处理</span>
+                </div>
+              </div>
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">修复瀑布流模式下书签定位不准确的问题</span>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 24px;">
+              <el-button type="primary" @click="openFeedback">
+                意见反馈
+              </el-button>
+            </div>
           </div>
 
           <!-- AI Settings -->
@@ -511,17 +543,12 @@ const tabs = [
   { key: 'ai', label: 'AI 设置', icon: MagicStick },
   { key: 'users', label: '用户管理', icon: User },
   { key: 'plugins', label: '插件', icon: Cpu },
-  { key: 'feedback', label: '意见反馈', icon: Message },
+  { key: 'feedback', label: '更新说明', icon: Message },
 ]
 
-// ── Feedback ─────────────────────────────────────────────────
-const feedbackForm = reactive({ subject: '', body: '' })
 
-function sendFeedback() {
-  const to = 'dls_7788@hotmail.com'
-  const subject = encodeURIComponent(feedbackForm.subject)
-  const body = encodeURIComponent(feedbackForm.body)
-  window.open(`mailto:${to}?subject=${subject}&body=${body}`)
+function openFeedback() {
+  window.open('https://easyreader.ucool.uk/bbs', '_blank')
 }
 
 const fieldLabels: Record<string, string> = {
@@ -1260,5 +1287,75 @@ onMounted(async () => {
   font-weight: 700;
   width: 14px;
   flex-shrink: 0;
+}
+
+/* ── Changelog ── */
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 600px;
+}
+
+.changelog-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+.changelog-item--plan {
+  opacity: 0.75;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+}
+
+.changelog-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+}
+
+.changelog-date {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.changelog-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tag-ui     { background: #3b1f6b; color: #c4b5fd; }
+.tag-lib    { background: #1a3a2a; color: #6ee7b7; }
+.tag-auth   { background: #1e2e50; color: #93c5fd; }
+.tag-reader { background: #2d2010; color: #fcd34d; }
+.tag-ai     { background: #2d1020; color: #f9a8d4; }
+.tag-infra  { background: #1f2937; color: #9ca3af; }
+.tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }
+
+.changelog-text {
+  line-height: 1.6;
+}
+
+.roadmap-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 20px 0 10px;
+  max-width: 600px;
 }
 </style>
