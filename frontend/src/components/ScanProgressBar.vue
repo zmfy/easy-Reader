@@ -24,8 +24,10 @@
 import { computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useScanTaskStore } from '@/stores/scan-task'
+import { useAuthStore } from '@/stores/auth'
 
 const store = useScanTaskStore()
+const authStore = useAuthStore()
 
 const show = computed(() => {
   const t = store.activeTask
@@ -55,6 +57,7 @@ async function onCancel(): Promise<void> {
 }
 
 onMounted(() => {
+  if (!authStore.isLoggedIn) return
   // On mount, check if there's an active task (e.g., user reloaded page mid-scan)
   void store.refresh().then(() => {
     if (store.isRunning) store.startPolling()
