@@ -54,7 +54,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 });
 
 const scanOptionsSchema = z.object({
-  mode: z.enum(['auto', 'review', 'hybrid']).default('auto'),
+  mode: z.enum(['auto', 'review', 'hybrid']).default('review'),
   ai_dedup: z.boolean().default(false),
   ai_series: z.boolean().default(false),
   ai_fill: z.boolean().default(false),

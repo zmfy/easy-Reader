@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db';
 import { detectAndFixEncoding } from '../utils/encoding';
 import { computeFingerprint } from '../utils/fingerprint';
@@ -9,15 +8,23 @@ import {
   finishScanTask,
   isCancelled,
 } from './scan-task';
-import { ScanOptions } from '../types';
+import {
+  ScanOptions,
+  NewBookPayload,
+  EncodingFixedPayload,
+  GarbledPayload,
+  DuplicateGroupPayload,
+  SeriesGroupPayload,
+} from '../types';
+import { buildCandidateGroups, ScannedBook } from './dedup-grouper';
+import { extractSeriesCandidates } from './series-regex';
+import { judgeSoftDuplicateGroups } from './ai-dedup';
+import { judgeFuzzySeriesGroups } from './ai-series';
+import { buildBatchFromScan, ScanResult } from './batch-builder';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
-/**
- * Run the scan in the background. Should be invoked via setImmediate from the route.
- * Caller has already created a 'running' scan_task; we update its progress and finish it.
- */
 export async function runScanTask(taskId: string, options: ScanOptions): Promise<void> {
   try {
     if (!fs.existsSync(BOOKS_DIR)) {
@@ -25,9 +32,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       return;
     }
 
-    // Phase 1: walk to count files
     setScanProgress(taskId, { stage: 'walking' });
-    const allFiles: string[] = collectFiles(BOOKS_DIR);
+    const allFiles = collectFiles(BOOKS_DIR);
     setScanProgress(taskId, { total_files: allFiles.length, processed_files: 0 });
 
     // Cleanup orphans: delete DB rows whose file_path is no longer on disk.
@@ -51,29 +57,153 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       if (removed > 0) console.log(`[scan ${taskId}] cleaned ${removed} orphan record(s)`);
     }
 
-    // Phase 2: per-file processing
+    // Phase 1: per-file processing (encoding + fingerprint)
     setScanProgress(taskId, { stage: 'fingerprinting' });
+    const scanned: ScannedBookEx[] = [];
+    const garbled: GarbledPayload[] = [];
+    const encodingFixed: EncodingFixedPayload[] = [];
     let processed = 0;
+
     for (const fullPath of allFiles) {
-      if (isCancelled(taskId)) {
-        // honor cancellation; finishScanTask was already called by cancelScanTask
-        return;
-      }
-      await processOneFile(fullPath, options);
+      if (isCancelled(taskId)) return;
+      const result = await processFile(fullPath, options);
+      if (result.scanned) scanned.push(result.scanned);
+      if (result.garbled) garbled.push(result.garbled);
+      if (result.encoding_fixed) encodingFixed.push(result.encoding_fixed);
       processed++;
-      // Update progress every 5 files to reduce DB writes
       if (processed % 5 === 0 || processed === allFiles.length) {
         setScanProgress(taskId, { processed_files: processed });
       }
     }
 
-    setScanProgress(taskId, { stage: 'staging', processed_files: allFiles.length });
+    if (isCancelled(taskId)) {
+      // Still try to stage partial results if we have any
+      const partial: ScanResult = {
+        new_books: scanned.map(toNewPayload),
+        hard_duplicate_groups: [],
+        ai_duplicate_groups: [],
+        series_groups: [],
+        garbled,
+        encoding_fixed: encodingFixed,
+      };
+      buildBatchFromScan(taskId, partial);
+      return;
+    }
+
+    // Phase 2: dedup grouping
+    setScanProgress(taskId, { stage: 'staging' });
+    const { hard_groups, soft_groups } = buildCandidateGroups(scanned);
+
+    // Phase 3: AI dedup judge (only soft groups, only if enabled)
+    let aiDupGroups: DuplicateGroupPayload[] = [];
+    if (options.ai_dedup && soft_groups.length > 0) {
+      aiDupGroups = await judgeSoftDuplicateGroups(soft_groups);
+    }
+
+    // Hard groups always become duplicate_groups
+    const hardDupPayloads: DuplicateGroupPayload[] = hard_groups.map(group => ({
+      canonical_file_path: pickCanonical(group).file_path,
+      members: group.map(b => ({
+        file_path: b.file_path,
+        fingerprint: b.fingerprint ?? '',
+        decision_type: 'hard' as const,
+      })),
+    }));
+
+    // Phase 4: series — regex first
+    const regexSeriesCandidates = extractSeriesCandidates(scanned);
+    const regexSeriesPayloads: SeriesGroupPayload[] = regexSeriesCandidates.map(s => ({
+      series_name: s.series_name,
+      author: s.author,
+      members: s.members.map(m => ({ file_path: m.file_path, sequence: m.sequence })),
+      source: 'regex' as const,
+    }));
+
+    // Phase 5: AI series — fuzzy candidates not already in regex
+    const regexPaths = new Set(regexSeriesCandidates.flatMap(s => s.members.map(m => m.file_path)));
+    let aiSeriesPayloads: SeriesGroupPayload[] = [];
+    if (options.ai_series) {
+      aiSeriesPayloads = await judgeFuzzySeriesGroups(scanned, regexPaths);
+    }
+
+    // Phase 6: assemble result
+    const result: ScanResult = {
+      new_books: scanned.map(toNewPayload),
+      hard_duplicate_groups: hardDupPayloads,
+      ai_duplicate_groups: aiDupGroups,
+      series_groups: [...regexSeriesPayloads, ...aiSeriesPayloads],
+      garbled,
+      encoding_fixed: encodingFixed,
+    };
+
+    // Phase 7: dispatch by mode
+    if (options.mode === 'auto') {
+      const batch = buildBatchFromScan(taskId, result);
+      const { applyBatch } = await import('./batch-applier');
+      applyBatch(batch.id, 'system-auto');
+    } else if (options.mode === 'hybrid') {
+      const auto: ScanResult = {
+        new_books: result.new_books,
+        hard_duplicate_groups: result.hard_duplicate_groups,
+        ai_duplicate_groups: [],
+        series_groups: [],
+        garbled: result.garbled,
+        encoding_fixed: result.encoding_fixed,
+      };
+      const review: ScanResult = {
+        new_books: [],
+        hard_duplicate_groups: [],
+        ai_duplicate_groups: result.ai_duplicate_groups,
+        series_groups: result.series_groups,
+        garbled: [],
+        encoding_fixed: [],
+      };
+      const autoBatch = buildBatchFromScan(taskId, auto);
+      const { applyBatch } = await import('./batch-applier');
+      applyBatch(autoBatch.id, 'system-hybrid-auto');
+      if (review.ai_duplicate_groups.length > 0 || review.series_groups.length > 0) {
+        buildBatchFromScan(taskId, review);
+      }
+    } else {
+      // mode === 'review'
+      buildBatchFromScan(taskId, result);
+    }
+
     finishScanTask(taskId, 'completed');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     finishScanTask(taskId, 'failed', msg);
     console.error('Scan task failed:', err);
   }
+}
+
+interface ScannedBookEx extends ScannedBook {
+  file_format: string;
+  file_size: number;
+  encoding_detected: string;
+  status: 'normal' | 'encoding_fixed';
+}
+
+function toNewPayload(b: ScannedBookEx): NewBookPayload {
+  return {
+    file_path: b.file_path,
+    title: b.title,
+    file_format: b.file_format,
+    file_size: b.file_size,
+    chapter_count: b.chapter_count,
+    fingerprint: b.fingerprint,
+    encoding_detected: b.encoding_detected,
+    status: b.status,
+  };
+}
+
+function pickCanonical(group: ScannedBook[]): ScannedBook {
+  return [...group].sort((a, b) => {
+    const cca = a.chapter_count ?? 0;
+    const ccb = b.chapter_count ?? 0;
+    if (ccb !== cca) return ccb - cca;
+    return a.file_path.length - b.file_path.length;
+  })[0];
 }
 
 function collectFiles(root: string): string[] {
@@ -99,17 +229,25 @@ function collectFiles(root: string): string[] {
   return out;
 }
 
-async function processOneFile(fullPath: string, options: ScanOptions): Promise<void> {
+async function processFile(
+  fullPath: string,
+  options: ScanOptions,
+): Promise<{
+  scanned?: ScannedBookEx;
+  garbled?: GarbledPayload;
+  encoding_fixed?: EncodingFixedPayload;
+}> {
   const db = getDb();
   const ext = path.extname(fullPath).slice(1).toLowerCase();
   const existing = db.prepare('SELECT * FROM books WHERE file_path = ?').get(fullPath) as
     | { id: string; fingerprint?: string; status?: string }
     | undefined;
 
-  // Skip if already present AND has fingerprint AND not full_rescan
-  if (existing && existing.fingerprint && !options.full_rescan) return;
+  // Skip if already present with fingerprint AND not full_rescan
+  if (existing && existing.fingerprint && !options.full_rescan) {
+    return {};
+  }
 
-  // Encoding (only for txt; epub/pdf assumed binary)
   let status: 'normal' | 'encoding_fixed' | 'garbled' = 'normal';
   let encoding = 'utf-8';
   if (ext === 'txt') {
@@ -117,63 +255,61 @@ async function processOneFile(fullPath: string, options: ScanOptions): Promise<v
       const enc = await detectAndFixEncoding(fullPath);
       status = enc.status;
       encoding = enc.encoding;
-    } catch (err) {
-      // If encoding check fails, mark garbled
+    } catch {
       status = 'garbled';
       encoding = 'unknown';
     }
   }
 
-  // Fingerprint
+  if (status === 'garbled') {
+    return { garbled: { file_path: fullPath, reason: 'failed encoding detection' } };
+  }
+
   let fp: Awaited<ReturnType<typeof computeFingerprint>> | null = null;
-  if (status !== 'garbled') {
-    try {
-      fp = await computeFingerprint(fullPath, ext);
-    } catch {
-      status = 'garbled';
-    }
+  try {
+    fp = await computeFingerprint(fullPath, ext);
+  } catch {
+    return { garbled: { file_path: fullPath, reason: 'failed fingerprint' } };
   }
 
   const stat = fs.statSync(fullPath);
   const title = path.basename(fullPath, path.extname(fullPath));
 
-  if (existing) {
-    // Update existing row with new fingerprint / encoding / status
-    db.prepare(
-      `UPDATE books SET
-         status = ?,
-         encoding_detected = ?,
-         fingerprint = ?,
-         first_chapter_hash = ?,
-         chapter_count = ?,
-         file_size = ?
-       WHERE id = ?`
-    ).run(
-      status,
-      encoding,
-      fp?.fingerprint ?? null,
-      fp?.first_chapter_hash ?? null,
-      fp?.chapter_count ?? null,
-      stat.size,
-      existing.id,
-    );
-  } else {
-    db.prepare(
-      `INSERT INTO books (
-         id, title, file_path, file_format, file_size,
-         status, encoding_detected, fingerprint, first_chapter_hash, chapter_count
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      uuidv4(),
-      title,
-      fullPath,
-      ext,
-      stat.size,
-      status,
-      encoding,
-      fp?.fingerprint ?? null,
-      fp?.first_chapter_hash ?? null,
-      fp?.chapter_count ?? null,
-    );
+  // Read first chapter preview for AI dedup
+  let firstChapterPreview = '';
+  if (ext === 'txt') {
+    try {
+      const { TxtParser } = await import('../plugins/parser-txt');
+      const p = new TxtParser();
+      await p.load(fullPath);
+      const chapters = await p.getChapters();
+      if (chapters.length > 0) {
+        const html = await p.getChapterContent(0);
+        firstChapterPreview = html.replace(/<[^>]+>/g, '').slice(0, 300);
+      }
+    } catch {
+      // ok, leave empty
+    }
   }
+
+  const wasEncodingFixed = status === 'encoding_fixed';
+  const result: ScannedBookEx = {
+    file_path: fullPath,
+    title,
+    fingerprint: fp.fingerprint,
+    chapter_count: fp.chapter_count,
+    first_chapter_preview: firstChapterPreview,
+    file_format: ext,
+    file_size: stat.size,
+    encoding_detected: encoding,
+    status: wasEncodingFixed ? 'encoding_fixed' : 'normal',
+  };
+
+  if (wasEncodingFixed) {
+    return {
+      scanned: result,
+      encoding_fixed: { file_path: fullPath, from_encoding: encoding, to_encoding: 'utf-8' },
+    };
+  }
+  return { scanned: result };
 }
