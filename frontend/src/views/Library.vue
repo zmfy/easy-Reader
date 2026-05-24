@@ -1,6 +1,18 @@
 <template>
   <DefaultLayout>
     <div class="library-page">
+      <el-alert
+        v-if="pendingBatch && authStore.isAdmin"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="batch-alert"
+      >
+        存在未处理的扫描批次
+        <el-button link type="primary" @click="$router.push(`/library/scan-batches/${pendingBatch.id}`)">
+          立即审核
+        </el-button>
+      </el-alert>
       <div class="page-header">
         <div class="header-left">
           <h1 class="page-title">书库</h1>
@@ -62,6 +74,8 @@
           @current-change="fetchBooks"
         />
       </div>
+
+      <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
     </div>
   </DefaultLayout>
 </template>
@@ -70,18 +84,32 @@
 import { ref, onMounted, reactive, watch } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
+import ScanOptionsDialog from '@/components/ScanOptionsDialog.vue'
 import { libraryApi } from '@/api/library'
+import { scanBatchesApi } from '@/api/scan-batches'
 import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
-import type { Book } from '@/types'
+import type { Book, ScanStartOptions, ScanBatch } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const scanStore = useScanTaskStore()
+
+const showScanDialog = ref(false)
+const pendingBatch = ref<ScanBatch | null>(null)
+
+async function refreshPendingBatch(): Promise<void> {
+  try {
+    const resp = await scanBatchesApi.list('pending')
+    pendingBatch.value = resp.data.data![0] ?? null
+  } catch {
+    pendingBatch.value = null
+  }
+}
 
 const books = ref<Book[]>([])
 const loading = ref(false)
@@ -138,27 +166,47 @@ async function handleScan(): Promise<void> {
     ElMessage.warning('已有扫描任务在运行')
     return
   }
+  await refreshPendingBatch()
+  if (pendingBatch.value) {
+    ElMessageBox.alert(`存在未处理的待审核批次（${pendingBatch.value.id.slice(0,8)}），请先处理后再扫描。`, '提示', {
+      confirmButtonText: '去处理',
+      callback: () => router.push(`/library/scan-batches/${pendingBatch.value!.id}`),
+    })
+    return
+  }
+  showScanDialog.value = true
+}
+
+async function onScanConfirm(options: ScanStartOptions): Promise<void> {
   try {
-    await scanStore.startScan({ full_rescan: false })
+    await scanStore.startScan(options)
     ElMessage.success('扫描任务已启动')
-  } catch (err: any) {
-    if (err.response?.status === 409) {
-      ElMessage.warning('已有扫描任务在运行')
-      void scanStore.refresh()
+  } catch (err: unknown) {
+    const e = err as { response?: { status?: number; data?: { code?: string } } }
+    if (e.response?.status === 409) {
+      if (e.response.data?.code === 'PENDING_BATCH') {
+        ElMessage.warning('请先处理待审核批次')
+        await refreshPendingBatch()
+      } else {
+        ElMessage.warning('已有扫描任务在运行')
+        void scanStore.refresh()
+      }
     } else {
       ElMessage.error('扫描失败')
     }
   }
 }
 
-// 任务完成后刷新书库
+// 任务完成后刷新书库与 pending batch
 watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
   if (oldStatus === 'running' && newStatus !== 'running') {
     void fetchBooks()
+    void refreshPendingBatch()
   }
 })
 
 onMounted(fetchBooks)
+onMounted(refreshPendingBatch)
 </script>
 
 <style scoped>
@@ -240,5 +288,9 @@ onMounted(fetchBooks)
   display: flex;
   justify-content: center;
   margin-top: 32px;
+}
+
+.batch-alert {
+  margin-bottom: 20px;
 }
 </style>

@@ -1,12 +1,8 @@
 import http from './http'
-import type { ApiResponse, ScanTask } from '@/types'
-
-export interface ScanStartPayload {
-  full_rescan?: boolean
-}
+import type { ApiResponse, ScanTask, ScanStartOptions } from '@/types'
 
 export const scanTaskApi = {
-  start: (payload: ScanStartPayload = {}) =>
+  start: (payload: ScanStartOptions) =>
     http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan', payload),
 
   getActive: () =>

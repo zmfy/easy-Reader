@@ -45,7 +45,7 @@ export const useScanTaskStore = defineStore('scanTask', () => {
     }
   }
 
-  async function startScan(payload: { full_rescan?: boolean } = {}): Promise<void> {
+  async function startScan(payload: import('@/types').ScanStartOptions): Promise<void> {
     await scanTaskApi.start(payload)
     await refresh()
     startPolling()
