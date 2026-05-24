@@ -34,7 +34,10 @@
             <div class="info-header">
               <div v-if="!editing">
                 <h1 class="book-title">{{ book.title }}</h1>
-                <p class="book-author">{{ book.author || '未知作者' }}</p>
+                <p class="book-author">
+                  <a v-if="book.author" class="author-link" @click="router.push({ path: '/library', query: { search: book.author } })">{{ book.author }}</a>
+                  <span v-else>未知作者</span>
+                </p>
               </div>
               <div v-else class="edit-fields">
                 <el-input v-model="editForm.title" placeholder="书名" />
@@ -54,6 +57,13 @@
                   >
                     <el-icon><MagicStick /></el-icon>
                     AI 填充
+                  </el-button>
+                  <el-button
+                    size="small"
+                    :loading="coverTesting"
+                    @click="handleCoverTest"
+                  >
+                    抓封面
                   </el-button>
                 </template>
               </div>
@@ -121,6 +131,7 @@ const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
+const coverTesting = ref(false)
 const addingShelf = ref(false)
 
 const editForm = reactive({
@@ -184,6 +195,25 @@ async function handleAiFill() {
   }
 }
 
+async function handleCoverTest() {
+  if (!book.value) return
+  coverTesting.value = true
+  try {
+    const resp = await libraryApi.coverTest(book.value.id)
+    const { coverUrl } = resp.data.data!
+    if (coverUrl) {
+      book.value = { ...book.value, cover_url: coverUrl }
+      ElMessage.success(`封面已抓取: ${coverUrl}`)
+    } else {
+      ElMessage.warning('未找到封面，请查看后端日志')
+    }
+  } catch (err: unknown) {
+    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '抓取失败')
+  } finally {
+    coverTesting.value = false
+  }
+}
+
 async function handleAddToShelf() {
   if (!book.value) return
   addingShelf.value = true
@@ -225,6 +255,106 @@ onMounted(fetchBook)
 @media (max-width: 768px) {
   .detail-main {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .book-detail-page {
+    padding: 16px;
+  }
+
+  .detail-header {
+    margin-bottom: 12px;
+  }
+
+  .detail-main {
+    gap: 0;
+  }
+
+  /* Cover + action buttons side by side */
+  .cover-section {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 16px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  .book-cover-large {
+    width: 110px;
+    border-radius: var(--radius-md);
+  }
+
+  .cover-placeholder-large {
+    gap: 8px;
+    padding: 10px 6px;
+  }
+
+  .format-label {
+    font-size: 11px;
+  }
+
+  .title-label {
+    font-size: 11px;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .cover-actions {
+    margin-top: 0;
+    align-self: end;
+    gap: 8px;
+  }
+
+  .cover-actions :deep(.el-button) {
+    font-size: 14px;
+    height: 40px;
+  }
+
+  /* Info: title stacks above edit buttons */
+  .info-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .book-title {
+    font-size: 20px;
+    line-height: 1.4;
+    word-break: break-all;
+  }
+
+  .book-author {
+    font-size: 14px;
+    margin-top: -4px;
+  }
+
+  .edit-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .info-tags {
+    margin-bottom: 14px;
+  }
+
+  .info-meta {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .summary-section {
+    padding: 16px;
+  }
+
+  .summary-text {
+    font-size: 14px;
+    line-height: 1.9;
   }
 }
 
@@ -299,6 +429,19 @@ onMounted(fetchBook)
 .book-author {
   font-size: 16px;
   color: var(--text-2);
+}
+
+.author-link {
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.author-link:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .edit-fields {

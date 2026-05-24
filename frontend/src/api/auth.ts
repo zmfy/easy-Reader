@@ -30,4 +30,7 @@ export const authApi = {
 
   me: () =>
     http.get<ApiResponse<User>>('/auth/me'),
+
+  refresh: (refreshToken: string) =>
+    http.post<ApiResponse<{ accessToken: string; refreshToken: string }>>('/auth/refresh', { refreshToken }),
 }

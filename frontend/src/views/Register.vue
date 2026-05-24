@@ -10,7 +10,7 @@
       <div class="login-card" :class="{ shake: hasError }">
         <div class="card-header">
           <div class="brand-icon">📖</div>
-          <h1 class="brand-title">夜航书房</h1>
+          <h1 class="brand-title">{{ siteName }}</h1>
           <p class="brand-subtitle">注册新账号</p>
         </div>
 
@@ -76,10 +76,12 @@ import { User, Lock, Key, Warning } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
+import { settingsApi } from '@/api/settings'
 
 const router = useRouter()
 const route = useRoute()
 
+const siteName = ref('简单书房')
 const loading = ref(false)
 const errorMsg = ref('')
 const hasError = ref(false)
@@ -90,9 +92,13 @@ const form = reactive({
   inviteCode: '',
 })
 
-onMounted(() => {
+onMounted(async () => {
   const code = route.query.code as string
   if (code) form.inviteCode = code
+  try {
+    const resp = await settingsApi.getPublic()
+    if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
+  } catch { /* keep default */ }
 })
 
 async function handleSubmit() {
@@ -185,6 +191,9 @@ function triggerError(msg: string) {
 .login-container {
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  padding: 0 20px;
   animation: slideUp 0.4s ease forwards;
 }
 
@@ -194,14 +203,47 @@ function triggerError(msg: string) {
 }
 
 .login-card {
-  width: 400px;
-  background: rgba(18, 26, 43, 0.85);
+  width: 100%;
+  background: var(--card-bg);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(124, 92, 255, 0.2);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
   padding: 40px;
-  box-shadow: var(--shadow-soft), 0 0 60px rgba(124, 92, 255, 0.05);
+  box-shadow: var(--shadow-soft);
   transition: transform 0.1s ease;
+}
+
+@media (max-width: 480px) {
+  .register-page {
+    align-items: center;
+    padding: 32px 0;
+    min-height: 100dvh;
+  }
+  .login-container {
+    padding: 0 16px;
+  }
+  .login-card {
+    padding: 28px 20px;
+    border-radius: 16px;
+  }
+  .brand-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+  .brand-title {
+    font-size: 22px;
+    letter-spacing: 2px;
+  }
+  .card-header {
+    margin-bottom: 20px;
+  }
+  .login-form {
+    gap: 12px;
+  }
+  .submit-btn {
+    height: 44px !important;
+    font-size: 15px !important;
+  }
 }
 
 .login-card.shake {
@@ -233,10 +275,11 @@ function triggerError(msg: string) {
 
 .brand-title {
   font-size: 28px;
-  font-weight: 600;
-  color: var(--text-0);
+  font-weight: 700;
+  color: var(--card-title);
   letter-spacing: 3px;
   margin-bottom: 6px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
 }
 
 .brand-subtitle {
@@ -287,7 +330,7 @@ function triggerError(msg: string) {
   letter-spacing: 2px;
   font-weight: 600;
   border-radius: var(--radius-md) !important;
-  background: linear-gradient(135deg, var(--accent), #5a3dcc) !important;
+  background: var(--accent) !important;
   border: none !important;
   margin-top: 4px;
   transition: all 0.2s ease !important;

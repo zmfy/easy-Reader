@@ -13,6 +13,10 @@
   --accent-2: #00d4b8;
   --warning: #ffb86c;
   --danger: #ff6b8a;
+  --card-bg: #0e1628;           /* 实色，杜绝 orb 渗色 */
+  --card-border: rgba(124, 92, 255, 0.28);
+  --card-title: #ffffff;         /* 纯白标题，最高对比度 */
+  --input-bg: #1a263d;
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(8, 12, 24, 0.45);
@@ -32,6 +36,10 @@
   --accent-2: #c4b254;
   --warning: #f0c040;
   --danger: #e05050;
+  --card-bg: #1e1208;           /* 深焦糖实色 */
+  --card-border: rgba(232, 146, 58, 0.35);
+  --card-title: #ffefd0;         /* 明亮暖奶油色 */
+  --input-bg: #2e1e10;
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(16, 8, 4, 0.5);
@@ -51,9 +59,51 @@
   --accent-2: #30e8b0;
   --warning: #e8b840;
   --danger: #e05070;
+  --card-bg: #081020;           /* 深墨蓝实色 */
+  --card-border: rgba(56, 200, 232, 0.28);
+  --card-title: #eaf6ff;         /* 亮冰白 */
+  --input-bg: #102030;
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(4, 8, 16, 0.5);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 晴空（清爽白蓝）── */
+[data-theme="sky"] {
+  --bg-0: #f0f4ff;
+  --bg-1: #ffffff;
+  --bg-2: #e4ecff;
+  --text-0: #1a2340;
+  --text-1: #3a4a6a;
+  --text-2: #6a7a9a;
+  --accent: #4a6cf7;
+  --accent-2: #06b6d4;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(60, 80, 160, 0.12);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 素纸（暖白米黄）── */
+[data-theme="paper"] {
+  --bg-0: #faf6f0;
+  --bg-1: #ffffff;
+  --bg-2: #ede8dc;
+  --text-0: #2a2018;
+  --text-1: #4a3828;
+  --text-2: #8a7060;
+  --accent: #b85c38;
+  --accent-2: #7a9a50;
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-soft: 0 12px 40px rgba(80, 60, 20, 0.12);
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -124,6 +174,11 @@ body::before {
 .el-input__inner {
   color: var(--text-0) !important;
   background-color: transparent !important;
+  padding-left: 6px !important;
+}
+
+.el-input__prefix-inner {
+  margin-right: 6px !important;
 }
 
 .el-card {

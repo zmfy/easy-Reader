@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
 import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
@@ -23,10 +24,35 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   try {
     const plugin = await getReaderPlugin(book);
     const chapters = await plugin.getChapters();
-    successResponse(res, chapters);
+    const extra: Record<string, unknown> = { chapters, format: book.file_format };
+    if (book.file_format.toLowerCase() === 'pdf') {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;
+      extra.pdfUsePlugin = row?.value === 'true';
+    }
+    successResponse(res, extra);
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节: ' + (err instanceof Error ? err.message : ''));
   }
+});
+
+// GET /api/reader/:bookId/raw — stream the original file (for PDF native rendering)
+router.get('/:bookId/raw', authMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  if (!fs.existsSync(book.file_path)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在'); return; }
+
+  const mimeMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    epub: 'application/epub+zip',
+  };
+  const mime = mimeMap[book.file_format.toLowerCase()] || 'application/octet-stream';
+  const stat = fs.statSync(book.file_path);
+
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Content-Length', stat.size);
+  fs.createReadStream(book.file_path).pipe(res);
 });
 
 // GET /api/reader/:bookId/chapter/:index
@@ -110,6 +136,15 @@ router.post('/:bookId/bookmarks', authMiddleware, (req: Request, res: Response) 
   db.prepare('INSERT INTO bookmarks (id, user_id, book_id, chapter_index, scroll_top, note) VALUES (?, ?, ?, ?, ?, ?)').run(
     id, req.user!.userId, req.params.bookId, parsed.data.chapterIndex, parsed.data.scrollTop, parsed.data.note || null
   );
+
+  // Auto-prune: keep only the 10 most recent bookmarks per user per book
+  db.prepare(`
+    DELETE FROM bookmarks WHERE user_id = ? AND book_id = ? AND id NOT IN (
+      SELECT id FROM bookmarks WHERE user_id = ? AND book_id = ?
+      ORDER BY created_at DESC LIMIT 10
+    )
+  `).run(req.user!.userId, req.params.bookId, req.user!.userId, req.params.bookId);
+
   const bookmark = db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id);
   successResponse(res, bookmark, '书签已添加', 201);
 });

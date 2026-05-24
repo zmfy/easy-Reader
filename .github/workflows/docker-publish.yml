@@ -1,0 +1,41 @@
+name: Build and Push to Docker Hub
+
+on:
+  push:
+    branches:
+      - main        # 推送到 main 分支时自动触发
+  workflow_dispatch: # 允许在 GitHub 页面手动触发
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉取代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 登录 Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3. 设置镜像元数据（自动生成tag）
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/easy-reader
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-       # 同时打一个 commit sha 的tag
+
+      # 4. 构建并推送
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}

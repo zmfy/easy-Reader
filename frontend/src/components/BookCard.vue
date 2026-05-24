@@ -1,16 +1,25 @@
 <template>
   <div class="book-card" @click="$emit('click')">
     <div class="book-cover">
-      <img
-        v-if="book.cover_url"
-        :src="book.cover_url"
-        :alt="book.title"
-        loading="lazy"
-      />
-      <div v-else class="cover-placeholder">
+      <!-- 有封面 -->
+      <template v-if="!imgError && book.cover_url">
+        <div class="img-skeleton" :class="{ hidden: imgLoaded }" />
+        <img
+          :src="book.cover_url"
+          :alt="book.title"
+          loading="lazy"
+          decoding="async"
+          :class="{ loaded: imgLoaded }"
+          @load="imgLoaded = true"
+          @error="imgError = true"
+        />
+      </template>
+      <!-- 无封面 / 加载失败 -->
+      <div v-else class="cover-placeholder" :style="{ background: placeholderGradient }">
         <span class="cover-format">{{ book.file_format?.toUpperCase() }}</span>
         <span class="cover-title">{{ book.title }}</span>
       </div>
+      <!-- 悬停操作层 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" @click.stop="$emit('read')">
           <el-icon><VideoPlay /></el-icon>
@@ -18,6 +27,8 @@
         </el-button>
         <el-button size="small" @click.stop="$emit('detail')">详情</el-button>
       </div>
+      <!-- 底部渐变（有封面时增加层次感） -->
+      <div v-if="!imgError && book.cover_url" class="cover-bottom-fade" />
     </div>
     <div class="book-info">
       <div class="book-title" :title="book.title">{{ book.title }}</div>
@@ -32,15 +43,28 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { VideoPlay } from '@element-plus/icons-vue'
 import type { Book } from '@/types'
 
-defineProps<{ book: Book }>()
-defineEmits<{
-  click: []
-  read: []
-  detail: []
-}>()
+const props = defineProps<{ book: Book }>()
+defineEmits<{ click: []; read: []; detail: [] }>()
+
+const imgLoaded = ref(false)
+const imgError = ref(false)
+
+// 根据书名生成固定渐变色（相同书名始终同色）
+const placeholderGradient = computed(() => {
+  const str = props.book.title || ''
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i)
+    hash |= 0
+  }
+  const hue1 = Math.abs(hash) % 360
+  const hue2 = (hue1 + 40) % 360
+  return `linear-gradient(160deg, hsl(${hue1},40%,22%) 0%, hsl(${hue2},50%,14%) 100%)`
+})
 </script>
 
 <style scoped>
@@ -50,98 +74,145 @@ defineEmits<{
   border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.22s ease;
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .book-card:hover {
-  transform: translateY(-4px);
-  border-color: rgba(124, 92, 255, 0.25);
-  box-shadow: var(--shadow-soft);
+  transform: translateY(-5px);
+  border-color: rgba(124, 92, 255, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(124, 92, 255, 0.12);
 }
 
 .book-card:hover .cover-overlay {
   opacity: 1;
 }
 
+.book-card:hover .book-cover img {
+  transform: scale(1.05);
+}
+
+/* ── 封面区域 ── */
 .book-cover {
   position: relative;
   aspect-ratio: 3/4;
   overflow: hidden;
+  background: var(--bg-2);
 }
 
+/* skeleton 占位 */
+.img-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--bg-2) 25%, rgba(124,92,255,0.06) 50%, var(--bg-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  transition: opacity 0.3s;
+}
+.img-skeleton.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 封面图片 */
 .book-cover img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  object-position: center top;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+}
+.book-cover img.loaded {
+  opacity: 1;
 }
 
-.book-card:hover .book-cover img {
-  transform: scale(1.04);
+/* 底部渐变遮罩，增加封面深度 */
+.cover-bottom-fade {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(to top, rgba(11,16,32,0.55) 0%, transparent 100%);
+  pointer-events: none;
 }
 
+/* 无封面占位 */
 .cover-placeholder {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, var(--bg-2) 0%, rgba(124, 92, 255, 0.15) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 12px;
-  gap: 8px;
+  padding: 16px 12px;
+  gap: 10px;
 }
 
 .cover-format {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 1px;
-  opacity: 0.8;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 .cover-title {
-  font-size: 14px;
-  color: var(--text-1);
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.82);
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.5;
   word-break: break-all;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  font-family: 'Noto Serif SC', serif;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
 
+/* 悬停操作层 */
 .cover-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(11, 16, 32, 0.75);
+  background: rgba(11, 16, 32, 0.78);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   opacity: 0;
   transition: opacity 0.22s ease;
+  backdrop-filter: blur(2px);
 }
 
+/* ── 信息区域 ── */
 .book-info {
-  padding: 12px 14px;
+  padding: 10px 12px 12px;
 }
 
 .book-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
+  line-height: 1.4;
 }
 
 .book-author {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-2);
-  margin-bottom: 8px;
+  margin-bottom: 7px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,9 +226,10 @@ defineEmits<{
 
 .tag {
   font-size: 10px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 4px;
   font-weight: 500;
+  line-height: 1.5;
 }
 
 .tag.category {

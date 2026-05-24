@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
@@ -12,10 +13,10 @@ const router = Router();
 // GET /api/settings/public — no auth required, returns public-facing site info
 router.get('/public', (req: Request, res: Response) => {
   const db = getDb();
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('site_name', 'site_theme')").all() as Array<{ key: string; value: string }>;
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('site_name', 'site_subtitle', 'site_theme')").all() as Array<{ key: string; value: string }>;
   const data: Record<string, string> = {};
   for (const r of rows) data[r.key] = r.value;
-  successResponse(res, { site_name: data['site_name'] || '', site_theme: data['site_theme'] || 'dark' });
+  successResponse(res, { site_name: data['site_name'] || '', site_subtitle: data['site_subtitle'] || '', site_theme: data['site_theme'] || 'dark' });
 });
 
 // GET /api/settings
@@ -47,6 +48,8 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
   for (const [key, value] of Object.entries(parsed.data)) {
     // Don't overwrite smtp_pass with masked placeholder
     if (key === 'smtp_pass' && (value === '****' || value === '')) continue;
+    // Don't overwrite API keys with masked values (e.g. "sk-12****5678")
+    if (key.toLowerCase().includes('apikey') && value.includes('****')) continue;
     upsert.run(key, value);
   }
   successResponse(res, null, '设置已更新');
@@ -60,10 +63,13 @@ router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
 
 // GET /api/settings/reader-plugins
 router.get('/reader-plugins', authMiddleware, (_req: Request, res: Response) => {
+  const db = getDb();
+  const pdfUsePlugin = (db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined)?.value === 'true';
   successResponse(res, [
     { format: 'txt', label: 'TXT 纯文本', description: '支持 UTF-8/GBK 编码的纯文本小说' },
     { format: 'epub', label: 'EPUB 电子书', description: '支持 EPUB 2/3 格式' },
-    { format: 'pdf', label: 'PDF 文档', description: '支持 PDF 文档格式' },
+    { format: 'pdf', label: 'PDF 文档', description: '支持 PDF 文档格式', usePlugin: pdfUsePlugin },
+    { format: 'umd', label: 'UMD 小说', description: '支持 UMD 格式中文电子书' },
   ]);
 });
 
@@ -174,6 +180,44 @@ router.put('/users/:id/role', authMiddleware, adminMiddleware, (req: Request, re
   const result = db.prepare('UPDATE users SET role = ? WHERE id = ?').run(parsed.data.role, req.params.id);
   if (result.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
   successResponse(res, null, '角色已更新');
+});
+
+// PUT /api/settings/users/:id/password
+router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const schema = z.object({
+    password: z.string()
+      .min(8, '密码至少8位')
+      .regex(/[A-Z]/, '密码必须包含至少一个大写字母')
+      .regex(/[a-z]/, '密码必须包含至少一个小写字母')
+      .regex(/[0-9]/, '密码必须包含至少一个数字')
+      .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?`~]/, '密码必须包含至少一个特殊字符'),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', parsed.error.errors[0]?.message || '密码格式不符合要求');
+    return;
+  }
+
+  const db = getDb();
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!user) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
+
+  const hash = bcrypt.hashSync(parsed.data.password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  successResponse(res, null, '密码已修改');
+});
+
+// DELETE /api/settings/users/:id
+router.delete('/users/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  // Prevent self-deletion
+  const self = (req as Request & { user?: User }).user;
+  if (self && String(self.id) === String(req.params.id)) {
+    errorResponse(res, 400, 'BUSINESS_CONFLICT', '不能删除自己的账号'); return;
+  }
+  const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  if (result.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
+  successResponse(res, null, '用户已删除');
 });
 
 export default router;

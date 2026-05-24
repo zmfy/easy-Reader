@@ -3,7 +3,7 @@ import type { ApiResponse, ReaderSettings } from '@/types'
 
 export const settingsApi = {
   getPublic: () =>
-    http.get<ApiResponse<{ site_name: string; site_theme: string }>>('/settings/public'),
+    http.get<ApiResponse<{ site_name: string; site_subtitle: string; site_theme: string }>>('/settings/public'),
 
   get: () =>
     http.get<ApiResponse<Record<string, string>>>('/settings'),
@@ -28,6 +28,12 @@ export const settingsApi = {
 
   updateUserRole: (id: string, role: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/role`, { role }),
+
+  deleteUser: (id: string) =>
+    http.delete<ApiResponse<null>>(`/settings/users/${id}`),
+
+  changeUserPassword: (id: string, password: string) =>
+    http.put<ApiResponse<null>>(`/settings/users/${id}/password`, { password }),
 
   getReaderPrefs: () =>
     http.get<ApiResponse<ReaderSettings | null>>('/settings/reader-prefs'),

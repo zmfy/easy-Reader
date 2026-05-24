@@ -2,8 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { errorResponse } from '../utils/response';
 import { JwtPayload } from '../types';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
+import { JWT_SECRET } from '../secret';
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
@@ -32,7 +31,7 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
 
 export function generateTokens(userId: string, role: 'admin' | 'user'): { accessToken: string; refreshToken: string } {
   const payload: JwtPayload = { userId, role };
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '30m' });
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '2h' });
   const refreshToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
   return { accessToken, refreshToken };
 }

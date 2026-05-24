@@ -3,6 +3,7 @@ import { Book, ReaderPlugin } from '../types';
 import { TxtParser } from './parser-txt';
 import { EpubParser } from './parser-epub';
 import { PdfParser } from './parser-pdf';
+import { UmdParser } from './parser-umd';
 
 interface CachedPlugin {
   plugin: ReaderPlugin;
@@ -30,6 +31,7 @@ export async function getReaderPlugin(book: Book): Promise<ReaderPlugin> {
     case 'txt':  plugin = new TxtParser();  break;
     case 'epub': plugin = new EpubParser(); break;
     case 'pdf':  plugin = new PdfParser();  break;
+    case 'umd':  plugin = new UmdParser();  break;
     default:
       throw new Error(`不支持的文件格式: ${book.file_format}`);
   }

@@ -10,10 +10,13 @@ const ollamaPlugin: AiPlugin = {
     const model = config.model || 'llama3';
 
 
-    const prompt = `根据以下小说文本，请提取并返回JSON格式的书籍信息：
-文本：${rawText.slice(0, 1000)}
+    const prompt = `你是一个熟悉中文网络小说的助手。请根据书名从你的知识库中查找该小说的准确信息，优先使用你已知的信息，不要从下方文本中分析。
 
-请返回：{"title": "书名", "author": "作者", "summary": "100字以内简介", "category": "分类"}`;
+${rawText}
+
+只返回如下JSON格式，不含其他任何文字：
+{"title":"正确书名","author":"作者名","summary":"100字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）","is_finished":true,"platform":"首发连载平台（如起点中文网）","start_date":"开始连载年月（如2007年12月）","end_date":"完本年月（已完结时填写，如2023年8月）"}
+is_finished为true表示已完结，false表示连载中。如果不确定某字段，省略该字段，不要猜测。`;
 
     const resp = await fetch(`${baseUrl}/api/generate`, {
       method: 'POST',

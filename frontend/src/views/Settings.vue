@@ -5,7 +5,22 @@
         <h1 class="page-title">系统设置</h1>
       </div>
 
+      <!-- 手机端顶部横向标签栏 -->
+      <div class="settings-tabs-mobile">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="tab-chip"
+          :class="{ active: activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          <el-icon><component :is="tab.icon" /></el-icon>
+          <span>{{ tab.label }}</span>
+        </button>
+      </div>
+
       <div class="settings-layout">
+        <!-- 桌面端左侧竖向导航 -->
         <nav class="settings-nav">
           <button
             v-for="tab in tabs"
@@ -27,6 +42,15 @@
               <div class="form-field">
                 <label>站点名称</label>
                 <el-input v-model="sysForm.site_name" placeholder="夜航书房" />
+              </div>
+              <div class="form-field">
+                <label>站点副标题</label>
+                <el-input v-model="sysForm.site_subtitle" placeholder="Night Reader · NAS Novel Platform" />
+              </div>
+              <div class="form-field">
+                <label>站点公开地址</label>
+                <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
+                <div class="field-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
               </div>
               <div class="form-field">
                 <label>书库目录</label>
@@ -69,42 +93,79 @@
             <el-button type="primary" :loading="saving" @click="saveSettings('system')">保存系统设置</el-button>
           </div>
 
-          <!-- SMTP Settings -->
-          <div v-if="activeTab === 'smtp'" class="setting-section">
-            <h2 class="section-title">邮件设置</h2>
-            <div class="form-grid">
-              <div class="form-field">
-                <label>SMTP 服务器地址</label>
-                <el-input v-model="smtpForm.smtp_host" placeholder="smtp.example.com" />
+          <!-- SMTP Settings (暂时隐藏) -->
+          <!-- <div v-if="activeTab === 'smtp'" class="setting-section"> ... </div> -->
+
+          <!-- Changelog / Feedback -->
+          <div v-if="activeTab === 'feedback'" class="setting-section">
+            <h2 class="section-title">更新说明</h2>
+            <p class="section-desc">以下为最近的版本更新内容。</p>
+            <div class="changelog-list">
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-ui">界面</span>
+                  <span class="changelog-text">优化书库封面图片加载与样式展示</span>
+                </div>
+                <span class="changelog-date">2026-05-06</span>
               </div>
-              <div class="form-field">
-                <label>端口</label>
-                <el-input v-model="smtpForm.smtp_port" placeholder="587" />
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-lib">书库</span>
+                  <span class="changelog-text">扫描导入时自动清理已删除文件的数据库记录</span>
+                </div>
+                <span class="changelog-date">2026-05-06</span>
               </div>
-              <div class="form-field">
-                <label>用户名</label>
-                <el-input v-model="smtpForm.smtp_user" placeholder="user@example.com" />
-              </div>
-              <div class="form-field">
-                <label>密码</label>
-                <el-input
-                  v-model="smtpForm.smtp_pass"
-                  type="password"
-                  show-password
-                  :placeholder="smtpPassSet ? '已设置（输入新密码以修改）' : '请输入密码'"
-                />
-              </div>
-              <div class="form-field">
-                <label>发件人地址</label>
-                <el-input v-model="smtpForm.smtp_from" placeholder="noreply@example.com" />
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-auth">认证</span>
+                  <span class="changelog-text">重构登录 Token 处理，优化反馈功能</span>
+                </div>
+                <span class="changelog-date">2026-04-24</span>
               </div>
             </div>
-            <el-button type="primary" :loading="saving" @click="saveSettings('smtp')">保存邮件设置</el-button>
+
+            <h3 class="roadmap-title">开发计划</h3>
+            <div class="changelog-list">
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">封面抓取改为用户可选，手动触发</span>
+                </div>
+              </div>
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">书库扫描时对重复书籍进行检测与处理</span>
+                </div>
+              </div>
+              <div class="changelog-item changelog-item--plan">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-plan">计划</span>
+                  <span class="changelog-text">修复瀑布流模式下书签定位不准确的问题</span>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 24px;">
+              <el-button type="primary" @click="openFeedback">
+                意见反馈
+              </el-button>
+            </div>
           </div>
 
           <!-- AI Settings -->
           <div v-if="activeTab === 'ai'" class="setting-section">
             <h2 class="section-title">AI 插件设置</h2>
+            <div class="ai-tips">
+              <div class="ai-tip-title">已测试通过的配置</div>
+              <div class="ai-tip-item">
+                <span class="ai-tip-name">DeepSeek</span>
+                <span class="ai-tip-desc">模型：<code>deepseek-chat</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
+              </div>
+              <div class="ai-tip-item">
+                <span class="ai-tip-name">MiniMax</span>
+                <span class="ai-tip-desc">模型：<code>MiniMax-M2</code></span>
+              </div>
+            </div>
             <div class="form-field" style="margin-bottom: 20px">
               <label>选择 AI 插件</label>
               <el-select v-model="selectedAiPlugin" style="width: 100%">
@@ -126,7 +187,7 @@
                 <el-input
                   v-model="aiForm[field]"
                   :type="field === 'apiKey' ? 'password' : 'text'"
-                  :placeholder="getFieldPlaceholder(field)"
+                  :placeholder="field === 'apiKey' ? (aiApiKeySet ? '已设置（输入新 Key 以修改）' : getFieldPlaceholder(field)) : getFieldPlaceholder(field)"
                   :show-password="field === 'apiKey'"
                 />
               </div>
@@ -156,7 +217,7 @@
                   {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作">
+              <el-table-column label="操作" width="260">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.id !== authStore.user?.id"
@@ -165,6 +226,21 @@
                   >
                     {{ row.role === 'admin' ? '降为普通' : '升为管理员' }}
                   </el-button>
+                  <el-button size="small" type="warning" @click="openPwdDialog(row)">
+                    修改密码
+                  </el-button>
+                  <el-popconfirm
+                    v-if="row.id !== authStore.user?.id"
+                    title="确定删除该用户？此操作不可恢复。"
+                    confirm-button-text="删除"
+                    cancel-button-text="取消"
+                    confirm-button-type="danger"
+                    @confirm="deleteUser(row.id)"
+                  >
+                    <template #reference>
+                      <el-button size="small" type="danger" plain>删除</el-button>
+                    </template>
+                  </el-popconfirm>
                 </template>
               </el-table-column>
             </el-table>
@@ -180,7 +256,16 @@
                   <div class="plugin-name">{{ plugin.label }}</div>
                   <div class="plugin-desc">{{ plugin.description }}</div>
                 </div>
-                <el-tag type="success">已加载</el-tag>
+                <template v-if="plugin.format === 'pdf'">
+                  <div class="plugin-switch">
+                    <span class="plugin-switch-label">{{ plugin.usePlugin ? '插件解析' : '浏览器原生' }}</span>
+                    <el-switch
+                      :model-value="plugin.usePlugin"
+                      @change="(val: boolean) => togglePdfPlugin(val)"
+                    />
+                  </div>
+                </template>
+                <el-tag v-else type="success">已加载</el-tag>
               </div>
             </div>
           </div>
@@ -248,6 +333,70 @@
         <el-button @click="inviteDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- Change Password Dialog -->
+    <el-dialog
+      v-model="pwdDialogVisible"
+      :title="`修改密码 — ${changingPwdUser?.username}`"
+      width="440px"
+      :close-on-click-modal="false"
+      @closed="resetPwdForm"
+    >
+      <div class="pwd-dialog-body">
+        <div class="form-field">
+          <label>新密码</label>
+          <el-input
+            v-model="pwdForm.newPassword"
+            type="password"
+            show-password
+            placeholder="请输入新密码"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="form-field">
+          <label>确认新密码</label>
+          <el-input
+            v-model="pwdForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="再次输入新密码"
+            autocomplete="new-password"
+            @keyup.enter="submitChangePassword"
+          />
+        </div>
+        <div class="pwd-rules">
+          <div class="pwd-rule" :class="pwdRules.minLen ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.minLen ? '✓' : '✗' }}</span> 至少 8 位
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasUpper ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasUpper ? '✓' : '✗' }}</span> 至少 1 个大写字母
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasLower ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasLower ? '✓' : '✗' }}</span> 至少 1 个小写字母
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasNumber ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasNumber ? '✓' : '✗' }}</span> 至少 1 个数字
+          </div>
+          <div class="pwd-rule" :class="pwdRules.hasSpecial ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.hasSpecial ? '✓' : '✗' }}</span> 至少 1 个特殊字符（如 !@#$%^&*）
+          </div>
+          <div class="pwd-rule" :class="pwdRules.matched ? 'pass' : 'fail'">
+            <span class="rule-icon">{{ pwdRules.matched ? '✓' : '✗' }}</span> 两次密码一致
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="pwdDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="changingPwd"
+          :disabled="!pwdValid"
+          @click="submitChangePassword"
+        >
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </DefaultLayout>
 </template>
 
@@ -266,6 +415,52 @@ const saving = ref(false)
 const creatingInvite = ref(false)
 const sendingEmail = ref(false)
 const inviteDialogVisible = ref(false)
+
+// ── Password Dialog ──
+const pwdDialogVisible = ref(false)
+const changingPwd = ref(false)
+const changingPwdUser = ref<{ id: string; username: string } | null>(null)
+const pwdForm = reactive({ newPassword: '', confirmPassword: '' })
+
+const pwdRules = computed(() => {
+  const p = pwdForm.newPassword
+  return {
+    minLen: p.length >= 8,
+    hasUpper: /[A-Z]/.test(p),
+    hasLower: /[a-z]/.test(p),
+    hasNumber: /[0-9]/.test(p),
+    hasSpecial: /[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>/?`~]/.test(p),
+    matched: p.length > 0 && p === pwdForm.confirmPassword,
+  }
+})
+
+const pwdValid = computed(() => Object.values(pwdRules.value).every(Boolean))
+
+function openPwdDialog(user: { id: string; username: string }) {
+  changingPwdUser.value = user
+  pwdDialogVisible.value = true
+}
+
+function resetPwdForm() {
+  pwdForm.newPassword = ''
+  pwdForm.confirmPassword = ''
+  changingPwdUser.value = null
+}
+
+async function submitChangePassword() {
+  if (!pwdValid.value || !changingPwdUser.value) return
+  changingPwd.value = true
+  try {
+    await settingsApi.changeUserPassword(changingPwdUser.value.id, pwdForm.newPassword)
+    ElMessage.success('密码已修改')
+    pwdDialogVisible.value = false
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '修改失败'
+    ElMessage.error(msg)
+  } finally {
+    changingPwd.value = false
+  }
+}
 const inviteCode = ref('')
 const inviteExpiry = ref('')
 const inviteEmail = ref('')
@@ -273,13 +468,15 @@ const smtpConfigured = ref(false)
 const smtpPassSet = ref(false)
 const users = ref<Array<{ id: string; username: string; role: string; created_at: string }>>([])
 const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string> }>>([])
-const readerPlugins = ref<Array<{ format: string; label: string; description: string }>>([])
+const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
 const sysForm = reactive({
   site_name: '',
+  site_subtitle: '',
+  site_url: '',
   books_dir: '/app/books',
   site_theme: 'dark',
 })
@@ -312,6 +509,24 @@ const siteThemes = [
     accent: '#38c8e8',
     text: '#90b4cc',
   },
+  {
+    key: 'sky',
+    label: '晴空',
+    desc: '清爽白蓝',
+    bg: '#f0f4ff',
+    panel: '#ffffff',
+    accent: '#4a6cf7',
+    text: '#3a4a6a',
+  },
+  {
+    key: 'paper',
+    label: '素纸',
+    desc: '暖白米黄',
+    bg: '#faf6f0',
+    panel: '#ffffff',
+    accent: '#b85c38',
+    text: '#4a3828',
+  },
 ]
 
 const smtpForm = reactive({
@@ -324,11 +539,17 @@ const smtpForm = reactive({
 
 const tabs = [
   { key: 'system', label: '系统', icon: Setting },
-  { key: 'smtp', label: '邮件', icon: Message },
+  // { key: 'smtp', label: '邮件', icon: Message },  // 暂时隐藏邮件设置
   { key: 'ai', label: 'AI 设置', icon: MagicStick },
   { key: 'users', label: '用户管理', icon: User },
   { key: 'plugins', label: '插件', icon: Cpu },
+  { key: 'feedback', label: '更新说明', icon: Message },
 ]
+
+
+function openFeedback() {
+  window.open('https://easyreader.ucool.uk/bbs', '_blank')
+}
 
 const fieldLabels: Record<string, string> = {
   apiKey: 'API Key',
@@ -350,14 +571,27 @@ const currentAiPlugin = computed(() =>
   aiPlugins.value.find(p => p.name === selectedAiPlugin.value)
 )
 
+const aiApiKeySet = computed(() => {
+  if (!selectedAiPlugin.value) return false
+  return !!settingsData.value[`ai_${selectedAiPlugin.value}_apiKey`]
+})
+
 const inviteUrl = computed(() => {
   if (!inviteCode.value) return ''
-  return `${window.location.origin}/register?code=${inviteCode.value}`
+  const base = sysForm.site_url?.replace(/\/$/, '') || window.location.origin
+  return `${base}/register?code=${inviteCode.value}`
 })
 
 function formatIcon(format: string) {
-  const icons: Record<string, string> = { txt: '📄', epub: '📕', pdf: '📰' }
+  const icons: Record<string, string> = { txt: '📄', epub: '📕', pdf: '📰', umd: '📚' }
   return icons[format] || '📁'
+}
+
+async function togglePdfPlugin(val: boolean) {
+  await settingsApi.update({ pdf_use_plugin: val ? 'true' : 'false' })
+  const plugin = readerPlugins.value.find(p => p.format === 'pdf')
+  if (plugin) plugin.usePlugin = val
+  ElMessage.success(val ? 'PDF 已切换为插件解析模式' : 'PDF 已切换为浏览器原生模式')
 }
 
 function populateAiForm(plugin: string) {
@@ -365,7 +599,10 @@ function populateAiForm(plugin: string) {
   const prefix = `ai_${plugin}_`
   for (const [key, value] of Object.entries(settingsData.value)) {
     if (key.startsWith(prefix)) {
-      aiForm[key.slice(prefix.length)] = value
+      const field = key.slice(prefix.length)
+      // Don't populate apiKey with masked value — user must re-enter to change it
+      if (field === 'apiKey') continue
+      aiForm[field] = value
     }
   }
 }
@@ -380,6 +617,8 @@ async function loadSettings() {
   settingsData.value = data
 
   sysForm.site_name = data['site_name'] || ''
+  sysForm.site_subtitle = data['site_subtitle'] || ''
+  sysForm.site_url = data['site_url'] || ''
   sysForm.books_dir = data['books_dir'] || '/app/books'
   sysForm.site_theme = data['site_theme'] || 'dark'
 
@@ -465,9 +704,25 @@ async function openInviteDialog() {
 }
 
 function copyInviteLink() {
-  navigator.clipboard.writeText(inviteUrl.value).then(() => {
-    ElMessage.success('邀请链接已复制')
-  })
+  const text = inviteUrl.value
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('邀请链接已复制')
+    }).catch(() => fallbackCopy(text))
+  } else {
+    fallbackCopy(text)
+  }
+}
+
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0'
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+  ElMessage.success('邀请链接已复制')
 }
 
 async function sendInviteEmail() {
@@ -493,6 +748,17 @@ async function toggleRole(user: { id: string; role: string }) {
   await settingsApi.updateUserRole(user.id, newRole)
   user.role = newRole
   ElMessage.success('角色已更新')
+}
+
+async function deleteUser(id: string) {
+  try {
+    await settingsApi.deleteUser(id)
+    users.value = users.value.filter(u => u.id !== id)
+    ElMessage.success('用户已删除')
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '删除失败'
+    ElMessage.error(msg)
+  }
 }
 
 onMounted(async () => {
@@ -592,6 +858,13 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
+.section-desc {
+  font-size: 14px;
+  color: var(--text-2);
+  margin-top: -12px;
+  margin-bottom: 20px;
+}
+
 .section-header .section-title {
   margin-bottom: 0;
 }
@@ -615,11 +888,65 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+.field-hint {
+  font-size: 12px;
+  color: var(--text-3, var(--text-2));
+  opacity: 0.7;
+  margin-top: -2px;
+}
+
 .users-table {
   background: transparent !important;
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: rgba(124, 92, 255, 0.05);
+}
+
+.ai-tips {
+  background: rgba(0, 212, 184, 0.06);
+  border: 1px solid rgba(0, 212, 184, 0.18);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-tip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-tip-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.ai-tip-name {
+  color: var(--text-1);
+  font-weight: 600;
+  min-width: 64px;
+  flex-shrink: 0;
+}
+
+.ai-tip-desc {
+  color: var(--text-2);
+}
+
+.ai-tip-desc code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  background: rgba(124, 92, 255, 0.12);
+  color: var(--accent);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 .plugins-grid {
@@ -655,6 +982,19 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--text-2);
   margin-top: 2px;
+}
+
+.plugin-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.plugin-switch-label {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 /* Invite Dialog */
@@ -715,6 +1055,92 @@ onMounted(async () => {
 .smtp-tip {
   font-size: 13px;
   color: var(--text-2);
+}
+
+/* ── 手机端横向标签栏 ── */
+.settings-tabs-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* 顶部横向标签栏：仅手机显示 */
+  .settings-tabs-mobile {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 12px 16px;
+    background: var(--bg-0);
+    border-bottom: 1px solid rgba(124, 92, 255, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .settings-tabs-mobile::-webkit-scrollbar { display: none; }
+
+  .tab-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border: 1px solid rgba(124, 92, 255, 0.18);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    flex-shrink: 0;
+  }
+  .tab-chip .el-icon {
+    font-size: 14px;
+  }
+  .tab-chip:hover {
+    border-color: var(--accent);
+    color: var(--text-1);
+  }
+  .tab-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 500;
+    box-shadow: 0 2px 10px rgba(124, 92, 255, 0.35);
+  }
+
+  /* 桌面左侧导航：手机隐藏 */
+  .settings-nav {
+    display: none;
+  }
+
+  /* 内容区改为单列 */
+  .settings-layout {
+    display: block;
+    gap: 0;
+  }
+
+  .settings-content {
+    border-radius: var(--radius-md);
+    padding: 20px 16px;
+  }
+
+  .settings-page {
+    padding: 16px;
+  }
+
+  /* 主题卡片在手机上更紧凑 */
+  .theme-cards {
+    gap: 10px;
+  }
+  .theme-card {
+    width: 100px;
+  }
+
+  /* 表单网格单列 */
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Site theme selector ── */
@@ -822,5 +1248,114 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   font-weight: 700;
+}
+
+/* ── Password Dialog ── */
+.pwd-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pwd-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.pwd-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: color 0.2s ease;
+}
+
+.pwd-rule.pass {
+  color: #22c55e;
+}
+
+.pwd-rule.fail {
+  color: var(--text-2);
+}
+
+.rule-icon {
+  font-size: 12px;
+  font-weight: 700;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* ── Changelog ── */
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 600px;
+}
+
+.changelog-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+.changelog-item--plan {
+  opacity: 0.75;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+}
+
+.changelog-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+}
+
+.changelog-date {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.changelog-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tag-ui     { background: #3b1f6b; color: #c4b5fd; }
+.tag-lib    { background: #1a3a2a; color: #6ee7b7; }
+.tag-auth   { background: #1e2e50; color: #93c5fd; }
+.tag-reader { background: #2d2010; color: #fcd34d; }
+.tag-ai     { background: #2d1020; color: #f9a8d4; }
+.tag-infra  { background: #1f2937; color: #9ca3af; }
+.tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }
+
+.changelog-text {
+  line-height: 1.6;
+}
+
+.roadmap-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 20px 0 10px;
+  max-width: 600px;
 }
 </style>

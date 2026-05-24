@@ -69,7 +69,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
@@ -79,6 +79,7 @@ import { useScanTaskStore } from '@/stores/scan-task'
 import type { Book } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const scanStore = useScanTaskStore()
 
@@ -86,18 +87,30 @@ const books = ref<Book[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedCategory = ref('')
+const scanning = ref(false)
+const searchQuery = ref((route.query.search as string) || '')
+const selectedCategory = ref((route.query.category as string) || '')
 
 const categories = ['玄幻', '修真', '都市', '历史', '科幻', '悬疑', '言情', '武侠', '游戏', '综合']
 
 const pagination = reactive({
-  page: 1,
+  page: Number(route.query.page) || 1,
   pageSize: 24,
   total: 0,
   totalPages: 0,
 })
 
+function syncQuery() {
+  const query: Record<string, string> = {}
+  if (pagination.page > 1) query.page = String(pagination.page)
+  if (searchQuery.value) query.search = searchQuery.value
+  if (selectedCategory.value) query.category = selectedCategory.value
+  router.replace({ query })
+}
+
 async function fetchBooks() {
   loading.value = true
+  syncQuery()
   try {
     const resp = await libraryApi.list({
       page: pagination.page,
@@ -193,15 +206,15 @@ onMounted(fetchBooks)
 
 .books-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px;
   animation: fadeIn 0.3s ease;
 }
 
 .loading-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 22px;
 }
 
 .skeleton-card {

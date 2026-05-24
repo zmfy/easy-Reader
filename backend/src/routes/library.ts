@@ -16,12 +16,13 @@ import {
   hasRunningTask,
 } from '../services/scan-task';
 import { runScanTask } from '../services/scan-walker';
+import { fetchAndSaveCover } from '../utils/cover';
 
 const router = Router();
 
 const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
-const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
+const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
 // GET /api/library
 router.get('/', authMiddleware, (req: Request, res: Response) => {
@@ -81,6 +82,50 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
   // Fire and forget
   setImmediate(() => {
     void runScanTask(task.id, options);
+      // 清理：删除文件已不存在的数据库记录
+      const allBooks = db.prepare('SELECT id, file_path FROM books').all() as { id: string; file_path: string }[];
+      const deleteStmt = db.prepare('DELETE FROM books WHERE id = ?');
+      let removedCount = 0;
+      for (const book of allBooks) {
+        if (!fs.existsSync(book.file_path)) {
+          deleteStmt.run(book.id);
+          removedCount++;
+        }
+      }
+      if (removedCount > 0) {
+        console.log(`[scan] 清理了 ${removedCount} 条文件已不存在的记录`);
+      }
+
+      // 新增：扫描目录，导入尚未入库的文件
+      let addedCount = 0;
+      function scanDir(dir: string): void {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            scanDir(fullPath);
+          } else if (entry.isFile()) {
+            const ext = path.extname(entry.name).slice(1).toLowerCase();
+            if (SUPPORTED_FORMATS.includes(ext)) {
+              const existing = db.prepare('SELECT id FROM books WHERE file_path = ?').get(fullPath);
+              if (!existing) {
+                const stat = fs.statSync(fullPath);
+                const title = path.basename(entry.name, path.extname(entry.name));
+                db.prepare(
+                  'INSERT INTO books (id, title, file_path, file_format, file_size) VALUES (?, ?, ?, ?, ?)'
+                ).run(uuidv4(), title, fullPath, ext, stat.size);
+                addedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      scanDir(BOOKS_DIR);
+      console.log(`[scan] 完成：新增 ${addedCount} 本，移除 ${removedCount} 条`);
+    } catch (err) {
+      console.error('Scan error:', err);
+    }
   });
 
   successResponse(res, { taskId: task.id, status: task.status }, '扫描任务已启动');
@@ -186,6 +231,38 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
   successResponse(res, null, '已从书库移除');
 });
 
+function cleanBookTitle(raw: string): string {
+  return raw
+    .replace(/[《\u300a][^》\u300b]{0,40}[》\u300b]/g, (m) => m.slice(1, -1))  // 《xxx》 → xxx
+    .replace(/作者[：:][^\s，,。]{0,30}/g, '')                                  // 作者：xxx
+    .replace(/[(\uff08][^)\uff09]{0,30}[)\uff09]/g, '')                          // (xxx) （xxx）
+    .replace(/[[\u3010][^\]\u3011]{0,30}[\]\u3011]/g, '')                        // [xxx] 【xxx】
+    .replace(/[-_\s]*(完本|精校版?|全本|完整版|最新版|修订版|番外|特别版|典藏版)[-_\s]*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim() || raw;
+}
+
+// POST /api/library/:id/cover-test — 直接测试封面抓取，不走 AI 流程
+router.post('/:id/cover-test', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  const searchTitle = cleanBookTitle(book.title);
+  console.log('[cover-test] bookId:', req.params.id, 'raw:', book.title, '→ search:', searchTitle);
+  try {
+    const coverUrl = await fetchAndSaveCover(searchTitle, req.params.id);
+    console.log('[cover-test] 结果:', coverUrl);
+    if (coverUrl) {
+      db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, req.params.id);
+    }
+    successResponse(res, { coverUrl, bookTitle: book.title, searchTitle });
+  } catch (e) {
+    console.error('[cover-test] 异常:', e);
+    errorResponse(res, 500, 'INTERNAL_ERROR', String(e));
+  }
+});
+
 // POST /api/library/:id/ai-fill
 router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
@@ -196,16 +273,42 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
   }
 
   try {
-    // Read first 2000 chars of the file
-    let rawText = '';
-    if (fs.existsSync(book.file_path)) {
-      if (book.file_format === 'txt') {
-        const content = fs.readFileSync(book.file_path, 'utf-8');
-        rawText = content.slice(0, 2000);
-      }
+    // Clean book title: remove edition/version markers like (精校版)(完本)[全本] etc.
+    const cleanedTitle = cleanBookTitle(book.title);
+
+    // Read first 600 chars as a content hint
+    let contentHint = '';
+    if (fs.existsSync(book.file_path) && book.file_format === 'txt') {
+      const content = fs.readFileSync(book.file_path, 'utf-8');
+      contentHint = content.slice(0, 600);
     }
 
-    const info = await aiManager.fillBookInfo(rawText || book.title, db);
+    // Build structured lookup request for AI
+    const lookupRequest = `书名：${cleanedTitle}\n原文件名（仅参考）：${book.title}\n文本节选（仅作辅助参考）：\n${contentHint}`;
+
+    const info = await aiManager.fillBookInfo(lookupRequest, db);
+    const infoRaw = info as Record<string, unknown>;
+
+    // Filename-based completion heuristic (fallback when AI doesn't return is_finished)
+    const finishedKeywords = /完本|完结|全集|全本|完整版|精校版|完稿/;
+    const isFinishedByFilename = finishedKeywords.test(book.title);
+
+    // Determine effective completion status (AI takes priority)
+    const effectiveIsFinished = (info.is_finished !== undefined) ? !!info.is_finished : isFinishedByFilename;
+
+    // Build serialization note and append to summary
+    const startDate = infoRaw.start_date as string | undefined;
+    const endDate = infoRaw.end_date as string | undefined;
+    const platform = infoRaw.platform as string | undefined;
+
+    if (info.summary && startDate) {
+      const platformPart = platform ? `在${platform}` : '';
+      const startPart = `从${startDate}开始${platformPart}连载`;
+      const serializationNote = effectiveIsFinished
+        ? (endDate ? `${startPart}，于${endDate}完本。` : `${startPart}，已完本。`)
+        : `${startPart}，目前还在连载中。`;
+      info.summary = info.summary + '\n' + serializationNote;
+    }
 
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -214,6 +317,21 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
     if (info.author) { updates.push('author = ?'); values.push(info.author); }
     if (info.summary) { updates.push('summary = ?'); values.push(info.summary); }
     if (info.category) { updates.push('category = ?'); values.push(info.category); }
+
+    // Set is_finished: AI result takes priority, filename heuristic as fallback
+    const isFinished = (info.is_finished !== undefined) ? (info.is_finished ? 1 : 0)
+      : isFinishedByFilename ? 1 : null;
+    if (isFinished !== null) { updates.push('is_finished = ?'); values.push(isFinished); }
+
+    // 若书籍尚无封面，从豆瓣下载封面到本地
+    if (!book.cover_url) {
+      const coverTitle = (info.title as string | undefined) || cleanedTitle;
+      const coverUrl = await fetchAndSaveCover(coverTitle, req.params.id).catch((e) => {
+        console.error('[ai-fill] 封面获取失败:', e);
+        return undefined;
+      });
+      if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+    }
 
     if (updates.length > 0) {
       values.push(req.params.id);

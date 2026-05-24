@@ -1,19 +1,61 @@
 import { ReaderPlugin } from '../types';
 
+/** Extract <body> inner HTML from a full XHTML/HTML document string */
+function extractBodyContent(html: string): string {
+  if (!html) return '';
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) return bodyMatch[1].trim();
+  // Fallback: strip outer document wrappers
+  return html
+    .replace(/<html[^>]*>/gi, '').replace(/<\/html>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<\?xml[^?]*\?>/gi, '')
+    .trim();
+}
+
 export class EpubParser implements ReaderPlugin {
   format = 'epub';
-  private epub: unknown = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private epub: any = null;
   private chapters: Array<{ index: number; title: string; id: string }> = [];
 
   async load(filePath: string): Promise<void> {
-    const EPub = require('epub2');
+    // epub2 v3: class is at require('epub2').EPub
+    const { EPub } = require('epub2');
     this.epub = await EPub.createAsync(filePath);
-    const flow = (this.epub as Record<string, unknown>).flow as Array<{ title?: string; id: string }>;
-    this.chapters = flow.map((item, idx) => ({
-      index: idx,
-      title: item.title || `章节 ${idx + 1}`,
-      id: item.id,
-    }));
+    this.buildChapterList();
+  }
+
+  private buildChapterList(): void {
+    const toc: Array<{ id: string; title?: string; href?: string }> = this.epub.toc || [];
+    const flow: Array<{ id: string; title?: string }> = this.epub.flow || [];
+
+    // Prefer TOC entries if they exist — they represent meaningful reading sections
+    // and skip cover/image-only pages
+    if (toc.length > 0) {
+      this.chapters = toc
+        .filter(item => !!item.id)
+        .map((item, idx) => ({
+          index: idx,
+          title: item.title || `第 ${idx + 1} 章`,
+          id: item.id,
+        }));
+      return;
+    }
+
+    // Fallback: use flow (spine) items, skip obvious non-text items
+    const skipPatterns = /cover|titlepage|toc|nav|copyright|ncx/i;
+    const candidate = flow.filter(item => item.id && !skipPatterns.test(item.id));
+    const source = candidate.length > 0 ? candidate : flow;
+
+    this.chapters = source
+      .filter(item => !!item.id)
+      .map((item, idx) => ({
+        index: idx,
+        title: item.title || `第 ${idx + 1} 章`,
+        id: item.id,
+      }));
   }
 
   async getChapters(): Promise<Array<{ index: number; title: string }>> {
@@ -24,12 +66,22 @@ export class EpubParser implements ReaderPlugin {
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
 
-    return new Promise((resolve, reject) => {
-      (this.epub as Record<string, (id: string, cb: (err: Error | null, text: string) => void) => void>).getChapter(chapter.id, (err, text) => {
-        if (err) reject(err);
-        else resolve(text || '');
+    // epub2 v3 uses promise-based getChapterRawAsync / getChapterAsync
+    let rawHtml = '';
+    if (typeof this.epub.getChapterRawAsync === 'function') {
+      rawHtml = await this.epub.getChapterRawAsync(chapter.id);
+    } else if (typeof this.epub.getChapterAsync === 'function') {
+      rawHtml = await this.epub.getChapterAsync(chapter.id);
+    } else {
+      // Legacy callback fallback (epub2 v2)
+      rawHtml = await new Promise<string>((resolve, reject) => {
+        this.epub.getChapter(chapter.id, (err: Error | null, text: string) => {
+          if (err) reject(err); else resolve(text || '');
+        });
       });
-    });
+    }
+
+    return extractBodyContent(rawHtml);
   }
 
   async getTotalProgress(): Promise<number> {
