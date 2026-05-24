@@ -146,6 +146,64 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
   `);
 
+  // === Plan 2 schema: series ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS series (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      summary TEXT,
+      cover_url TEXT,
+      author TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_series_name ON series(name);
+  `);
+
+  // === Plan 2 schema: scan_batches ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scan_batches (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      summary_counts TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      applied_at DATETIME,
+      applied_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_batches_status ON scan_batches(status);
+  `);
+
+  // === Plan 2 schema: scan_batch_items ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scan_batch_items (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      admin_decision TEXT,
+      admin_payload TEXT,
+      reviewed_at DATETIME,
+      reviewed_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_batch_items_batch ON scan_batch_items(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_scan_batch_items_type ON scan_batch_items(type);
+  `);
+
+  // === Plan 2 schema: manual_overrides ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS manual_overrides (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      book_id_a TEXT,
+      book_id_b TEXT,
+      series_id TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_manual_overrides_type ON manual_overrides(type);
+    CREATE INDEX IF NOT EXISTS idx_manual_overrides_book_a ON manual_overrides(book_id_a);
+  `);
+
   // === Plan 1: recover stale running tasks on startup ===
   database.prepare(
     "UPDATE scan_tasks SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'"
