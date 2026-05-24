@@ -241,44 +241,23 @@ export function applyBatch(
       }
     }
 
-    // Phase 4: garbled / encoding_fixed
-    // Garbled files are NOT in new_books (walker short-circuits before fingerprint),
-    // so books table may have no matching row to UPDATE. In that case we INSERT
-    // a minimal row so the library reflects the file's existence + garbled status.
+    // Phase 4: encoding_fixed only (garbled is noop — neither INSERT nor UPDATE).
+    // Per user spec: garbled files stay on disk untouched and are NOT recorded
+    // in books table. The batch_item itself remains as an audit trace.
     for (const it of items) {
-      if (it.type !== 'garbled' && it.type !== 'encoding_fixed') continue;
+      if (it.type !== 'encoding_fixed') continue;
       if (it.admin_decision === 'reject') continue;
       try {
         const payload = JSON.parse(it.admin_payload ?? it.payload) as { file_path: string };
-        const newStatus = it.type === 'garbled' ? 'garbled' : 'encoding_fixed';
-        const r = db.prepare('UPDATE books SET status = ? WHERE file_path = ?').run(newStatus, payload.file_path);
-        if (r.changes === 0 && it.type === 'garbled') {
-          // No existing row — INSERT a placeholder so the user can see the garbled file
-          const title = path.basename(payload.file_path).replace(/\.[^.]+$/, '');
-          const ext = path.extname(payload.file_path).slice(1).toLowerCase();
-          let size = 0;
-          try {
-            // file may have been removed since scan; fail-soft to 0
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            size = require('fs').statSync(payload.file_path).size as number;
-          } catch { /* ignore */ }
-          db.prepare(
-            `INSERT INTO books (id, title, file_path, file_format, file_size, status)
-             VALUES (?, ?, ?, ?, ?, 'garbled')`
-          ).run(uuidv4(), title, payload.file_path, ext, size);
-          result.inserted++;
-          result.garbled_marked++;
-        } else if (r.changes > 0 && it.type === 'garbled') {
-          result.garbled_marked++;
-        }
+        db.prepare("UPDATE books SET status = 'encoding_fixed' WHERE file_path = ?").run(payload.file_path);
       } catch (e) {
         result.errors.push({ item_id: it.id, message: (e as Error).message });
       }
     }
 
     db.prepare(
-      "UPDATE scan_batches SET status = 'applied', applied_at = CURRENT_TIMESTAMP, applied_by = ? WHERE id = ?"
-    ).run(appliedBy, batchId);
+      "UPDATE scan_batches SET status = 'applied', applied_at = CURRENT_TIMESTAMP, applied_by = ?, apply_summary = ? WHERE id = ?"
+    ).run(appliedBy, JSON.stringify(result), batchId);
   });
   tx();
 

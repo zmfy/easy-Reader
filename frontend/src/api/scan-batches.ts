@@ -12,7 +12,14 @@ export const scanBatchesApi = {
     http.patch<ApiResponse<null>>(`/library/scan-batches/${batchId}/items/${itemId}`, { decision, payload }),
 
   apply: (id: string) =>
-    http.post<ApiResponse<{ inserted: number; updated: number; errors: Array<{ item_id: string; message: string }> }>>(`/library/scan-batches/${id}/apply`),
+    http.post<ApiResponse<{
+      inserted: number
+      updated: number
+      duplicates_linked: number
+      series_created: number
+      garbled_marked: number
+      errors: Array<{ item_id: string; message: string }>
+    }>>(`/library/scan-batches/${id}/apply`),
 
   discard: (id: string) =>
     http.delete<ApiResponse<null>>(`/library/scan-batches/${id}`),

@@ -118,6 +118,7 @@ export interface ScanBatch {
   created_at: string
   applied_at?: string | null
   applied_by?: string | null
+  apply_summary?: string | null
 }
 
 export interface ScanBatchItem {

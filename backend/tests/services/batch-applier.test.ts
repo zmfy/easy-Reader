@@ -20,7 +20,7 @@ function setup(): void {
       imported_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_finished INTEGER DEFAULT 0
     );
     CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT NOT NULL, summary TEXT, cover_url TEXT, author TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT);
+    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT, apply_summary TEXT);
     CREATE TABLE scan_batch_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL, admin_decision TEXT, admin_payload TEXT, reviewed_at DATETIME, reviewed_by TEXT);
     CREATE TABLE manual_overrides (id TEXT PRIMARY KEY, type TEXT NOT NULL, book_id_a TEXT, book_id_b TEXT, series_id TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
   `);
@@ -96,14 +96,24 @@ describe('applyBatch', () => {
     expect(s1.series_id).toBe(series.id);
   });
 
-  it('marks garbled books with status', () => {
+  it('garbled items are noop — books table is not modified', () => {
     const batchId = makeBatch([
-      { type: 'new', payload: { file_path: '/g', title: '乱码书', file_format: 'txt', file_size: 100, fingerprint: 'fg', status: 'normal' } },
+      { type: 'garbled', payload: { file_path: '/g', reason: 'random bytes' } },
+    ]);
+    applyBatch(batchId, 'admin1', db);
+    const row = db.prepare("SELECT * FROM books WHERE file_path = '/g'").get();
+    expect(row).toBeUndefined(); // garbled does not INSERT
+  });
+
+  it('garbled items leave any pre-existing book row untouched', () => {
+    // Pre-seed a book at the same file_path
+    db.prepare(`INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('preexist', 'old', '/g', 'txt', 50, 'normal')`).run();
+    const batchId = makeBatch([
       { type: 'garbled', payload: { file_path: '/g', reason: 'random bytes' } },
     ]);
     applyBatch(batchId, 'admin1', db);
     const row = db.prepare("SELECT * FROM books WHERE file_path = '/g'").get() as { status: string };
-    expect(row.status).toBe('garbled');
+    expect(row.status).toBe('normal'); // preserved, not flipped to garbled
   });
 
   it('marks batch as applied and sets applied_by', () => {

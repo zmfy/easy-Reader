@@ -172,6 +172,8 @@ function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_scan_batches_status ON scan_batches(status);
   `);
+  // Plan 2 fix: audit trail of what apply actually did
+  try { database.exec("ALTER TABLE scan_batches ADD COLUMN apply_summary TEXT"); } catch { /* exists */ }
 
   // === Plan 2 schema: scan_batch_items ===
   database.exec(`

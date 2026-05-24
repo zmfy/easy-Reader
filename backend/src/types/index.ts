@@ -159,6 +159,7 @@ export interface ScanBatch {
   created_at: string;
   applied_at?: string | null;
   applied_by?: string | null;
+  apply_summary?: string | null;  // JSON of ApplyResult (audit trail)
 }
 
 export type ScanBatchItemType =
