@@ -6,8 +6,16 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, paginatedResponse, errorResponse } from '../utils/response';
-import { Book } from '../types';
+import { Book, ScanOptions } from '../types';
 import { aiManager } from '../ai/ai-manager';
+import {
+  createScanTask,
+  getActiveScanTask,
+  getScanTaskById,
+  cancelScanTask,
+  hasRunningTask,
+} from '../services/scan-task';
+import { runScanTask } from '../services/scan-walker';
 
 const router = Router();
 
@@ -44,48 +52,65 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   paginatedResponse(res, books, page, pageSize, total);
 });
 
+const scanOptionsSchema = z.object({
+  full_rescan: z.boolean().default(false),
+});
+
 // POST /api/library/scan
-router.post('/scan', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
-  const taskId = uuidv4();
+router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (hasRunningTask()) {
+    const active = getActiveScanTask()!;
+    res.status(409).json({
+      success: false,
+      code: 'TASK_RUNNING',
+      message: '已有扫描任务在运行',
+      data: { activeTaskId: active.id },
+    });
+    return;
+  }
 
-  // Run scan asynchronously
-  setImmediate(async () => {
-    try {
-      const db = getDb();
+  const parsed = scanOptionsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
+    return;
+  }
+  const options: ScanOptions = parsed.data;
 
-      if (!fs.existsSync(BOOKS_DIR)) {
-        return;
-      }
+  const task = createScanTask(req.user!.userId, options);
 
-      function scanDir(dir: string): void {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name).slice(1).toLowerCase();
-            if (SUPPORTED_FORMATS.includes(ext)) {
-              const existing = db.prepare('SELECT id FROM books WHERE file_path = ?').get(fullPath);
-              if (!existing) {
-                const stat = fs.statSync(fullPath);
-                const title = path.basename(entry.name, path.extname(entry.name));
-                db.prepare(
-                  'INSERT INTO books (id, title, file_path, file_format, file_size) VALUES (?, ?, ?, ?, ?)'
-                ).run(uuidv4(), title, fullPath, ext, stat.size);
-              }
-            }
-          }
-        }
-      }
-
-      scanDir(BOOKS_DIR);
-    } catch (err) {
-      console.error('Scan error:', err);
-    }
+  // Fire and forget
+  setImmediate(() => {
+    void runScanTask(task.id, options);
   });
 
-  successResponse(res, { taskId, status: 'scanning' }, '扫描任务已启动');
+  successResponse(res, { taskId: task.id, status: task.status }, '扫描任务已启动');
+});
+
+// GET /api/library/scan/tasks/active
+router.get('/scan/tasks/active', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const active = getActiveScanTask();
+  successResponse(res, active);
+});
+
+// GET /api/library/scan/tasks/:id
+router.get('/scan/tasks/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const task = getScanTaskById(req.params.id);
+  if (!task) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '任务不存在');
+    return;
+  }
+  successResponse(res, task);
+});
+
+// POST /api/library/scan/tasks/:id/cancel
+router.post('/scan/tasks/:id/cancel', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const task = getScanTaskById(req.params.id);
+  if (!task) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '任务不存在');
+    return;
+  }
+  cancelScanTask(req.params.id);
+  successResponse(res, null, '任务取消请求已发出');
 });
 
 // GET /api/library/:id
