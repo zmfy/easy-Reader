@@ -1,4 +1,5 @@
 <template>
+  <ScanProgressBar />
   <router-view v-slot="{ Component, route }">
     <transition name="page" mode="out-in">
       <component :is="Component" :key="route.path" />
@@ -10,6 +11,7 @@
 import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { settingsApi } from '@/api/settings'
+import ScanProgressBar from '@/components/ScanProgressBar.vue'
 
 const authStore = useAuthStore()
 

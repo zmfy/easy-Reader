@@ -18,7 +18,7 @@
           <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="fetchBooks">
             <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
           </el-select>
-          <el-button v-if="authStore.isAdmin" type="primary" :loading="scanning" @click="handleScan">
+          <el-button v-if="authStore.isAdmin" type="primary" :loading="scanStore.isRunning" @click="handleScan">
             <el-icon><Refresh /></el-icon>
             扫描导入
           </el-button>
@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, watch } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -75,14 +75,15 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
 import { libraryApi } from '@/api/library'
 import { useAuthStore } from '@/stores/auth'
+import { useScanTaskStore } from '@/stores/scan-task'
 import type { Book } from '@/types'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const scanStore = useScanTaskStore()
 
 const books = ref<Book[]>([])
 const loading = ref(false)
-const scanning = ref(false)
 const searchQuery = ref('')
 const selectedCategory = ref('')
 
@@ -122,18 +123,30 @@ function debouncedSearch() {
   }, 300)
 }
 
-async function handleScan() {
-  scanning.value = true
+async function handleScan(): Promise<void> {
+  if (scanStore.isRunning) {
+    ElMessage.warning('已有扫描任务在运行')
+    return
+  }
   try {
-    await libraryApi.scan()
-    ElMessage.success('扫描任务已启动，稍后刷新查看新书')
-    setTimeout(fetchBooks, 3000)
-  } catch {
-    ElMessage.error('扫描失败')
-  } finally {
-    scanning.value = false
+    await scanStore.startScan({ full_rescan: false })
+    ElMessage.success('扫描任务已启动')
+  } catch (err: any) {
+    if (err.response?.status === 409) {
+      ElMessage.warning('已有扫描任务在运行')
+      void scanStore.refresh()
+    } else {
+      ElMessage.error('扫描失败')
+    }
   }
 }
+
+// 任务完成后刷新书库
+watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
+  if (oldStatus === 'running' && newStatus !== 'running') {
+    void fetchBooks()
+  }
+})
 
 onMounted(fetchBooks)
 </script>
