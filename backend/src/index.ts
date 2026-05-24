@@ -9,6 +9,7 @@ import { getDb } from './db';
 import authRoutes from './routes/auth';
 import libraryRoutes from './routes/library';
 import manualOverridesRoutes from './routes/manual-overrides';
+import scanBatchesRoutes from './routes/scan-batches';
 import shelfRoutes from './routes/shelf';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
@@ -51,6 +52,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/library/manual-overrides', manualOverridesRoutes);
+app.use('/api/library/scan-batches', scanBatchesRoutes);
 app.use('/api/library', libraryRoutes);
 app.use('/api/shelf', shelfRoutes);
 app.use('/api/reader', readerRoutes);
