@@ -74,6 +74,20 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
     return;
   }
 
+  // Reject if any pending batch exists (force admin to handle prior results first)
+  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' LIMIT 1").get() as
+    | { id: string }
+    | undefined;
+  if (pendingBatch) {
+    res.status(409).json({
+      success: false,
+      code: 'PENDING_BATCH',
+      message: '请先处理待审核批次',
+      data: { pendingBatchId: pendingBatch.id },
+    });
+    return;
+  }
+
   const parsed = scanOptionsSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
