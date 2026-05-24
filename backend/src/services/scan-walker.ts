@@ -30,6 +30,27 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const allFiles: string[] = collectFiles(BOOKS_DIR);
     setScanProgress(taskId, { total_files: allFiles.length, processed_files: 0 });
 
+    // Cleanup orphans: delete DB rows whose file_path is no longer on disk.
+    // Guard: skip when walk returned zero files (likely an empty BOOKS_DIR or a
+    // broken bind-mount) — otherwise we'd wipe the whole library on every misconfig.
+    if (allFiles.length > 0) {
+      const db = getDb();
+      const fileSet = new Set(allFiles);
+      const rows = db.prepare('SELECT id, file_path FROM books').all() as {
+        id: string;
+        file_path: string;
+      }[];
+      const del = db.prepare('DELETE FROM books WHERE id = ?');
+      let removed = 0;
+      for (const row of rows) {
+        if (!fileSet.has(row.file_path)) {
+          del.run(row.id);
+          removed++;
+        }
+      }
+      if (removed > 0) console.log(`[scan ${taskId}] cleaned ${removed} orphan record(s)`);
+    }
+
     // Phase 2: per-file processing
     setScanProgress(taskId, { stage: 'fingerprinting' });
     let processed = 0;

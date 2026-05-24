@@ -57,6 +57,7 @@
         </button>
         <span class="mobile-title">{{ siteName }}</span>
       </div>
+      <ScanProgressBar />
       <slot />
     </main>
   </div>
@@ -69,6 +70,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
+import ScanProgressBar from '@/components/ScanProgressBar.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()

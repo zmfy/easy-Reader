@@ -85,9 +85,6 @@ const scanStore = useScanTaskStore()
 
 const books = ref<Book[]>([])
 const loading = ref(false)
-const searchQuery = ref('')
-const selectedCategory = ref('')
-const scanning = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
 

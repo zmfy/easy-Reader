@@ -82,50 +82,6 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
   // Fire and forget
   setImmediate(() => {
     void runScanTask(task.id, options);
-      // 清理：删除文件已不存在的数据库记录
-      const allBooks = db.prepare('SELECT id, file_path FROM books').all() as { id: string; file_path: string }[];
-      const deleteStmt = db.prepare('DELETE FROM books WHERE id = ?');
-      let removedCount = 0;
-      for (const book of allBooks) {
-        if (!fs.existsSync(book.file_path)) {
-          deleteStmt.run(book.id);
-          removedCount++;
-        }
-      }
-      if (removedCount > 0) {
-        console.log(`[scan] 清理了 ${removedCount} 条文件已不存在的记录`);
-      }
-
-      // 新增：扫描目录，导入尚未入库的文件
-      let addedCount = 0;
-      function scanDir(dir: string): void {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name).slice(1).toLowerCase();
-            if (SUPPORTED_FORMATS.includes(ext)) {
-              const existing = db.prepare('SELECT id FROM books WHERE file_path = ?').get(fullPath);
-              if (!existing) {
-                const stat = fs.statSync(fullPath);
-                const title = path.basename(entry.name, path.extname(entry.name));
-                db.prepare(
-                  'INSERT INTO books (id, title, file_path, file_format, file_size) VALUES (?, ?, ?, ?, ?)'
-                ).run(uuidv4(), title, fullPath, ext, stat.size);
-                addedCount++;
-              }
-            }
-          }
-        }
-      }
-
-      scanDir(BOOKS_DIR);
-      console.log(`[scan] 完成：新增 ${addedCount} 本，移除 ${removedCount} 条`);
-    } catch (err) {
-      console.error('Scan error:', err);
-    }
   });
 
   successResponse(res, { taskId: task.id, status: task.status }, '扫描任务已启动');

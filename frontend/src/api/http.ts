@@ -26,7 +26,6 @@ async function doRefresh(): Promise<string> {
   const data = resp.data?.data
   if (!data?.accessToken) throw new Error('refresh failed')
 
-  // 存到 localStorage（与请求拦截器保持一致）
   localStorage.setItem('accessToken', data.accessToken)
   localStorage.setItem('refreshToken', data.refreshToken)
 
@@ -40,15 +39,18 @@ async function doRefresh(): Promise<string> {
   return data.accessToken
 }
 
-// Response interceptor: on 401 try refresh once, then redirect to login
+function redirectToLogin(): void {
+  localStorage.removeItem('accessToken')
+  localStorage.removeItem('refreshToken')
+  if (window.location.pathname !== '/login') {
+    window.location.href = '/login'
+  }
+}
+
+// Response interceptor: 401 时尝试 refresh-token 静默续期；失败再跳 /login
 http.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
-      sessionStorage.removeItem('accessToken')
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
-      }
     const config = error.config as InternalAxiosRequestConfig & { _retried?: boolean }
     const is401 = error.response?.status === 401
     const isRefreshUrl = config?.url?.includes('/auth/refresh')
@@ -63,14 +65,10 @@ http.interceptors.response.use(
         config.headers.Authorization = `Bearer ${newToken}`
         return http(config)
       } catch {
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        window.location.href = '/login'
+        redirectToLogin()
       }
     } else if (is401) {
-      localStorage.removeItem('accessToken')
-      localStorage.removeItem('refreshToken')
-      window.location.href = '/login'
+      redirectToLogin()
     }
     return Promise.reject(error)
   }
