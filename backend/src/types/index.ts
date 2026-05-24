@@ -21,6 +21,15 @@ export interface Book {
   is_finished: number;
   file_size?: number;
   imported_at: string;
+  // 扫描增强字段（Plan 1）
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed';
+  duplicate_of?: string | null;
+  series_id?: string | null;
+  chapter_count?: number;
+  fingerprint?: string;
+  first_chapter_hash?: string;
+  encoding_detected?: string;
+  manually_edited_fields?: string; // JSON array string
 }
 
 export interface ShelfItem {
@@ -103,6 +112,24 @@ export interface ReaderPlugin {
   getChapterContent(index: number): Promise<string>;
   getTotalProgress(): Promise<number>;
   getProgress(): Promise<number>;
+}
+
+export interface ScanTask {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
+  stage: 'walking' | 'fingerprinting' | 'staging' | null;
+  total_files: number;
+  processed_files: number;
+  options: string;            // JSON
+  started_by: string;
+  started_at: string;
+  finished_at?: string | null;
+  error?: string | null;
+}
+
+export interface ScanOptions {
+  full_rescan: boolean;
+  // 后续 Plan 会加 ai_dedup / ai_series / ai_fill / mode
 }
 
 declare global {
