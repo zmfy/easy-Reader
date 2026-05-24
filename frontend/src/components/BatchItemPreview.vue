@@ -35,7 +35,7 @@ async function loadPreview(): Promise<void> {
   error.value = ''
   try {
     const resp = await scanBatchesApi.preview(props.batchId, props.filePath)
-    content.value = resp.data.data.content
+    content.value = resp.data.data!.content
   } catch {
     error.value = '加载失败'
   } finally {

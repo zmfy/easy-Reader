@@ -58,7 +58,7 @@ async function fetchBatches(): Promise<void> {
   loading.value = true
   try {
     const resp = await scanBatchesApi.list()
-    batches.value = resp.data.data
+    batches.value = resp.data.data!
   } finally {
     loading.value = false
   }
