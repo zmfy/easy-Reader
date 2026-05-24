@@ -55,6 +55,25 @@ is_finished为true表示已完结，false表示连载中。如果不确定某字
     const data = await resp.json() as { response: string };
     return data.response?.trim() || '综合';
   },
+
+  async chat(prompt: string, config: Record<string, string>): Promise<string> {
+    const baseUrl = config.baseUrl || 'http://localhost:11434';
+    const model = config.model || 'llama3';
+    const resp = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        options: { temperature: 0.1 },
+      }),
+    });
+    if (!resp.ok) throw new Error(`Ollama API error: ${resp.status}`);
+    const data = await resp.json() as Record<string, unknown>;
+    const msg = data.message as { content?: string } | undefined;
+    return msg?.content || '';
+  },
 };
 
 export default ollamaPlugin;

@@ -71,6 +71,27 @@ is_finished为true表示已完结，false表示连载中。如果不确定某字
     const data = await resp.json() as Record<string, unknown>;
     return ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content?.trim() || '综合';
   },
+
+  async chat(prompt: string, config: Record<string, string>): Promise<string> {
+    const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
+    const model = config.model || 'gpt-3.5-turbo';
+
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+      }),
+    });
+    if (!resp.ok) throw new Error(`OpenAI API error: ${resp.status}`);
+    const data = await resp.json() as Record<string, unknown>;
+    return ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content || '';
+  },
 };
 
 export default openaiPlugin;
