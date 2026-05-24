@@ -106,3 +106,78 @@ export interface ScanTask {
   finished_at?: string | null
   error?: string | null
 }
+
+export type ScanBatchStatus = 'pending' | 'applied' | 'discarded'
+export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed'
+
+export interface ScanBatch {
+  id: string
+  task_id: string
+  status: ScanBatchStatus
+  summary_counts: string
+  created_at: string
+  applied_at?: string | null
+  applied_by?: string | null
+}
+
+export interface ScanBatchItem {
+  id: string
+  batch_id: string
+  type: ScanBatchItemType
+  payload: string
+  admin_decision?: 'accept' | 'reject' | 'modified' | null
+  admin_payload?: string | null
+  reviewed_at?: string | null
+  reviewed_by?: string | null
+}
+
+export interface ScanStartOptions {
+  mode: 'auto' | 'review' | 'hybrid'
+  ai_dedup: boolean
+  ai_series: boolean
+  ai_fill: boolean
+  full_rescan: boolean
+}
+
+export interface NewBookPayload {
+  file_path: string
+  title: string
+  file_format: string
+  file_size: number
+  chapter_count?: number
+  fingerprint?: string
+  first_chapter_hash?: string
+  encoding_detected?: string
+  status?: 'normal' | 'encoding_fixed'
+}
+
+export interface DuplicateGroupPayload {
+  canonical_file_path: string
+  members: Array<{
+    file_path: string
+    fingerprint: string
+    decision_type: 'hard' | 'ai'
+    ai_confidence?: number
+  }>
+  rejected_members?: Array<{ file_path: string; fingerprint?: string }>
+}
+
+export interface SeriesGroupPayload {
+  series_name: string
+  author?: string
+  members: Array<{ file_path: string; sequence: number }>
+  source: 'regex' | 'ai'
+  confidence?: 'high' | 'medium' | 'low'
+  rejected_members?: string[]
+}
+
+export interface GarbledPayload {
+  file_path: string
+  reason: string
+}
+
+export interface EncodingFixedPayload {
+  file_path: string
+  from_encoding: string
+  to_encoding: 'utf-8'
+}
