@@ -103,6 +103,11 @@ export interface AiPlugin {
   placeholders?: Record<string, string>;
   fillBookInfo(rawText: string, config: Record<string, string>): Promise<Partial<Book>>;
   classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string>;
+  /**
+   * Low-level chat primitive. Used by AI dedup/series judgement.
+   * Plugins must implement this so judgement logic can stay centralized.
+   */
+  chat(prompt: string, config: Record<string, string>): Promise<string>;
 }
 
 export interface ReaderPlugin {
@@ -128,8 +133,111 @@ export interface ScanTask {
 }
 
 export interface ScanOptions {
+  mode: 'auto' | 'review' | 'hybrid';
+  ai_dedup: boolean;
+  ai_series: boolean;
+  ai_fill: boolean;        // Plan 3 才生效，Plan 2 仅占位
   full_rescan: boolean;
-  // 后续 Plan 会加 ai_dedup / ai_series / ai_fill / mode
+}
+
+export interface Series {
+  id: string;
+  name: string;
+  summary?: string;
+  cover_url?: string;
+  author?: string;
+  created_at: string;
+}
+
+export type ScanBatchStatus = 'pending' | 'applied' | 'discarded';
+
+export interface ScanBatch {
+  id: string;
+  task_id: string;
+  status: ScanBatchStatus;
+  summary_counts: string;   // JSON
+  created_at: string;
+  applied_at?: string | null;
+  applied_by?: string | null;
+}
+
+export type ScanBatchItemType =
+  | 'new'
+  | 'duplicate_group'
+  | 'series'
+  | 'garbled'
+  | 'encoding_fixed'
+  | 'ai_fill_failed';
+
+export interface ScanBatchItem {
+  id: string;
+  batch_id: string;
+  type: ScanBatchItemType;
+  payload: string;          // JSON
+  admin_decision?: 'accept' | 'reject' | 'modified' | null;
+  admin_payload?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+}
+
+export interface NewBookPayload {
+  file_path: string;
+  title: string;
+  file_format: string;
+  file_size: number;
+  chapter_count?: number;
+  fingerprint?: string;
+  first_chapter_hash?: string;
+  encoding_detected?: string;
+  status?: 'normal' | 'encoding_fixed';
+}
+
+export interface DuplicateGroupPayload {
+  canonical_file_path: string;        // 正本文件路径
+  members: Array<{
+    file_path: string;
+    fingerprint: string;
+    decision_type: 'hard' | 'ai';     // hard = 指纹完全相同；ai = AI 判定
+    ai_confidence?: number;           // 0..1
+  }>;
+}
+
+export interface SeriesGroupPayload {
+  series_name: string;
+  author?: string;
+  members: Array<{
+    file_path: string;
+    sequence: number;
+  }>;
+  source: 'regex' | 'ai';
+  confidence?: 'high' | 'medium' | 'low';
+}
+
+export interface GarbledPayload {
+  file_path: string;
+  reason: string;
+}
+
+export interface EncodingFixedPayload {
+  file_path: string;
+  from_encoding: string;
+  to_encoding: 'utf-8';
+}
+
+export type ManualOverrideType =
+  | 'not_duplicate'
+  | 'not_in_series'
+  | 'forced_duplicate'
+  | 'forced_series_member';
+
+export interface ManualOverride {
+  id: string;
+  type: ManualOverrideType;
+  book_id_a: string | null;
+  book_id_b: string | null;
+  series_id: string | null;
+  created_by: string;
+  created_at: string;
 }
 
 declare global {
