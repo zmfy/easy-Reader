@@ -109,11 +109,12 @@ ${blocks}
 请按以下 JSON 格式返回，**只输出 JSON，不要任何其他文字**：
 {"groups":[{"canonical_index":0,"duplicate_indices":[2,3]}]}
 
-约定：
-- canonical_index 选章节数最完整且内容最齐全的那本
-- duplicate_indices 是除 canonical 外的同一本书
-- 如果没有任何重复，返回 {"groups":[]}
-- 不要把不同的书归到同一组`;
+判定准则（必须严格遵守）：
+- **同一本书**：书名、作者、第一章内容基本一致即可（章节数可以不同——常见的是同一本书有不同版本，章节数不同但都是同一本书）。
+- canonical_index **必须选章节数最多的那本**（最完整版本）。
+- duplicate_indices 是除 canonical 外的同一本书的其他版本。
+- 如果没有任何重复，返回 {"groups":[]}。
+- 不要把不同书名/作者明显不同的书归到同一组。`;
 }
 
 function parseDedupResponse(raw: string, total: number): AiDedupResult {
