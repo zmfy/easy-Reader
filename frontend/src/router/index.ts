@@ -50,6 +50,18 @@ const router = createRouter({
       component: () => import('@/views/Settings.vue'),
       meta: { requiresAuth: true, roles: ['admin'] },
     },
+    {
+      path: '/library/scan-batches',
+      name: 'scan-batches',
+      component: () => import('@/views/ScanBatchList.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/scan-batches/:id',
+      name: 'scan-batch-review',
+      component: () => import('@/views/ScanBatchReview.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
   ],
 })
 
