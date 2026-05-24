@@ -93,3 +93,16 @@ export interface ReaderSettings {
   fontColor: string
   pageMode: 'scroll' | 'waterfall'
 }
+
+export interface ScanTask {
+  id: string
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
+  stage: 'walking' | 'fingerprinting' | 'staging' | null
+  total_files: number
+  processed_files: number
+  options: string
+  started_by: string
+  started_at: string
+  finished_at?: string | null
+  error?: string | null
+}

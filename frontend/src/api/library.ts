@@ -26,8 +26,8 @@ export const libraryApi = {
   list: (params: LibraryQuery = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 
-  scan: () =>
-    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan'),
+  scan: (payload: { full_rescan?: boolean } = {}) =>
+    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan', payload),
 
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),
