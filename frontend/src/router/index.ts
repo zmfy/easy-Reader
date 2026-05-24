@@ -62,6 +62,12 @@ const router = createRouter({
       component: () => import('@/views/ScanBatchReview.vue'),
       meta: { requiresAuth: true, roles: ['admin'] },
     },
+    {
+      path: '/library/problems',
+      name: 'problem-books',
+      component: () => import('@/views/ProblemBooks.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
   ],
 })
 

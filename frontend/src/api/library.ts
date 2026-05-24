@@ -8,6 +8,7 @@ export interface LibraryQuery {
   category?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
+  status?: 'normal' | 'problems' | 'duplicate' | 'garbled' | 'all'
 }
 
 export interface UpdateBookPayload {
@@ -35,8 +36,11 @@ export const libraryApi = {
   update: (id: string, payload: UpdateBookPayload) =>
     http.put<ApiResponse<Book>>(`/library/${id}`, payload),
 
-  remove: (id: string) =>
-    http.delete<ApiResponse<null>>(`/library/${id}`),
+  remove: (id: string, withFile = false) =>
+    http.delete<ApiResponse<{ fileDeleted: boolean; fileError: string | null } | null>>(
+      `/library/${id}`,
+      { params: withFile ? { with_file: true } : {} },
+    ),
 
   aiFill: (id: string) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),

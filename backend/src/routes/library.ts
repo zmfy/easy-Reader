@@ -25,17 +25,36 @@ const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
 // GET /api/library
+// status query: defaults to "normal-only" (hides duplicate + garbled).
+//   ?status=problems → only books with status in ('duplicate','garbled')
+//   ?status=garbled  → only garbled
+//   ?status=duplicate → only duplicates
+//   ?status=all      → no status filter (admin debug)
 router.get('/', authMiddleware, (req: Request, res: Response) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 20));
   const search = (req.query.search as string) || '';
   const category = (req.query.category as string) || '';
+  const statusFilter = (req.query.status as string) || 'normal';
   const sortBy = ALLOWED_SORT_FIELDS.includes(req.query.sortBy as string) ? (req.query.sortBy as string) : 'imported_at';
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
   const db = getDb();
   let whereClause = 'WHERE 1=1';
   const params: unknown[] = [];
+
+  if (statusFilter === 'problems') {
+    whereClause += " AND status IN ('duplicate','garbled')";
+  } else if (statusFilter === 'garbled') {
+    whereClause += " AND status = 'garbled'";
+  } else if (statusFilter === 'duplicate') {
+    whereClause += " AND status = 'duplicate'";
+  } else if (statusFilter === 'all') {
+    // no filter
+  } else {
+    // default: normal-only library view — hide duplicate + garbled
+    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled'))";
+  }
 
   if (search) {
     whereClause += ' AND (title LIKE ? OR author LIKE ?)';
@@ -193,7 +212,9 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   successResponse(res, updated, '更新成功');
 });
 
-// DELETE /api/library/:id
+// DELETE /api/library/:id?with_file=true
+//   default: remove DB row only (file stays on disk)
+//   with_file=true: also delete the physical file from BOOKS_DIR
 router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
@@ -201,8 +222,23 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;
   }
+  const withFile = req.query.with_file === 'true' || req.query.with_file === '1';
+  let fileDeleted = false;
+  let fileError: string | null = null;
+  if (withFile && book.file_path) {
+    try {
+      if (fs.existsSync(book.file_path)) {
+        fs.unlinkSync(book.file_path);
+        fileDeleted = true;
+      } else {
+        fileError = 'file not found on disk';
+      }
+    } catch (e) {
+      fileError = (e as Error).message;
+    }
+  }
   db.prepare('DELETE FROM books WHERE id = ?').run(req.params.id);
-  successResponse(res, null, '已从书库移除');
+  successResponse(res, { fileDeleted, fileError }, withFile ? '已删除（含磁盘文件）' : '已从书库移除');
 });
 
 function cleanBookTitle(raw: string): string {

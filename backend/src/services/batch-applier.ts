@@ -241,15 +241,36 @@ export function applyBatch(
       }
     }
 
-    // Phase 4: encoding_fixed only (garbled is noop — neither INSERT nor UPDATE).
-    // Per user spec: garbled files stay on disk untouched and are NOT recorded
-    // in books table. The batch_item itself remains as an audit trace.
+    // Phase 4: garbled / encoding_fixed.
+    // Garbled files are recorded in books table with status='garbled' so admin
+    // can manage them via the "Problem Books" view. They are hidden from the
+    // normal /library listing by the route's default status filter.
+    // Disk files are NOT touched by apply — only the optional physical-delete
+    // via DELETE /library/:id?with_file=true can remove disk files.
     for (const it of items) {
-      if (it.type !== 'encoding_fixed') continue;
+      if (it.type !== 'garbled' && it.type !== 'encoding_fixed') continue;
       if (it.admin_decision === 'reject') continue;
       try {
         const payload = JSON.parse(it.admin_payload ?? it.payload) as { file_path: string };
-        db.prepare("UPDATE books SET status = 'encoding_fixed' WHERE file_path = ?").run(payload.file_path);
+        const newStatus = it.type === 'garbled' ? 'garbled' : 'encoding_fixed';
+        const r = db.prepare('UPDATE books SET status = ? WHERE file_path = ?').run(newStatus, payload.file_path);
+        if (r.changes === 0 && it.type === 'garbled') {
+          // No existing row — INSERT a placeholder so admin can manage it
+          const title = path.basename(payload.file_path).replace(/\.[^.]+$/, '');
+          const ext = path.extname(payload.file_path).slice(1).toLowerCase();
+          let size = 0;
+          try {
+            size = require('fs').statSync(payload.file_path).size as number;
+          } catch { /* file may have moved; ok */ }
+          db.prepare(
+            `INSERT INTO books (id, title, file_path, file_format, file_size, status)
+             VALUES (?, ?, ?, ?, ?, 'garbled')`
+          ).run(uuidv4(), title, payload.file_path, ext, size);
+          result.inserted++;
+          result.garbled_marked++;
+        } else if (r.changes > 0 && it.type === 'garbled') {
+          result.garbled_marked++;
+        }
       } catch (e) {
         result.errors.push({ item_id: it.id, message: (e as Error).message });
       }

@@ -96,24 +96,24 @@ describe('applyBatch', () => {
     expect(s1.series_id).toBe(series.id);
   });
 
-  it('garbled items are noop — books table is not modified', () => {
+  it('garbled items INSERT a placeholder row with status=garbled when none exists', () => {
     const batchId = makeBatch([
       { type: 'garbled', payload: { file_path: '/g', reason: 'random bytes' } },
     ]);
     applyBatch(batchId, 'admin1', db);
-    const row = db.prepare("SELECT * FROM books WHERE file_path = '/g'").get();
-    expect(row).toBeUndefined(); // garbled does not INSERT
+    const row = db.prepare("SELECT * FROM books WHERE file_path = '/g'").get() as { status: string };
+    expect(row).toBeTruthy();
+    expect(row.status).toBe('garbled');
   });
 
-  it('garbled items leave any pre-existing book row untouched', () => {
-    // Pre-seed a book at the same file_path
+  it('garbled items UPDATE an existing book row to status=garbled', () => {
     db.prepare(`INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('preexist', 'old', '/g', 'txt', 50, 'normal')`).run();
     const batchId = makeBatch([
       { type: 'garbled', payload: { file_path: '/g', reason: 'random bytes' } },
     ]);
     applyBatch(batchId, 'admin1', db);
     const row = db.prepare("SELECT * FROM books WHERE file_path = '/g'").get() as { status: string };
-    expect(row.status).toBe('normal'); // preserved, not flipped to garbled
+    expect(row.status).toBe('garbled');
   });
 
   it('marks batch as applied and sets applied_by', () => {

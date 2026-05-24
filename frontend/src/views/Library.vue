@@ -34,6 +34,9 @@
             <el-icon><Refresh /></el-icon>
             扫描导入
           </el-button>
+          <el-button v-if="authStore.isAdmin" @click="$router.push('/library/problems')">
+            问题书籍管理
+          </el-button>
         </div>
       </div>
 
