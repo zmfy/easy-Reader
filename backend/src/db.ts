@@ -101,12 +101,55 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_books_imported_at ON books(imported_at);
   `);
 
-  // Migrations for existing databases
+  // === Migrations for existing databases ===
   try {
     database.exec('ALTER TABLE reading_progress ADD COLUMN chapter_title TEXT');
   } catch {
-    // Column already exists, ignore
+    /* column exists */
   }
+
+  // === Plan 1 schema: scan_tasks ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scan_tasks (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'pending',
+      stage TEXT,
+      total_files INTEGER DEFAULT 0,
+      processed_files INTEGER DEFAULT 0,
+      options TEXT,
+      started_by TEXT NOT NULL,
+      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME,
+      error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_tasks_status ON scan_tasks(status);
+  `);
+
+  // === Plan 1 schema: books extra columns ===
+  const booksAlters: string[] = [
+    "ALTER TABLE books ADD COLUMN status TEXT DEFAULT 'normal'",
+    "ALTER TABLE books ADD COLUMN duplicate_of TEXT",
+    "ALTER TABLE books ADD COLUMN series_id TEXT",
+    "ALTER TABLE books ADD COLUMN chapter_count INTEGER",
+    "ALTER TABLE books ADD COLUMN fingerprint TEXT",
+    "ALTER TABLE books ADD COLUMN first_chapter_hash TEXT",
+    "ALTER TABLE books ADD COLUMN encoding_detected TEXT",
+    "ALTER TABLE books ADD COLUMN manually_edited_fields TEXT",
+  ];
+  for (const stmt of booksAlters) {
+    try { database.exec(stmt); } catch { /* column exists */ }
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_books_fingerprint ON books(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_books_duplicate_of ON books(duplicate_of);
+    CREATE INDEX IF NOT EXISTS idx_books_series_id ON books(series_id);
+    CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
+  `);
+
+  // === Plan 1: recover stale running tasks on startup ===
+  database.prepare(
+    "UPDATE scan_tasks SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'"
+  ).run('service restarted while task was running');
 
   // Insert default admin if not exists
   const adminExists = database.prepare('SELECT id FROM users WHERE role = ?').get('admin');
