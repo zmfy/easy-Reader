@@ -137,10 +137,22 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     };
 
     // Phase 7: dispatch by mode
+    const isEmpty = (r: ScanResult): boolean =>
+      r.new_books.length === 0 &&
+      r.hard_duplicate_groups.length === 0 &&
+      r.ai_duplicate_groups.length === 0 &&
+      r.series_groups.length === 0 &&
+      r.garbled.length === 0 &&
+      r.encoding_fixed.length === 0;
+
     if (options.mode === 'auto') {
-      const batch = buildBatchFromScan(taskId, result);
-      const { applyBatch } = await import('./batch-applier');
-      applyBatch(batch.id, 'system-auto');
+      if (!isEmpty(result)) {
+        const batch = buildBatchFromScan(taskId, result);
+        const { applyBatch } = await import('./batch-applier');
+        applyBatch(batch.id, 'system-auto');
+      } else {
+        console.log(`[scan ${taskId}] empty result, no batch created`);
+      }
     } else if (options.mode === 'hybrid') {
       const auto: ScanResult = {
         new_books: result.new_books,
@@ -158,15 +170,21 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         garbled: [],
         encoding_fixed: [],
       };
-      const autoBatch = buildBatchFromScan(taskId, auto);
-      const { applyBatch } = await import('./batch-applier');
-      applyBatch(autoBatch.id, 'system-hybrid-auto');
+      if (!isEmpty(auto)) {
+        const autoBatch = buildBatchFromScan(taskId, auto);
+        const { applyBatch } = await import('./batch-applier');
+        applyBatch(autoBatch.id, 'system-hybrid-auto');
+      }
       if (review.ai_duplicate_groups.length > 0 || review.series_groups.length > 0) {
         buildBatchFromScan(taskId, review);
       }
     } else {
-      // mode === 'review'
-      buildBatchFromScan(taskId, result);
+      // mode === 'review' — skip batch creation when result has nothing to review
+      if (!isEmpty(result)) {
+        buildBatchFromScan(taskId, result);
+      } else {
+        console.log(`[scan ${taskId}] empty result, no batch created`);
+      }
     }
 
     finishScanTask(taskId, 'completed');

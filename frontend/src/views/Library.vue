@@ -162,8 +162,11 @@ function debouncedSearch() {
 }
 
 async function handleScan(): Promise<void> {
+  // Sync from server before deciding — ScanProgressBar polling may have stopped
+  await scanStore.refresh()
   if (scanStore.isRunning) {
-    ElMessage.warning('已有扫描任务在运行')
+    if (!scanStore.isPolling) scanStore.startPolling()
+    ElMessage.info('已有扫描任务进行中，进度条已显示在顶部')
     return
   }
   await refreshPendingBatch()
