@@ -187,6 +187,23 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       }
     }
 
+    // Phase 8: AI batch fill (if enabled). Only runs for auto/hybrid modes
+    // because review-mode books haven't been applied to books table yet.
+    if (options.ai_fill && (options.mode === 'auto' || options.mode === 'hybrid')) {
+      setScanProgress(taskId, { stage: 'staging' });
+      const { batchFill } = await import('./ai-batch-fill');
+      const db = getDb();
+      const toFill = db.prepare(`
+        SELECT id, file_path, file_format FROM books
+        WHERE status = 'normal' AND duplicate_of IS NULL
+          AND (author IS NULL OR author = '')
+          AND (summary IS NULL OR summary = '')
+      `).all() as Array<{ id: string; file_path: string; file_format: string }>;
+      if (toFill.length > 0) {
+        await batchFill({ taskId, books: toFill });
+      }
+    }
+
     finishScanTask(taskId, 'completed');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -18,6 +18,7 @@ import {
 import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
+import { markFieldsAsEdited } from '../services/ai-batch-fill';
 
 const router = Router();
 
@@ -203,6 +204,16 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   if (data.publish_date !== undefined) { updates.push('publish_date = ?'); values.push(data.publish_date); }
   if (data.finish_date !== undefined) { updates.push('finish_date = ?'); values.push(data.finish_date); }
   if (data.is_finished !== undefined) { updates.push('is_finished = ?'); values.push(data.is_finished ? 1 : 0); }
+
+  // Track which fields admin manually edited so AI batch fill won't overwrite
+  const editedFields: Array<'title' | 'author' | 'summary' | 'category'> = [];
+  if (data.title !== undefined) editedFields.push('title');
+  if (data.author !== undefined) editedFields.push('author');
+  if (data.summary !== undefined) editedFields.push('summary');
+  if (data.category !== undefined) editedFields.push('category');
+  if (editedFields.length > 0) {
+    markFieldsAsEdited(req.params.id, editedFields);
+  }
 
   if (updates.length > 0) {
     values.push(req.params.id);
