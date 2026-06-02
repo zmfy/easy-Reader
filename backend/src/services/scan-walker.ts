@@ -226,9 +226,13 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       }
     }
 
-    // Phase 8: AI batch fill (if enabled). Only runs for auto/hybrid modes
-    // because review-mode books haven't been applied to books table yet.
-    if (options.ai_fill && (options.mode === 'auto' || options.mode === 'hybrid')) {
+    // Phase 8: AI batch fill (if enabled).
+    // Decoupled from mode — ai_fill operates on books ALREADY in the books table
+    // that are missing author or summary, regardless of whether this scan ran
+    // in review/auto/hybrid. (For review mode, books staged in this scan are in
+    // scan_batch_items, not books table — they'll be eligible for AI fill only
+    // after the admin applies the batch and runs another scan with ai_fill on.)
+    if (options.ai_fill) {
       setScanProgress(taskId, { stage: 'ai_fill' });
       const { batchFill } = await import('./ai-batch-fill');
       const toFill = db.prepare(`
@@ -237,8 +241,10 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           AND (author IS NULL OR author = '')
           AND (summary IS NULL OR summary = '')
       `).all() as Array<{ id: string; file_path: string; file_format: string }>;
+      console.log(`[scan ${taskId}] AI fill candidates: ${toFill.length}`);
       if (toFill.length > 0) {
-        await batchFill({ taskId, books: toFill });
+        const result = await batchFill({ taskId, books: toFill });
+        console.log(`[scan ${taskId}] AI fill done: ${result.succeeded.length} ok, ${result.failed.length} failed`);
       }
     }
 
