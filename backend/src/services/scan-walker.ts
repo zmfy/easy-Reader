@@ -95,7 +95,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // so `scanned` may be nearly empty even when the user wants to re-classify
     // existing books. Pull books already in DB into the candidate set so series
     // / dedup detection works without requiring full_rescan.
-    setScanProgress(taskId, { stage: 'staging' });
+    setScanProgress(taskId, { stage: 'dedup' });
     const db = getDb();
     const scannedPaths = new Set(scanned.map(b => b.file_path));
 
@@ -148,6 +148,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     }));
 
     // Phase 4: series — regex first
+    setScanProgress(taskId, { stage: 'series' });
     const regexSeriesCandidates = extractSeriesCandidates(seriesInput);
     const regexSeriesPayloads: SeriesGroupPayload[] = regexSeriesCandidates.map(s => ({
       series_name: s.series_name,
@@ -182,6 +183,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       r.garbled.length === 0 &&
       r.encoding_fixed.length === 0;
 
+    setScanProgress(taskId, { stage: 'staging' });
     if (options.mode === 'auto') {
       if (!isEmpty(result)) {
         const batch = buildBatchFromScan(taskId, result);
@@ -227,9 +229,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // Phase 8: AI batch fill (if enabled). Only runs for auto/hybrid modes
     // because review-mode books haven't been applied to books table yet.
     if (options.ai_fill && (options.mode === 'auto' || options.mode === 'hybrid')) {
-      setScanProgress(taskId, { stage: 'staging' });
+      setScanProgress(taskId, { stage: 'ai_fill' });
       const { batchFill } = await import('./ai-batch-fill');
-      const db = getDb();
       const toFill = db.prepare(`
         SELECT id, file_path, file_format FROM books
         WHERE status = 'normal' AND duplicate_of IS NULL

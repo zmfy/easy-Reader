@@ -103,10 +103,12 @@ export interface ReaderSettings {
   pageMode: 'scroll' | 'waterfall'
 }
 
+export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'series' | 'staging' | 'ai_fill'
+
 export interface ScanTask {
   id: string
   status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
-  stage: 'walking' | 'fingerprinting' | 'staging' | null
+  stage: ScanStage | null
   total_files: number
   processed_files: number
   options: string
