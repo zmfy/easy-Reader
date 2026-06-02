@@ -150,7 +150,15 @@
               <div class="summary-label">类似作品</div>
               <ul class="similar-list">
                 <li v-for="w in aiMeta.similar_works" :key="w.title">
-                  <strong>《{{ w.title }}》</strong>
+                  <router-link
+                    v-if="similarLinks.get(w.title)"
+                    :to="`/book/${similarLinks.get(w.title)}`"
+                    class="similar-link"
+                  >
+                    <strong>《{{ w.title }}》</strong>
+                    <el-tag size="small" type="success" class="in-library-tag">本库已有</el-tag>
+                  </router-link>
+                  <strong v-else>《{{ w.title }}》</strong>
                   <span v-if="w.author" class="similar-author">— {{ w.author }}</span>
                   <span v-if="w.reason" class="similar-reason">：{{ w.reason }}</span>
                 </li>
@@ -180,6 +188,8 @@ const authStore = useAuthStore()
 
 const book = ref<Book | null>(null)
 const aiMeta = ref<BookAiMetadata | null>(null)
+// Map: similar-work title → in-library book id (if found)
+const similarLinks = ref<Map<string, string>>(new Map())
 const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
@@ -226,6 +236,20 @@ async function fetchBook() {
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
     chapterOverrideCount.value = chCountResp?.data.data?.count ?? 0
+
+    // Resolve "similar works" titles to in-library book ids so the UI can link
+    similarLinks.value = new Map()
+    const sims = aiMeta.value?.similar_works ?? []
+    if (sims.length > 0) {
+      try {
+        const lookupResp = await libraryApi.lookupByTitles(
+          sims.map(s => ({ title: s.title, author: s.author })),
+        )
+        for (const r of (lookupResp.data.data ?? [])) {
+          if (r.book_id) similarLinks.value.set(r.title, r.book_id)
+        }
+      } catch { /* lookup best-effort */ }
+    }
   } finally {
     loading.value = false
   }
@@ -664,4 +688,10 @@ onMounted(fetchBook)
 .similar-reason {
   color: var(--text-2);
 }
+.similar-link {
+  color: var(--accent, var(--el-color-primary));
+  text-decoration: none;
+}
+.similar-link:hover { text-decoration: underline; }
+.in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>

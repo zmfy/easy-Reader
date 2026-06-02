@@ -57,6 +57,12 @@ export const libraryApi = {
   getNormalizedChapterCount: (id: string) =>
     http.get<ApiResponse<{ count: number }>>(`/library/${id}/normalize-chapters`),
 
+  lookupByTitles: (titles: Array<{ title: string; author?: string }>) =>
+    http.post<ApiResponse<Array<{ title: string; author?: string; book_id: string | null }>>>(
+      '/library/lookup-by-titles',
+      { titles },
+    ),
+
   coverTest: (id: string) =>
     http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
 

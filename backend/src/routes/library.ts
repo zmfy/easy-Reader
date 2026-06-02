@@ -443,6 +443,35 @@ router.get('/:id/ai-metadata', authMiddleware, (req: Request, res: Response) => 
   successResponse(res, meta);
 });
 
+// POST /api/library/lookup-by-titles — bulk title→bookId resolution
+// Body: { titles: [{title, author?}] }  → returns same array with book_id added
+// where found in the library. Exact title match preferred; if multiple match,
+// prefer same-author then shortest path.
+const lookupSchema = z.object({
+  titles: z.array(z.object({ title: z.string().min(1), author: z.string().optional() })).max(50),
+});
+router.post('/lookup-by-titles', authMiddleware, (req: Request, res: Response) => {
+  const parsed = lookupSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  const stmt = db.prepare(
+    `SELECT id, title, author, file_path FROM books
+     WHERE title = ? AND status IN ('normal','encoding_fixed')
+       AND (duplicate_of IS NULL OR duplicate_of = '')`
+  );
+  const result = parsed.data.titles.map(q => {
+    const rows = stmt.all(q.title) as Array<{ id: string; title: string; author?: string; file_path: string }>;
+    if (rows.length === 0) return { title: q.title, author: q.author, book_id: null };
+    let chosen = rows[0];
+    if (q.author) {
+      const sameAuthor = rows.find(r => r.author === q.author);
+      if (sameAuthor) chosen = sameAuthor;
+    }
+    return { title: q.title, author: q.author, book_id: chosen.id };
+  });
+  successResponse(res, result);
+});
+
 // POST /api/library/:id/normalize-chapters — AI-unify chapter titles
 router.post('/:id/normalize-chapters', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
