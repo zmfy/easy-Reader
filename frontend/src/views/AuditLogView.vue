@@ -81,14 +81,17 @@ function actionLabel(a: string): string {
     discard_batch: '废弃批次',
     create_manual_override: '新建人工修正',
     delete_manual_override: '删除人工修正',
+    ai_fill_book: 'AI 填充书籍',
+    ai_fetch_cover: 'AI 抓取封面',
   }
   return map[a] ?? a
 }
 
-function actionTagType(a: string): 'danger' | 'success' | 'info' | 'primary' {
+function actionTagType(a: string): 'danger' | 'success' | 'info' | 'primary' | 'warning' {
   if (a.startsWith('delete')) return 'danger'
   if (a === 'apply_batch') return 'success'
   if (a === 'discard_batch') return 'info'
+  if (a.startsWith('ai_')) return 'warning'
   return 'primary'
 }
 

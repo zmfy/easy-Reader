@@ -257,7 +257,9 @@ export type AuditAction =
   | 'apply_batch'
   | 'discard_batch'
   | 'create_manual_override'
-  | 'delete_manual_override';
+  | 'delete_manual_override'
+  | 'ai_fill_book'
+  | 'ai_fetch_cover';
 
 export interface AuditLog {
   id: string;

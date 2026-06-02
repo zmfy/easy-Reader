@@ -3,6 +3,8 @@ import pLimit from 'p-limit';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { setScanProgress } from './scan-task';
+import { writeAudit } from './audit-log';
+import { fetchAndSaveCover } from '../utils/cover';
 
 const CONCURRENCY = 3;
 const RETRIES = 2;
@@ -10,20 +12,23 @@ const RETRY_BACKOFF_MS = 1500;
 
 export interface BatchFillInput {
   taskId?: string;
+  user_id?: string;          // for audit attribution; defaults to 'system-scan'
   books: Array<{ id: string; file_path: string; file_format: string }>;
 }
 
 export interface BatchFillResult {
   succeeded: string[];
   failed: Array<{ book_id: string; file_path: string; error: string }>;
+  covers_fetched: number;
 }
 
 export async function batchFill(input: BatchFillInput): Promise<BatchFillResult> {
   const db = getDb();
   const limit = pLimit(CONCURRENCY);
-  const result: BatchFillResult = { succeeded: [], failed: [] };
+  const result: BatchFillResult = { succeeded: [], failed: [], covers_fetched: 0 };
   let done = 0;
   const total = input.books.length;
+  const userId = input.user_id ?? 'system-scan';
 
   if (input.taskId) {
     setScanProgress(input.taskId, { total_files: total, processed_files: 0 });
@@ -34,8 +39,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       const rawText = readPreview(b.file_path, b.file_format);
       const info = await callWithRetry(() => aiManager.fillBookInfo(rawText, db), RETRIES);
 
-      const current = db.prepare('SELECT title, author, summary, category, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
-        | { title?: string; author?: string; summary?: string; category?: string; manually_edited_fields?: string }
+      const current = db.prepare('SELECT title, author, summary, category, cover_url, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
+        | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; manually_edited_fields?: string }
         | undefined;
       if (!current) {
         result.failed.push({ book_id: b.id, file_path: b.file_path, error: 'book not found' });
@@ -45,6 +50,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       const updates: string[] = [];
       const values: unknown[] = [];
+      const filledFields: Record<string, string> = {};
       function maybeSet(field: 'title' | 'author' | 'summary' | 'category', newVal: string | undefined): void {
         if (!newVal) return;
         if (edited.has(field)) return;
@@ -52,6 +58,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         if (cur && cur.trim().length > 0) return;
         updates.push(`${field} = ?`);
         values.push(newVal);
+        filledFields[field] = newVal.length > 60 ? newVal.slice(0, 60) + '…' : newVal;
       }
       maybeSet('title', info.title);
       maybeSet('author', info.author);
@@ -61,7 +68,35 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       if (updates.length > 0) {
         values.push(b.id);
         db.prepare(`UPDATE books SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        writeAudit({
+          user_id: userId,
+          action: 'ai_fill_book',
+          resource_id: b.id,
+          file_path: b.file_path,
+          details: { filled: filledFields },
+        });
       }
+
+      // Cover fetch: only when no existing cover + we have a title to search with.
+      const titleForCover = (filledFields.title ?? current.title ?? '').trim();
+      if (!current.cover_url && titleForCover.length > 0) {
+        try {
+          const coverUrl = await fetchAndSaveCover(titleForCover, b.id);
+          if (coverUrl) {
+            result.covers_fetched++;
+            writeAudit({
+              user_id: userId,
+              action: 'ai_fetch_cover',
+              resource_id: b.id,
+              file_path: b.file_path,
+              details: { cover_url: coverUrl, title_used: titleForCover },
+            });
+          }
+        } catch {
+          // cover fetch is best-effort; don't fail the book
+        }
+      }
+
       result.succeeded.push(b.id);
     } catch (err) {
       result.failed.push({ book_id: b.id, file_path: b.file_path, error: (err as Error).message });
