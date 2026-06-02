@@ -20,6 +20,15 @@ export interface Book {
   is_finished: number
   file_size?: number
   imported_at: string
+  // 扫描增强字段（Plan 1/2）
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed'
+  duplicate_of?: string | null
+  series_id?: string | null
+  chapter_count?: number
+  fingerprint?: string
+  first_chapter_hash?: string
+  encoding_detected?: string
+  manually_edited_fields?: string
 }
 
 export interface ShelfItem {

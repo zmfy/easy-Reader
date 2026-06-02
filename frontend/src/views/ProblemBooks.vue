@@ -34,7 +34,32 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="书名" min-width="180" show-overflow-tooltip />
+        <el-table-column label="书名" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tooltip
+              v-if="row.status === 'duplicate' && row.duplicate_of"
+              content="跳转到保留的正本"
+              placement="top"
+            >
+              <el-button link type="primary" class="title-link" @click="openCanonical(row)">
+                {{ row.title }}
+              </el-button>
+            </el-tooltip>
+            <el-tooltip
+              v-else-if="row.status === 'garbled'"
+              content="打开阅读器查看乱码内容"
+              placement="top"
+            >
+              <el-button link type="warning" class="title-link" @click="openReader(row)">
+                {{ row.title }}
+              </el-button>
+            </el-tooltip>
+            <span v-else>{{ row.title }}</span>
+            <span v-if="row.status === 'duplicate' && !row.duplicate_of" class="orphan-hint">
+              （正本缺失）
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column prop="file_path" label="磁盘路径" min-width="280" show-overflow-tooltip>
           <template #default="{ row }">
             <code class="path">{{ row.file_path }}</code>
@@ -69,10 +94,21 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import type { Book } from '@/types'
+
+const router = useRouter()
+
+function openCanonical(book: Book): void {
+  if (book.duplicate_of) router.push(`/book/${book.duplicate_of}`)
+}
+
+function openReader(book: Book): void {
+  router.push(`/reader/${book.id}`)
+}
 
 const books = ref<Book[]>([])
 const loading = ref(false)
@@ -193,4 +229,6 @@ onMounted(async () => {
 .problem-table { margin-top: 8px; }
 .path { font-family: monospace; font-size: 12px; word-break: break-all; }
 .pagination { display: flex; justify-content: center; margin-top: 20px; }
+.title-link { padding: 0; font-weight: 500; }
+.orphan-hint { font-size: 12px; color: var(--text-2); margin-left: 6px; }
 </style>
