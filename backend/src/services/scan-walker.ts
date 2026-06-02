@@ -90,9 +90,46 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       return;
     }
 
-    // Phase 2: dedup grouping
+    // Phase 2: build candidate set for dedup + series.
+    // IMPORTANT: incremental scans skip files that already have a fingerprint,
+    // so `scanned` may be nearly empty even when the user wants to re-classify
+    // existing books. Pull books already in DB into the candidate set so series
+    // / dedup detection works without requiring full_rescan.
     setScanProgress(taskId, { stage: 'staging' });
-    const { hard_groups, soft_groups } = buildCandidateGroups(scanned);
+    const db = getDb();
+    const scannedPaths = new Set(scanned.map(b => b.file_path));
+
+    // Pull untagged normal books (not duplicates, not already in a series)
+    const existing = db.prepare(`
+      SELECT file_path, title, author, fingerprint, chapter_count
+      FROM books
+      WHERE status = 'normal'
+        AND (duplicate_of IS NULL OR duplicate_of = '')
+        AND (series_id IS NULL OR series_id = '')
+    `).all() as Array<{ file_path: string; title: string; author?: string; fingerprint?: string; chapter_count?: number }>;
+
+    const dedupInput: ScannedBook[] = [
+      ...scanned,
+      ...existing
+        .filter(b => !scannedPaths.has(b.file_path) && b.fingerprint)
+        .map(b => ({
+          file_path: b.file_path,
+          title: b.title,
+          author: b.author,
+          fingerprint: b.fingerprint,
+          chapter_count: b.chapter_count,
+          first_chapter_preview: '',
+        })),
+    ];
+
+    const seriesInput = [
+      ...scanned.map(b => ({ file_path: b.file_path, title: b.title, author: b.author })),
+      ...existing
+        .filter(b => !scannedPaths.has(b.file_path))
+        .map(b => ({ file_path: b.file_path, title: b.title, author: b.author })),
+    ];
+
+    const { hard_groups, soft_groups } = buildCandidateGroups(dedupInput);
 
     // Phase 3: AI dedup judge (only soft groups, only if enabled)
     let aiDupGroups: DuplicateGroupPayload[] = [];
@@ -111,7 +148,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     }));
 
     // Phase 4: series — regex first
-    const regexSeriesCandidates = extractSeriesCandidates(scanned);
+    const regexSeriesCandidates = extractSeriesCandidates(seriesInput);
     const regexSeriesPayloads: SeriesGroupPayload[] = regexSeriesCandidates.map(s => ({
       series_name: s.series_name,
       author: s.author,
@@ -123,7 +160,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const regexPaths = new Set(regexSeriesCandidates.flatMap(s => s.members.map(m => m.file_path)));
     let aiSeriesPayloads: SeriesGroupPayload[] = [];
     if (options.ai_series) {
-      aiSeriesPayloads = await judgeFuzzySeriesGroups(scanned, regexPaths);
+      aiSeriesPayloads = await judgeFuzzySeriesGroups(dedupInput, regexPaths);
     }
 
     // Phase 6: assemble result
