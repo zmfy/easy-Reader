@@ -39,6 +39,8 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const search = (req.query.search as string) || '';
   const category = (req.query.category as string) || '';
   const statusFilter = (req.query.status as string) || 'normal';
+  const includeDirty = req.query.include_dirty === '1' || req.query.include_dirty === 'true';
+  const seriesGrouped = req.query.series_grouped === '1' || req.query.series_grouped === 'true';
   const sortBy = ALLOWED_SORT_FIELDS.includes(req.query.sortBy as string) ? (req.query.sortBy as string) : 'imported_at';
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
@@ -46,17 +48,24 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   let whereClause = 'WHERE 1=1';
   const params: unknown[] = [];
 
+  // status filter: problems/garbled/duplicate are explicit (ProblemBooks view).
+  // include_dirty=true is an alias for status=all (show dirty books in mainline list).
   if (statusFilter === 'problems') {
     whereClause += " AND status IN ('duplicate','garbled')";
   } else if (statusFilter === 'garbled') {
     whereClause += " AND status = 'garbled'";
   } else if (statusFilter === 'duplicate') {
     whereClause += " AND status = 'duplicate'";
-  } else if (statusFilter === 'all') {
-    // no filter
+  } else if (statusFilter === 'all' || includeDirty) {
+    // no status filter
   } else {
     // default: normal-only library view — hide duplicate + garbled
     whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled'))";
+  }
+
+  // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)
+  if (seriesGrouped) {
+    whereClause += " AND (series_id IS NULL OR series_id = '')";
   }
 
   if (search) {
