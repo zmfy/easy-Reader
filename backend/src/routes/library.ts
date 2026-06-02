@@ -19,6 +19,7 @@ import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
 import { markFieldsAsEdited } from '../services/ai-batch-fill';
+import { estimateFromCurrentDb } from '../services/cost-estimator';
 
 const router = Router();
 
@@ -80,6 +81,26 @@ const scanOptionsSchema = z.object({
   ai_series: z.boolean().default(false),
   ai_fill: z.boolean().default(false),
   full_rescan: z.boolean().default(false),
+});
+
+const estimateSchema = z.object({
+  ai_dedup: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  ai_series: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  ai_fill: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  full_rescan: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+});
+
+// GET /api/library/scan/estimate — pre-scan cost estimation
+router.get('/scan/estimate', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = estimateSchema.safeParse(req.query);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const result = estimateFromCurrentDb({
+    ai_dedup: !!parsed.data.ai_dedup,
+    ai_series: !!parsed.data.ai_series,
+    ai_fill: !!parsed.data.ai_fill,
+    full_rescan: !!parsed.data.full_rescan,
+  });
+  successResponse(res, result);
 });
 
 // POST /api/library/scan
