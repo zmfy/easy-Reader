@@ -206,6 +206,17 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_manual_overrides_book_a ON manual_overrides(book_id_a);
   `);
 
+  // === Plan 3 schema: book_ai_metadata (E. AI 推荐标签 + 相似作品) ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS book_ai_metadata (
+      book_id TEXT PRIMARY KEY,
+      recommended_tags TEXT,   -- JSON array of strings
+      similar_works TEXT,      -- JSON array of {title, author?, reason?}
+      generated_by TEXT,       -- plugin name (deepseek / minmax / ...)
+      generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   // === Plan 3 schema: audit_log ===
   database.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (

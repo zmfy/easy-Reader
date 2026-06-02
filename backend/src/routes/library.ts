@@ -20,6 +20,7 @@ import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
 import { markFieldsAsEdited } from '../services/ai-batch-fill';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
+import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 
 const router = Router();
 
@@ -417,11 +418,29 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
       db.prepare(`UPDATE books SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     }
 
+    // Persist AI metadata if AI returned any recommended_tags / similar_works
+    const meta = extractMetadataFromAiResponse(infoRaw);
+    if (meta.tags.length > 0 || meta.similar.length > 0) {
+      const pluginName = (db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined)?.value;
+      saveMetadata({
+        book_id: req.params.id,
+        recommended_tags: meta.tags,
+        similar_works: meta.similar,
+        generated_by: pluginName,
+      });
+    }
+
     const updated = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book;
     successResponse(res, updated, 'AI 信息填充成功');
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'AI 填充失败: ' + (err instanceof Error ? err.message : '未知错误'));
   }
+});
+
+// GET /api/library/:id/ai-metadata — recommended tags + similar works
+router.get('/:id/ai-metadata', authMiddleware, (req: Request, res: Response) => {
+  const meta = getMetadata(req.params.id);
+  successResponse(res, meta);
 });
 
 export default router;

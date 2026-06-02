@@ -45,6 +45,9 @@ export const libraryApi = {
   aiFill: (id: string) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),
 
+  getAiMetadata: (id: string) =>
+    http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
+
   coverTest: (id: string) =>
     http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
 

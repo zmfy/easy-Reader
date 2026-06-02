@@ -121,6 +121,24 @@
                 placeholder="故事简介"
               />
             </div>
+
+            <div v-if="aiMeta && aiMeta.recommended_tags.length > 0" class="ai-meta-section">
+              <div class="summary-label">推荐标签</div>
+              <div class="tag-list">
+                <el-tag v-for="tag in aiMeta.recommended_tags" :key="tag" size="small">{{ tag }}</el-tag>
+              </div>
+            </div>
+
+            <div v-if="aiMeta && aiMeta.similar_works.length > 0" class="ai-meta-section">
+              <div class="summary-label">类似作品</div>
+              <ul class="similar-list">
+                <li v-for="w in aiMeta.similar_works" :key="w.title">
+                  <strong>《{{ w.title }}》</strong>
+                  <span v-if="w.author" class="similar-author">— {{ w.author }}</span>
+                  <span v-if="w.reason" class="similar-reason">：{{ w.reason }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -137,13 +155,14 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
 import { useAuthStore } from '@/stores/auth'
-import type { Book } from '@/types'
+import type { Book, BookAiMetadata } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
 const book = ref<Book | null>(null)
+const aiMeta = ref<BookAiMetadata | null>(null)
 const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
@@ -179,11 +198,24 @@ function formatSize(bytes: number) {
 async function fetchBook() {
   loading.value = true
   try {
-    const resp = await libraryApi.get(route.params.bookId as string)
-    book.value = resp.data.data || null
+    const id = route.params.bookId as string
+    const [bookResp, metaResp] = await Promise.all([
+      libraryApi.get(id),
+      libraryApi.getAiMetadata(id).catch(() => null),
+    ])
+    book.value = bookResp.data.data || null
+    aiMeta.value = metaResp?.data.data ?? null
   } finally {
     loading.value = false
   }
+}
+
+async function refreshAiMeta(): Promise<void> {
+  if (!book.value) return
+  try {
+    const resp = await libraryApi.getAiMetadata(book.value.id)
+    aiMeta.value = resp.data.data ?? null
+  } catch { /* ignore */ }
 }
 
 function startEdit() {
@@ -216,6 +248,7 @@ async function handleAiFill() {
   try {
     const resp = await libraryApi.aiFill(route.params.bookId as string)
     book.value = resp.data.data || null
+    await refreshAiMeta()
     ElMessage.success('AI 填充成功')
   } catch (err: unknown) {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
@@ -547,5 +580,35 @@ onMounted(fetchBook)
 .ai-protect-alert {
   margin-top: 12px;
   width: 100%;
+}
+
+.ai-meta-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(124, 92, 255, 0.1);
+}
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.similar-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+.similar-list li {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.similar-author {
+  color: var(--text-2);
+  margin-left: 4px;
+}
+.similar-reason {
+  color: var(--text-2);
 }
 </style>

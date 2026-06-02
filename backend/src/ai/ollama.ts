@@ -16,7 +16,7 @@ const ollamaPlugin: AiPlugin = {
 ${rawText}
 
 只返回如下JSON格式，不含其他任何文字：
-{"title":"正确书名","author":"作者名","summary":"${summaryLen}字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）","is_finished":true,"platform":"首发连载平台（如起点中文网）","start_date":"开始连载年月（如2007年12月）","end_date":"完本年月（已完结时填写，如2023年8月）"}
+{"title":"正确书名","author":"作者名","summary":"${summaryLen}字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）","is_finished":true,"platform":"首发连载平台（如起点中文网）","start_date":"开始连载年月（如2007年12月）","end_date":"完本年月（已完结时填写，如2023年8月）","recommended_tags":["标签1","标签2","标签3"],"similar_works":[{"title":"类似书1","author":"作者","reason":"相似原因"},{"title":"类似书2","author":"作者","reason":"相似原因"}]}
 is_finished为true表示已完结，false表示连载中。如果不确定某字段，省略该字段，不要猜测。`;
 
     const resp = await fetch(`${baseUrl}/api/generate`, {

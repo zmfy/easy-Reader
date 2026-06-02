@@ -270,3 +270,11 @@ export interface AuditLog {
   details?: string | null;
   created_at: string;
 }
+
+export interface BookAiMetadata {
+  book_id: string;
+  recommended_tags: string[];
+  similar_works: Array<{ title: string; author?: string; reason?: string }>;
+  generated_by?: string | null;
+  generated_at: string;
+}

@@ -5,6 +5,7 @@ import { aiManager } from '../ai/ai-manager';
 import { setScanProgress } from './scan-task';
 import { writeAudit } from './audit-log';
 import { fetchAndSaveCover } from '../utils/cover';
+import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
 
 const CONCURRENCY = 3;
 const RETRIES = 2;
@@ -74,6 +75,18 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
           resource_id: b.id,
           file_path: b.file_path,
           details: { filled: filledFields },
+        });
+      }
+
+      // Save metadata (recommended_tags, similar_works) if AI returned any.
+      const meta = extractMetadataFromAiResponse(info as Record<string, unknown>);
+      if (meta.tags.length > 0 || meta.similar.length > 0) {
+        const pluginName = (db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined)?.value;
+        saveMetadata({
+          book_id: b.id,
+          recommended_tags: meta.tags,
+          similar_works: meta.similar,
+          generated_by: pluginName,
         });
       }
 
