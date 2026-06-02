@@ -8,7 +8,7 @@ export function _setDbForTesting(database: Database.Database | null): void {
   dbOverride = database;
 }
 function db(): Database.Database {
-  return dbOverride ?? db();
+  return dbOverride ?? getDb();
 }
 
 export interface CreateOverrideInput {
