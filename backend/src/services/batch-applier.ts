@@ -206,11 +206,22 @@ export function applyBatch(
         const payload = JSON.parse(it.admin_payload ?? it.payload) as SeriesGroupPayload & {
           rejected_members?: string[];
         };
-        const seriesId = uuidv4();
-        db.prepare(
-          `INSERT INTO series (id, name, author) VALUES (?, ?, ?)`
-        ).run(seriesId, payload.series_name, payload.author ?? null);
-        result.series_created++;
+        // Upsert: reuse existing series row with the same (name, author) to
+        // avoid creating duplicate series on re-scans.
+        const seriesAuthor = payload.author ?? null;
+        const existingSeries = db.prepare(
+          `SELECT id FROM series WHERE name = ? AND ((author IS NULL AND ? IS NULL) OR author = ?)`
+        ).get(payload.series_name, seriesAuthor, seriesAuthor) as { id: string } | undefined;
+        let seriesId: string;
+        if (existingSeries) {
+          seriesId = existingSeries.id;
+        } else {
+          seriesId = uuidv4();
+          db.prepare(
+            `INSERT INTO series (id, name, author) VALUES (?, ?, ?)`
+          ).run(seriesId, payload.series_name, seriesAuthor);
+          result.series_created++;
+        }
 
         const rejectedSet = new Set(payload.rejected_members ?? []);
         for (const m of payload.members) {

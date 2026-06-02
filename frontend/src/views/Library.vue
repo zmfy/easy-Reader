@@ -173,9 +173,12 @@ async function fetchBooks() {
   loading.value = true
   syncQuery()
   try {
-    // Series are pinned to page 1 only — they're a small fixed list, not
-    // paginated alongside books. Subsequent pages just show more book cards.
+    // Series are shown on page 1 only AND only when not searching/filtering.
+    // Search/category implies "find a specific book"; series cards would be
+    // noise in that flow.
     const isFirstPage = pagination.page === 1
+    const isUnfiltered = !searchQuery.value && !selectedCategory.value
+    const shouldFetchSeries = isFirstPage && isUnfiltered
     const safeSortBy = sortBy.value === 'rating' ? 'imported_at' : sortBy.value
     const promises: [
       ReturnType<typeof libraryApi.listAdmin>,
@@ -191,12 +194,12 @@ async function fetchBooks() {
         include_dirty: includeDirty.value,
         series_grouped: true,
       }),
-      isFirstPage ? seriesApi.list() : Promise.resolve(null),
+      shouldFetchSeries ? seriesApi.list() : Promise.resolve(null),
     ]
     const [booksResp, seriesResp] = await Promise.all(promises)
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
-    seriesList.value = (isFirstPage && seriesResp) ? (seriesResp.data.data ?? []) : []
+    seriesList.value = (shouldFetchSeries && seriesResp) ? (seriesResp.data.data ?? []) : []
   } finally {
     loading.value = false
   }
