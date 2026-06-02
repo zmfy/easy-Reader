@@ -21,6 +21,7 @@ import { extractSeriesCandidates } from './series-regex';
 import { judgeSoftDuplicateGroups } from './ai-dedup';
 import { judgeFuzzySeriesGroups } from './ai-series';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
+import { aiManager } from '../ai/ai-manager';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
@@ -333,8 +334,27 @@ async function processFile(
   if (ext === 'txt') {
     try {
       const enc = await detectAndFixEncoding(fullPath);
-      status = enc.status;
-      encoding = enc.encoding;
+      if (enc.status === 'uncertain' && options.ai_dedup === true && enc.sample) {
+        // Gray zone — AI verification (only if AI features are turned on this scan)
+        try {
+          const verdict = await aiManager.judgeGarbled(enc.sample, getDb());
+          if (verdict.is_garbled) {
+            return { garbled: { file_path: fullPath, reason: `AI: ${verdict.reason ?? 'looks garbled'}` } };
+          }
+          // AI says it's readable — treat as normal but don't auto-fix encoding
+          status = 'normal';
+          encoding = enc.encoding;
+        } catch {
+          // AI unreachable → fall back to "garbled" (safer than false-positive)
+          return { garbled: { file_path: fullPath, reason: 'encoding uncertain, AI verify failed' } };
+        }
+      } else if (enc.status === 'uncertain') {
+        // AI not enabled this scan; preserve previous behavior (mark garbled)
+        return { garbled: { file_path: fullPath, reason: `low ratio ${(enc.best_ratio ?? 0).toFixed(2)}` } };
+      } else {
+        status = enc.status;
+        encoding = enc.encoding;
+      }
     } catch {
       status = 'garbled';
       encoding = 'unknown';

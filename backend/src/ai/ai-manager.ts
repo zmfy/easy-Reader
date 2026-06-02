@@ -96,6 +96,33 @@ export const aiManager = {
     const raw = await this.chat(prompt, db);
     return parseSeriesResponse(raw, candidates.length);
   },
+
+  async judgeGarbled(sample: string, db: Database.Database): Promise<{ is_garbled: boolean; reason?: string }> {
+    if (!sample || sample.trim().length === 0) return { is_garbled: true, reason: 'empty sample' };
+    const prompt = `下面是一段从文件中读出的文本（前 512 字符）。请判断这是否为乱码：
+
+---
+${sample.slice(0, 512)}
+---
+
+判定准则：
+- 正常的中文小说内容（即使有少量繁体字、古文、罕用字、夹杂英文）= 不是乱码
+- 完全无法阅读的随机字符 / 大段问号方框 / 字符错位 = 乱码
+
+请按以下 JSON 格式返回，**只输出 JSON**：
+{"is_garbled": true, "reason": "简短说明"}
+或
+{"is_garbled": false}`;
+    try {
+      const raw = await this.chat(prompt, db);
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return { is_garbled: true, reason: 'AI response unparseable' };
+      const parsed = JSON.parse(m[0]) as { is_garbled?: boolean; reason?: string };
+      return { is_garbled: parsed.is_garbled !== false, reason: parsed.reason };
+    } catch (err) {
+      return { is_garbled: true, reason: (err as Error).message };
+    }
+  },
 };
 
 function buildDedupPrompt(candidates: AiDedupCandidate[]): string {

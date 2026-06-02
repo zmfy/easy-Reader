@@ -1,18 +1,28 @@
 import fs from 'fs';
 import iconv from 'iconv-lite';
 
-export type EncodingStatus = 'normal' | 'encoding_fixed' | 'garbled';
+export type EncodingStatus = 'normal' | 'encoding_fixed' | 'garbled' | 'uncertain';
 
 export interface EncodingResult {
   status: EncodingStatus;
   encoding: string;
+  /** When status='uncertain', a sample of the best-decoded text for AI review. */
+  sample?: string;
+  /** Best ratio observed across all encoding attempts. */
+  best_ratio?: number;
 }
 
-const SAMPLE_BYTES = 64 * 1024; // 只读前 64KB 来检测（避免大文件慢）
-const CHINESE_THRESHOLD = 0.5;  // 真乱码阈值
+const SAMPLE_BYTES = 64 * 1024;
+const CONFIDENT_RATIO = 0.95;     // 高于此 = 一定是正常文本
+const SUSPICIOUS_RATIO = 0.7;     // 介于此与 CONFIDENT 之间 = 灰色区，需要 AI 复核
+// 低于 SUSPICIOUS_RATIO = 确定乱码（不必请 AI）
 
 /**
  * Detect file encoding. If non-UTF-8 but recognizable, overwrite as UTF-8.
+ * Three-tier classification:
+ *   ratio >= 0.95          → confident normal / encoding_fixed
+ *   0.7 <= ratio < 0.95    → "uncertain" — caller should ask AI to verify
+ *   ratio < 0.7            → confident garbled (no AI needed)
  */
 export async function detectAndFixEncoding(filePath: string): Promise<EncodingResult> {
   const fullBuf = await fs.promises.readFile(filePath);
@@ -20,26 +30,43 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
 
   // Level 1: try UTF-8
   const utf8Text = tryDecode(sample, 'utf-8');
-  if (utf8Text !== null && printableRatio(utf8Text) >= 0.95) {
+  const utf8Ratio = utf8Text !== null ? printableRatio(utf8Text) : 0;
+  if (utf8Text !== null && utf8Ratio >= CONFIDENT_RATIO) {
     return { status: 'normal', encoding: 'utf-8' };
   }
 
   // Level 2: try GBK / GB18030 / BIG5
-  // Note: gbk is tried before gb18030 so that GBK-encoded files are reported as 'gbk'
-  // (gb18030 is a superset of gbk and would match either, but gbk is more specific)
+  let bestEnc = 'utf-8';
+  let bestText = utf8Text;
+  let bestRatio = utf8Ratio;
   for (const enc of ['gbk', 'gb18030', 'big5']) {
     const text = tryDecode(sample, enc);
-    if (text !== null && printableRatio(text) >= 0.95) {
-      // Re-decode the full file and overwrite
+    if (text === null) continue;
+    const r = printableRatio(text);
+    if (r >= CONFIDENT_RATIO) {
+      // confident — fix immediately
       const fullText = iconv.decode(fullBuf, enc);
       await fs.promises.writeFile(filePath, fullText, 'utf-8');
       return { status: 'encoding_fixed', encoding: enc };
     }
+    if (r > bestRatio) {
+      bestRatio = r;
+      bestText = text;
+      bestEnc = enc;
+    }
   }
 
-  // Level 3: garbled
-  // Compute against the best decoding we got
-  return { status: 'garbled', encoding: 'unknown' };
+  // Level 3: uncertain or definitely garbled
+  if (bestRatio >= SUSPICIOUS_RATIO && bestText) {
+    // Gray zone — let the caller decide (typically via AI verification)
+    return {
+      status: 'uncertain',
+      encoding: bestEnc,
+      sample: bestText.slice(0, 512),
+      best_ratio: bestRatio,
+    };
+  }
+  return { status: 'garbled', encoding: 'unknown', best_ratio: bestRatio };
 }
 
 function tryDecode(buf: Buffer, encoding: string): string | null {
@@ -81,4 +108,4 @@ function printableRatio(text: string): number {
 }
 
 // Exported for testing
-export const _internals = { printableRatio, CHINESE_THRESHOLD };
+export const _internals = { printableRatio, CONFIDENT_RATIO, SUSPICIOUS_RATIO };
