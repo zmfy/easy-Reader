@@ -1,24 +1,38 @@
+import pLimit from 'p-limit';
 import { getDb } from '../db';
 import { aiManager, AiDedupCandidate } from '../ai/ai-manager';
 import { ScannedBook } from './dedup-grouper';
 import { DuplicateGroupPayload } from '../types';
 import { isNotDuplicate } from './manual-override';
+import { setScanProgress } from './scan-task';
+
+const CONCURRENCY = 3;
 
 /**
- * For each soft-candidate group, call AI to judge real duplicates.
- * Returns final DuplicateGroupPayloads (one per AI-confirmed duplicate cluster).
- * Soft candidates not flagged as duplicates by AI are NOT returned (they'll be
- * treated as separate "new" books by the caller).
+ * For each soft-candidate group, call AI in parallel (concurrency 3) to judge
+ * real duplicates. Returns final DuplicateGroupPayloads (one per AI-confirmed
+ * cluster). Soft candidates not flagged as duplicates by AI are NOT returned
+ * (treated as separate "new" books by the caller).
+ *
+ * If taskId is passed, per-group progress is reported via setScanProgress so
+ * the UI can show "AI 判定 X/Y 组".
  */
 export async function judgeSoftDuplicateGroups(
   softGroups: ScannedBook[][],
   bookIdResolver?: (file_path: string) => string | null,
+  taskId?: string,
 ): Promise<DuplicateGroupPayload[]> {
   const db = getDb();
   const out: DuplicateGroupPayload[] = [];
+  const limit = pLimit(CONCURRENCY);
+  let done = 0;
+  const total = softGroups.filter(g => g.length >= 2).length;
+  if (taskId && total > 0) {
+    setScanProgress(taskId, { total_files: total, processed_files: 0 });
+  }
 
-  for (const group of softGroups) {
-    if (group.length < 2) continue;
+  await Promise.all(softGroups.map(group => limit(async () => {
+    if (group.length < 2) return;
 
     const candidates: AiDedupCandidate[] = group.map((b, i) => ({
       index: i,
@@ -33,21 +47,18 @@ export async function judgeSoftDuplicateGroups(
       aiResult = await aiManager.judgeDuplicates(candidates, db);
     } catch (err) {
       console.error('AI dedup error, skipping group:', err);
-      continue;
+      done++;
+      if (taskId) setScanProgress(taskId, { processed_files: done });
+      return;
     }
 
     for (const aiGroup of aiResult.groups) {
-      // Post-process: override AI's canonical pick with the member that has the
-      // largest chapter_count. Reasoning: per-user spec, when AI judges several
-      // books as duplicates, the most-complete version (most chapters) is the
-      // "正本"; shorter copies go into the problem-books pile.
       const allIndices = [aiGroup.canonical_index, ...aiGroup.duplicate_indices];
       const distinct = Array.from(new Set(allIndices));
       distinct.sort((a, b) => {
         const cca = group[a].chapter_count ?? 0;
         const ccb = group[b].chapter_count ?? 0;
         if (ccb !== cca) return ccb - cca;
-        // tie-breaker: shorter file_path (closer to root) wins
         return group[a].file_path.length - group[b].file_path.length;
       });
       const canonicalIdx = distinct[0];
@@ -55,7 +66,6 @@ export async function judgeSoftDuplicateGroups(
       const canonical = group[canonicalIdx];
       const dups = dupIndices.map(i => group[i]);
 
-      // manual_overrides filter
       if (bookIdResolver) {
         const canonicalId = bookIdResolver(canonical.file_path);
         const filtered = dups.filter(d => {
@@ -81,7 +91,10 @@ export async function judgeSoftDuplicateGroups(
         });
       }
     }
-  }
+
+    done++;
+    if (taskId) setScanProgress(taskId, { processed_files: done });
+  })));
 
   return out;
 }

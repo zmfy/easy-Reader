@@ -65,8 +65,27 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const encodingFixed: EncodingFixedPayload[] = [];
     let processed = 0;
 
+    // Performance: prefetch all existing books in ONE query so the per-file
+    // skip check (existing.fingerprint && !full_rescan) is an in-memory lookup
+    // rather than N individual SQL hits. For 8000+ books this turns 8000
+    // prepare/get round-trips into 1.
+    const prefetched = new Map<string, { id: string; fingerprint?: string }>();
+    if (!options.full_rescan) {
+      const rows = getDb().prepare('SELECT id, file_path, fingerprint FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string }>;
+      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint });
+    }
+
     for (const fullPath of allFiles) {
       if (isCancelled(taskId)) return;
+      // Fast skip via prefetched map (no SQL per file)
+      const pre = prefetched.get(fullPath);
+      if (pre && pre.fingerprint && !options.full_rescan) {
+        processed++;
+        if (processed % 50 === 0 || processed === allFiles.length) {
+          setScanProgress(taskId, { processed_files: processed });
+        }
+        continue;
+      }
       const result = await processFile(fullPath, options);
       if (result.scanned) scanned.push(result.scanned);
       if (result.garbled) garbled.push(result.garbled);
@@ -136,7 +155,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // Phase 3: AI dedup judge (only soft groups, only if enabled)
     let aiDupGroups: DuplicateGroupPayload[] = [];
     if (options.ai_dedup && soft_groups.length > 0) {
-      aiDupGroups = await judgeSoftDuplicateGroups(soft_groups);
+      aiDupGroups = await judgeSoftDuplicateGroups(soft_groups, undefined, taskId);
     }
 
     // Hard groups always become duplicate_groups
@@ -163,7 +182,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const regexPaths = new Set(regexSeriesCandidates.flatMap(s => s.members.map(m => m.file_path)));
     let aiSeriesPayloads: SeriesGroupPayload[] = [];
     if (options.ai_series) {
-      aiSeriesPayloads = await judgeFuzzySeriesGroups(dedupInput, regexPaths);
+      aiSeriesPayloads = await judgeFuzzySeriesGroups(dedupInput, regexPaths, taskId);
     }
 
     // Phase 6: assemble result

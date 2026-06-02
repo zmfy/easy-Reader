@@ -1,12 +1,15 @@
+import pLimit from 'p-limit';
 import { getDb } from '../db';
 import { aiManager, AiSeriesCandidate } from '../ai/ai-manager';
 import { ScannedBook } from './dedup-grouper';
 import { SeriesGroupPayload } from '../types';
 import { levenshtein, normalizeTitle } from '../utils/title-normalizer';
+import { setScanProgress } from './scan-task';
 
 const FUZZY_THRESHOLD = 3;
 const PREFIX_LENGTH = 4;
 const MAX_GROUP_SIZE = 20;        // 避免一组太大塞爆 AI prompt
+const CONCURRENCY = 3;
 
 /**
  * For books not already grouped by regex, build fuzzy candidate groups from
@@ -18,6 +21,7 @@ const MAX_GROUP_SIZE = 20;        // 避免一组太大塞爆 AI prompt
 export async function judgeFuzzySeriesGroups(
   books: ScannedBook[],
   alreadyGroupedPaths: Set<string>,
+  taskId?: string,
 ): Promise<SeriesGroupPayload[]> {
   const db = getDb();
 
@@ -81,7 +85,13 @@ export async function judgeFuzzySeriesGroups(
   }
 
   const out: SeriesGroupPayload[] = [];
-  for (const group of fuzzyGroups) {
+  const limit = pLimit(CONCURRENCY);
+  let done = 0;
+  if (taskId && fuzzyGroups.length > 0) {
+    setScanProgress(taskId, { total_files: fuzzyGroups.length, processed_files: 0 });
+  }
+
+  await Promise.all(fuzzyGroups.map(group => limit(async () => {
     const candidates: AiSeriesCandidate[] = group.map((b, i) => ({
       index: i,
       title: b.title,
@@ -92,10 +102,20 @@ export async function judgeFuzzySeriesGroups(
       aiResult = await aiManager.judgeSeries(candidates, db);
     } catch (err) {
       console.error('AI series error, skipping group:', err);
-      continue;
+      done++;
+      if (taskId) setScanProgress(taskId, { processed_files: done });
+      return;
     }
-    if (!aiResult.is_series || !aiResult.members || !aiResult.series_name) continue;
-    if ((aiResult.confidence ?? 'medium') === 'low') continue; // drop low-confidence
+    if (!aiResult.is_series || !aiResult.members || !aiResult.series_name) {
+      done++;
+      if (taskId) setScanProgress(taskId, { processed_files: done });
+      return;
+    }
+    if ((aiResult.confidence ?? 'medium') === 'low') {
+      done++;
+      if (taskId) setScanProgress(taskId, { processed_files: done });
+      return;
+    }
 
     out.push({
       series_name: aiResult.series_name,
@@ -107,6 +127,8 @@ export async function judgeFuzzySeriesGroups(
       source: 'ai',
       confidence: aiResult.confidence,
     });
-  }
+    done++;
+    if (taskId) setScanProgress(taskId, { processed_files: done });
+  })));
   return out;
 }
