@@ -74,6 +74,18 @@ const router = createRouter({
       component: () => import('@/views/SeriesDetail.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/library/manual-overrides',
+      name: 'manual-overrides',
+      component: () => import('@/views/ManualOverridesAdmin.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/audit-log',
+      name: 'audit-log',
+      component: () => import('@/views/AuditLogView.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
   ],
 })
 
