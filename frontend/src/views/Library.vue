@@ -30,6 +30,14 @@
           <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="fetchBooks">
             <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
           </el-select>
+          <el-switch
+            v-if="authStore.isAdmin"
+            v-model="includeDirty"
+            inline-prompt
+            active-text="显示脏数据"
+            inactive-text="仅正常"
+            @change="fetchBooks"
+          />
           <el-button v-if="authStore.isAdmin" type="primary" :loading="scanStore.isRunning" @click="handleScan">
             <el-icon><Refresh /></el-icon>
             扫描导入
@@ -50,20 +58,27 @@
         </el-skeleton>
       </div>
 
-      <div v-else-if="books.length === 0" class="empty-state">
+      <div v-else-if="books.length === 0 && seriesList.length === 0" class="empty-state">
         <div class="empty-icon">📚</div>
         <div class="empty-title">书库空空如也</div>
         <div class="empty-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
       </div>
 
       <div v-else class="books-grid">
+        <SeriesCard
+          v-for="s in seriesList"
+          :key="'series-' + s.id"
+          :series="s"
+          @click="(series) => router.push(`/library/series/${series.id}`)"
+        />
         <BookCard
           v-for="book in books"
           :key="book.id"
           :book="book"
-          @click="router.push(`/book/${book.id}`)"
+          @click="onBookClick(book)"
           @read="router.push(`/reader/${book.id}`)"
           @detail="router.push(`/book/${book.id}`)"
+          @delete="onBookDelete(book)"
         />
       </div>
 
@@ -90,12 +105,14 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
+import SeriesCard from '@/components/SeriesCard.vue'
 import ScanOptionsDialog from '@/components/ScanOptionsDialog.vue'
 import { libraryApi } from '@/api/library'
 import { scanBatchesApi } from '@/api/scan-batches'
+import { seriesApi } from '@/api/series'
 import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
-import type { Book, ScanStartOptions, ScanBatch } from '@/types'
+import type { Book, ScanStartOptions, ScanBatch, Series } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -115,6 +132,8 @@ async function refreshPendingBatch(): Promise<void> {
 }
 
 const books = ref<Book[]>([])
+const seriesList = ref<Series[]>([])
+const includeDirty = ref(false)
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
@@ -140,19 +159,76 @@ async function fetchBooks() {
   loading.value = true
   syncQuery()
   try {
-    const resp = await libraryApi.list({
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      search: searchQuery.value || undefined,
-      category: selectedCategory.value || undefined,
-      sortBy: 'imported_at',
-      sortOrder: 'desc',
-    })
-    books.value = resp.data.data
-    Object.assign(pagination, resp.data.pagination)
+    const [booksResp, seriesResp] = await Promise.all([
+      libraryApi.listAdmin({
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        search: searchQuery.value || undefined,
+        category: selectedCategory.value || undefined,
+        sortBy: 'imported_at',
+        sortOrder: 'desc',
+        include_dirty: includeDirty.value,
+        series_grouped: true,
+      }),
+      seriesApi.list(),
+    ])
+    books.value = booksResp.data.data
+    Object.assign(pagination, booksResp.data.pagination)
+    seriesList.value = seriesResp.data.data ?? []
   } finally {
     loading.value = false
   }
+}
+
+function onBookClick(book: Book): void {
+  if (book.status === 'duplicate' && book.duplicate_of) {
+    router.push(`/book/${book.duplicate_of}`)
+  } else {
+    router.push(`/book/${book.id}`)
+  }
+}
+
+async function onBookDelete(book: Book): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除「${book.title}」？\n\n将删除磁盘文件和数据库记录，且不可恢复。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+    )
+  } catch { return }
+
+  const tryDelete = async (opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}): Promise<boolean> => {
+    try {
+      await libraryApi.removeWithOptions(book.id, opts)
+      ElMessage.success('已删除')
+      await fetchBooks()
+      return true
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { code?: string; data?: { duplicate_count?: number; affected_users?: number } } } }
+      if (e.response?.status === 409 && e.response.data?.code === 'HAS_DUPLICATES') {
+        const cnt = e.response.data.data?.duplicate_count ?? 0
+        try {
+          await ElMessageBox.confirm(`此书有 ${cnt} 个重复关联，一并删除？`, '级联删除', { type: 'warning' })
+          return await tryDelete({ ...opts, cascade_duplicates: true })
+        } catch { return false }
+      } else if (e.response?.status === 409 && e.response.data?.code === 'AFFECTS_SHELF') {
+        const users = e.response.data.data?.affected_users ?? 0
+        try {
+          await ElMessageBox.confirm(
+            `此书已被 ${users} 个用户加入书架，确认删除？\n\n用户书架上的此书会消失。`,
+            '影响用户书架',
+            { type: 'warning' },
+          )
+          return await tryDelete({ ...opts, confirm_shelf_impact: true })
+        } catch { return false }
+      } else {
+        ElMessage.error('删除失败')
+        return false
+      }
+    }
+  }
+
+  await tryDelete()
 }
 
 let searchTimer: ReturnType<typeof setTimeout>
