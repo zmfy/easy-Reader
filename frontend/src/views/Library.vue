@@ -30,6 +30,11 @@
           <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="fetchBooks">
             <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
           </el-select>
+          <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
+            <el-option label="入库时间（最新）" value="imported_at" />
+            <el-option label="书名（A→Z）" value="title" />
+            <el-option label="网络评分（待上线）" value="rating" disabled />
+          </el-select>
           <el-switch
             v-if="authStore.isAdmin"
             v-model="includeDirty"
@@ -137,6 +142,14 @@ const includeDirty = ref(false)
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
+const sortBy = ref<'imported_at' | 'title' | 'rating'>(
+  (route.query.sort as 'imported_at' | 'title' | 'rating') || 'imported_at',
+)
+
+function sortOrderFor(field: string): 'asc' | 'desc' {
+  // title is alphabetical; imported_at and rating sort newest/highest first
+  return field === 'title' ? 'asc' : 'desc'
+}
 
 const categories = ['玄幻', '修真', '都市', '历史', '科幻', '悬疑', '言情', '武侠', '游戏', '综合']
 
@@ -152,6 +165,7 @@ function syncQuery() {
   if (pagination.page > 1) query.page = String(pagination.page)
   if (searchQuery.value) query.search = searchQuery.value
   if (selectedCategory.value) query.category = selectedCategory.value
+  if (sortBy.value !== 'imported_at') query.sort = sortBy.value
   router.replace({ query })
 }
 
@@ -159,22 +173,30 @@ async function fetchBooks() {
   loading.value = true
   syncQuery()
   try {
-    const [booksResp, seriesResp] = await Promise.all([
+    // Series are pinned to page 1 only — they're a small fixed list, not
+    // paginated alongside books. Subsequent pages just show more book cards.
+    const isFirstPage = pagination.page === 1
+    const safeSortBy = sortBy.value === 'rating' ? 'imported_at' : sortBy.value
+    const promises: [
+      ReturnType<typeof libraryApi.listAdmin>,
+      ReturnType<typeof seriesApi.list> | Promise<null>,
+    ] = [
       libraryApi.listAdmin({
         page: pagination.page,
         pageSize: pagination.pageSize,
         search: searchQuery.value || undefined,
         category: selectedCategory.value || undefined,
-        sortBy: 'imported_at',
-        sortOrder: 'desc',
+        sortBy: safeSortBy,
+        sortOrder: sortOrderFor(safeSortBy),
         include_dirty: includeDirty.value,
         series_grouped: true,
       }),
-      seriesApi.list(),
-    ])
+      isFirstPage ? seriesApi.list() : Promise.resolve(null),
+    ]
+    const [booksResp, seriesResp] = await Promise.all(promises)
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
-    seriesList.value = seriesResp.data.data ?? []
+    seriesList.value = (isFirstPage && seriesResp) ? (seriesResp.data.data ?? []) : []
   } finally {
     loading.value = false
   }
