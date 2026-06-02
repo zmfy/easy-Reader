@@ -191,3 +191,57 @@ export interface EncodingFixedPayload {
   from_encoding: string
   to_encoding: 'utf-8'
 }
+
+export interface Series {
+  id: string
+  name: string
+  summary?: string
+  cover_url?: string
+  author?: string
+  created_at: string
+  member_count?: number
+}
+
+export interface SeriesDetail {
+  series: Series
+  members: Book[]
+}
+
+export type AuditAction =
+  | 'delete_book_file'
+  | 'delete_book_record'
+  | 'apply_batch'
+  | 'discard_batch'
+  | 'create_manual_override'
+  | 'delete_manual_override'
+
+export interface AuditLog {
+  id: string
+  user_id: string
+  action: AuditAction
+  resource_id?: string | null
+  file_path?: string | null
+  details?: string | null
+  created_at: string
+}
+
+export interface CostEstimate {
+  dedup: number
+  series: number
+  fill: number
+  total: number
+  active_plugin: string | null
+  tier: 'free' | 'low' | 'high' | 'unknown'
+}
+
+export type ManualOverrideType = 'not_duplicate' | 'not_in_series' | 'forced_duplicate' | 'forced_series_member'
+
+export interface ManualOverride {
+  id: string
+  type: ManualOverrideType
+  book_id_a: string | null
+  book_id_b: string | null
+  series_id: string | null
+  created_by: string
+  created_at: string
+}

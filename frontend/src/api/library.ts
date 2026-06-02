@@ -47,4 +47,31 @@ export const libraryApi = {
 
   coverTest: (id: string) =>
     http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
+
+  listAdmin: (params: {
+    page?: number; pageSize?: number; search?: string; category?: string;
+    include_dirty?: boolean; series_grouped?: boolean;
+    sortBy?: string; sortOrder?: 'asc' | 'desc';
+  } = {}) =>
+    http.get<PaginatedResponse<Book>>('/library', { params }),
+
+  estimate: (params: { ai_dedup?: boolean; ai_series?: boolean; ai_fill?: boolean; full_rescan?: boolean }) =>
+    http.get<ApiResponse<import('@/types').CostEstimate>>('/library/scan/estimate', { params }),
+
+  removeWithOptions: (id: string, opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}) =>
+    http.delete<ApiResponse<{ files_deleted: number; records_deleted: number; shelf_entries_affected: number; warnings: string[] }>>(
+      `/library/${id}`,
+      { params: opts },
+    ),
+
+  manualOverrides: {
+    list: (type?: import('@/types').ManualOverrideType) =>
+      http.get<ApiResponse<import('@/types').ManualOverride[]>>('/library/manual-overrides', { params: { type } }),
+    create: (payload: { type: import('@/types').ManualOverrideType; book_id_a: string | null; book_id_b?: string | null; series_id?: string | null }) =>
+      http.post<ApiResponse<import('@/types').ManualOverride>>('/library/manual-overrides', payload),
+    remove: (id: string) =>
+      http.delete<ApiResponse<null>>(`/library/manual-overrides/${id}`),
+    removeAll: () =>
+      http.delete<ApiResponse<{ deleted: number }>>('/library/manual-overrides/all'),
+  },
 }
