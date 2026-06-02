@@ -17,6 +17,7 @@ import {
 } from '../services/scan-task';
 import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
+import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
 
 const router = Router();
 
@@ -212,33 +213,60 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   successResponse(res, updated, '更新成功');
 });
 
-// DELETE /api/library/:id?with_file=true
-//   default: remove DB row only (file stays on disk)
-//   with_file=true: also delete the physical file from BOOKS_DIR
+const deleteQuerySchema = z.object({
+  cascade_duplicates: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  confirm_shelf_impact: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+});
+
+// DELETE /api/library/:id?cascade_duplicates=true&confirm_shelf_impact=true
+//   - Validates path is inside BOOKS_DIR (path traversal protection)
+//   - If book is a canonical with duplicates pointing to it → 409 unless cascade_duplicates=true
+//   - If any of the books are on any user's shelf → 409 unless confirm_shelf_impact=true
+//   - Deletes disk file(s) + DB rows in a transaction; writes audit_log entry
 router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = deleteQuerySchema.safeParse(req.query);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const { cascade_duplicates, confirm_shelf_impact } = parsed.data;
+
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
-  if (!book) {
-    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  const dups = getDuplicatesOf(req.params.id);
+  if (dups.length > 0 && !cascade_duplicates) {
+    res.status(409).json({
+      success: false,
+      code: 'HAS_DUPLICATES',
+      message: '该书有重复关联，请确认是否级联删除',
+      data: { duplicate_count: dups.length, requires: 'cascade_duplicates' },
+    });
     return;
   }
-  const withFile = req.query.with_file === 'true' || req.query.with_file === '1';
-  let fileDeleted = false;
-  let fileError: string | null = null;
-  if (withFile && book.file_path) {
-    try {
-      if (fs.existsSync(book.file_path)) {
-        fs.unlinkSync(book.file_path);
-        fileDeleted = true;
-      } else {
-        fileError = 'file not found on disk';
-      }
-    } catch (e) {
-      fileError = (e as Error).message;
-    }
+
+  const allIds = [req.params.id, ...dups.map(d => d.id)];
+  const affectedUsers = countAffectedUsers(allIds);
+  if (affectedUsers > 0 && !confirm_shelf_impact) {
+    res.status(409).json({
+      success: false,
+      code: 'AFFECTS_SHELF',
+      message: `该书已被 ${affectedUsers} 个用户加入书架`,
+      data: { affected_users: affectedUsers, requires: 'confirm_shelf_impact' },
+    });
+    return;
   }
-  db.prepare('DELETE FROM books WHERE id = ?').run(req.params.id);
-  successResponse(res, { fileDeleted, fileError }, withFile ? '已删除（含磁盘文件）' : '已从书库移除');
+
+  try {
+    const result = deleteBookCascade({
+      file_path: book.file_path,
+      book_id: req.params.id,
+      cascade_duplicate_ids: dups.map(d => d.id),
+      cascade_duplicate_paths: dups.map(d => d.file_path),
+      user_id: req.user!.userId,
+    });
+    successResponse(res, result, '已删除');
+  } catch (err) {
+    errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
+  }
 });
 
 function cleanBookTitle(raw: string): string {
