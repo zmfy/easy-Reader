@@ -50,14 +50,19 @@
                     <el-button size="small" type="primary" @click="saveEdit" :loading="saving">保存</el-button>
                     <el-button size="small" @click="cancelEdit">取消</el-button>
                   </template>
-                  <el-button
-                    size="small"
-                    :loading="aiFilling"
-                    @click="handleAiFill"
+                  <el-tooltip
+                    placement="top"
+                    content="AI 不会覆盖 admin 修改过的字段。想让 AI 重写，请先清空对应字段再保存。"
                   >
-                    <el-icon><MagicStick /></el-icon>
-                    AI 填充
-                  </el-button>
+                    <el-button
+                      size="small"
+                      :loading="aiFilling"
+                      @click="handleAiFill"
+                    >
+                      <el-icon><MagicStick /></el-icon>
+                      AI 填充
+                    </el-button>
+                  </el-tooltip>
                   <el-button
                     size="small"
                     :loading="coverTesting"
@@ -67,6 +72,18 @@
                   </el-button>
                 </template>
               </div>
+              <el-alert
+                v-if="authStore.isAdmin && editedFieldsList.length > 0"
+                type="info"
+                show-icon
+                :closable="false"
+                class="ai-protect-alert"
+              >
+                <template #title>已手动编辑的字段：{{ editedFieldsList.join('、') }}</template>
+                <template #default>
+                  这些字段已被锁定，AI 填充不会覆盖。如需重写，请清空字段并保存后再点 AI 填充。
+                </template>
+              </el-alert>
             </div>
 
             <div class="info-tags">
@@ -112,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -139,6 +156,18 @@ const editForm = reactive({
   author: '',
   summary: '',
   category: '',
+})
+
+// Display friendly labels of fields admin manually edited (AI fill won't overwrite them).
+const FIELD_LABELS: Record<string, string> = { title: '标题', author: '作者', summary: '简介', category: '分类' }
+const editedFieldsList = computed<string[]>(() => {
+  const raw = book.value?.manually_edited_fields
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.map(f => FIELD_LABELS[f as string] ?? String(f))
+  } catch { return [] }
 })
 
 function formatSize(bytes: number) {
@@ -513,5 +542,10 @@ onMounted(fetchBook)
 
 .loading-state {
   padding: 40px;
+}
+
+.ai-protect-alert {
+  margin-top: 12px;
+  width: 100%;
 }
 </style>
