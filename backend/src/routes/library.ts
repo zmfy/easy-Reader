@@ -443,4 +443,36 @@ router.get('/:id/ai-metadata', authMiddleware, (req: Request, res: Response) => 
   successResponse(res, meta);
 });
 
+// POST /api/library/:id/normalize-chapters — AI-unify chapter titles
+router.post('/:id/normalize-chapters', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  try {
+    const { getReaderPlugin } = await import('../plugins/plugin-manager');
+    const plugin = await getReaderPlugin(book);
+    const chapters = await plugin.getChapters();
+    const titles = chapters.map(c => c.title);
+    const { normalizeChaptersForBook } = await import('../services/chapter-normalize');
+    const result = await normalizeChaptersForBook(req.params.id, titles);
+    successResponse(res, result, `已统一 ${result.normalized}/${result.total} 个章节标题`);
+  } catch (err) {
+    errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
+  }
+});
+
+// DELETE /api/library/:id/normalize-chapters — restore original titles
+router.delete('/:id/normalize-chapters', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const { clearOverrides } = await import('../services/chapter-normalize');
+  const cleared = clearOverrides(req.params.id);
+  successResponse(res, { cleared }, `已恢复 ${cleared} 个章节的原标题`);
+});
+
+// GET /api/library/:id/normalize-chapters — current override count
+router.get('/:id/normalize-chapters', authMiddleware, async (req: Request, res: Response) => {
+  const { getOverrideCount } = await import('../services/chapter-normalize');
+  successResponse(res, { count: getOverrideCount(req.params.id) });
+});
+
 export default router;

@@ -206,6 +206,18 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_manual_overrides_book_a ON manual_overrides(book_id_a);
   `);
 
+  // === Plan 3 schema: book_chapter_overrides (F. AI 章节标题统一) ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS book_chapter_overrides (
+      book_id TEXT NOT NULL,
+      chapter_index INTEGER NOT NULL,
+      normalized_title TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (book_id, chapter_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chapter_overrides_book ON book_chapter_overrides(book_id);
+  `);
+
   // === Plan 3 schema: book_ai_metadata (E. AI 推荐标签 + 相似作品) ===
   database.exec(`
     CREATE TABLE IF NOT EXISTS book_ai_metadata (

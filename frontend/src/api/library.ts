@@ -48,6 +48,15 @@ export const libraryApi = {
   getAiMetadata: (id: string) =>
     http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
 
+  normalizeChapters: (id: string) =>
+    http.post<ApiResponse<{ total: number; normalized: number; failed_batches: number }>>(`/library/${id}/normalize-chapters`),
+
+  clearNormalizedChapters: (id: string) =>
+    http.delete<ApiResponse<{ cleared: number }>>(`/library/${id}/normalize-chapters`),
+
+  getNormalizedChapterCount: (id: string) =>
+    http.get<ApiResponse<{ count: number }>>(`/library/${id}/normalize-chapters`),
+
   coverTest: (id: string) =>
     http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
 

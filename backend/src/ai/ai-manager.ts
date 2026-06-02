@@ -109,6 +109,41 @@ export const aiManager = {
     return parseSeriesResponse(raw, candidates.length);
   },
 
+  /**
+   * Normalize chapter titles to a consistent format. AI sees the original titles
+   * and returns a normalized version for each (same array length). For very long
+   * lists, caller should batch.
+   */
+  async normalizeChapterTitles(titles: string[], db: Database.Database): Promise<string[]> {
+    if (titles.length === 0) return [];
+    const numbered = titles.map((t, i) => `${i + 1}. ${t}`).join('\n');
+    const prompt = `下面是一本小说的章节标题列表。请把它们统一格式（如统一为"第 N 章 标题"格式），保留每章原本的核心标题文字。
+
+原标题（按顺序）：
+${numbered}
+
+请按以下 JSON 格式返回，**只输出 JSON**，数组长度必须等于 ${titles.length}：
+{"normalized":["第一章 标题1","第二章 标题2", ...]}
+
+约定：
+- 数组顺序必须与输入完全对应
+- 如果某章原标题已经规范，可保持不变
+- 章节序号请使用阿拉伯数字或简体中文数字（保持本批一致）
+- 不要丢失原标题中的关键描述文字`;
+    try {
+      const raw = await this.chat(prompt, db);
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return titles;
+      const parsed = JSON.parse(m[0]) as { normalized?: string[] };
+      if (!Array.isArray(parsed.normalized) || parsed.normalized.length !== titles.length) {
+        return titles;
+      }
+      return parsed.normalized.map((t, i) => (typeof t === 'string' && t.trim().length > 0) ? t.trim() : titles[i]);
+    } catch {
+      return titles;  // fall back to originals on any failure
+    }
+  },
+
   async judgeGarbled(sample: string, db: Database.Database): Promise<{ is_garbled: boolean; reason?: string }> {
     if (!sample || sample.trim().length === 0) return { is_garbled: true, reason: 'empty sample' };
     const prompt = `下面是一段从文件中读出的文本（前 512 字符）。请判断这是否为乱码：

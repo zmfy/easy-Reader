@@ -70,6 +70,23 @@
                   >
                     抓封面
                   </el-button>
+                  <el-button
+                    v-if="chapterOverrideCount === 0"
+                    size="small"
+                    :loading="normalizingChapters"
+                    @click="handleNormalizeChapters"
+                  >
+                    AI 统一章节
+                  </el-button>
+                  <el-button
+                    v-else
+                    size="small"
+                    type="warning"
+                    plain
+                    @click="handleClearNormalizedChapters"
+                  >
+                    恢复章节 ({{ chapterOverrideCount }})
+                  </el-button>
                 </template>
               </div>
               <el-alert
@@ -150,7 +167,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
@@ -169,6 +186,8 @@ const saving = ref(false)
 const aiFilling = ref(false)
 const coverTesting = ref(false)
 const addingShelf = ref(false)
+const normalizingChapters = ref(false)
+const chapterOverrideCount = ref(0)
 
 const editForm = reactive({
   title: '',
@@ -199,15 +218,49 @@ async function fetchBook() {
   loading.value = true
   try {
     const id = route.params.bookId as string
-    const [bookResp, metaResp] = await Promise.all([
+    const [bookResp, metaResp, chCountResp] = await Promise.all([
       libraryApi.get(id),
       libraryApi.getAiMetadata(id).catch(() => null),
+      libraryApi.getNormalizedChapterCount(id).catch(() => null),
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
+    chapterOverrideCount.value = chCountResp?.data.data?.count ?? 0
   } finally {
     loading.value = false
   }
+}
+
+async function handleNormalizeChapters(): Promise<void> {
+  if (!book.value) return
+  try {
+    await ElMessageBox.confirm(
+      'AI 将分批读取所有章节标题并统一格式（不会修改磁盘文件，可随时恢复）。每 40 章一次 AI 调用。',
+      'AI 统一章节标题',
+      { type: 'info' },
+    )
+  } catch { return }
+  normalizingChapters.value = true
+  try {
+    const resp = await libraryApi.normalizeChapters(book.value.id)
+    const r = resp.data.data!
+    ElMessage.success(`已统一 ${r.normalized}/${r.total} 个章节${r.failed_batches > 0 ? `（${r.failed_batches} 批 AI 失败）` : ''}`)
+    chapterOverrideCount.value = r.normalized
+  } catch (err: unknown) {
+    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '章节统一失败')
+  } finally {
+    normalizingChapters.value = false
+  }
+}
+
+async function handleClearNormalizedChapters(): Promise<void> {
+  if (!book.value) return
+  try {
+    await ElMessageBox.confirm('恢复原章节标题？AI 统一的结果将被清除。', '恢复确认', { type: 'warning' })
+  } catch { return }
+  const resp = await libraryApi.clearNormalizedChapters(book.value.id)
+  ElMessage.success(`已恢复 ${resp.data.data?.cleared ?? 0} 个章节`)
+  chapterOverrideCount.value = 0
 }
 
 async function refreshAiMeta(): Promise<void> {

@@ -23,7 +23,13 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
 
   try {
     const plugin = await getReaderPlugin(book);
-    const chapters = await plugin.getChapters();
+    const rawChapters = await plugin.getChapters();
+    // Apply AI-normalized title overrides if any
+    const { getOverridesMap } = await import('../services/chapter-normalize');
+    const overrides = getOverridesMap(req.params.bookId);
+    const chapters = overrides.size > 0
+      ? rawChapters.map(c => ({ ...c, title: overrides.get(c.index) ?? c.title }))
+      : rawChapters;
     const extra: Record<string, unknown> = { chapters, format: book.file_format };
     if (book.file_format.toLowerCase() === 'pdf') {
       const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;
