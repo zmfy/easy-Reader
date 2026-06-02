@@ -68,6 +68,12 @@ const router = createRouter({
       component: () => import('@/views/ProblemBooks.vue'),
       meta: { requiresAuth: true, roles: ['admin'] },
     },
+    {
+      path: '/library/series/:id',
+      name: 'series-detail',
+      component: () => import('@/views/SeriesDetail.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 
