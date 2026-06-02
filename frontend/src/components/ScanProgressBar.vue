@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useScanTaskStore } from '@/stores/scan-task'
 import { useAuthStore } from '@/stores/auth'
@@ -66,6 +66,40 @@ onMounted(() => {
     if (store.isRunning) store.startPolling()
   })
 })
+
+// Desktop notification when scan finishes (regardless of which page user is on)
+watch(() => store.activeTask?.status, (newStatus, oldStatus) => {
+  if (oldStatus === 'running' && (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled')) {
+    void notifyOnFinish(newStatus)
+  }
+})
+
+async function notifyOnFinish(status: string): Promise<void> {
+  if (!('Notification' in window)) return
+  if (Notification.permission === 'default') {
+    try { await Notification.requestPermission() } catch { return }
+  }
+  if (Notification.permission !== 'granted') return
+  const titles: Record<string, string> = {
+    completed: '扫描完成',
+    failed: '扫描失败',
+    cancelled: '扫描已取消',
+  }
+  const t = store.activeTask
+  const bodyParts: string[] = []
+  if (t) {
+    bodyParts.push(`处理 ${t.processed_files} / ${t.total_files} 个文件`)
+  }
+  bodyParts.push('点击查看 easy-Reader 书库')
+  try {
+    new Notification(titles[status] ?? '扫描结束', {
+      body: bodyParts.join('\n'),
+      icon: '/favicon.svg',
+    })
+  } catch {
+    // Some browsers (mobile) require ServiceWorker for notifications; fall back silently
+  }
+}
 </script>
 
 <style scoped>
