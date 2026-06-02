@@ -248,3 +248,21 @@ declare global {
     }
   }
 }
+
+export type AuditAction =
+  | 'delete_book_file'
+  | 'delete_book_record'
+  | 'apply_batch'
+  | 'discard_batch'
+  | 'create_manual_override'
+  | 'delete_manual_override';
+
+export interface AuditLog {
+  id: string;
+  user_id: string;
+  action: AuditAction;
+  resource_id?: string | null;
+  file_path?: string | null;
+  details?: string | null;
+  created_at: string;
+}
