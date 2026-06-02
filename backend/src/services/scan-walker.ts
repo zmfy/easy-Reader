@@ -101,12 +101,12 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
 
     // Pull untagged normal books (not duplicates, not already in a series)
     const existing = db.prepare(`
-      SELECT file_path, title, author, fingerprint, chapter_count
+      SELECT file_path, title, author, fingerprint, first_chapter_hash, chapter_count
       FROM books
       WHERE status = 'normal'
         AND (duplicate_of IS NULL OR duplicate_of = '')
         AND (series_id IS NULL OR series_id = '')
-    `).all() as Array<{ file_path: string; title: string; author?: string; fingerprint?: string; chapter_count?: number }>;
+    `).all() as Array<{ file_path: string; title: string; author?: string; fingerprint?: string; first_chapter_hash?: string; chapter_count?: number }>;
 
     const dedupInput: ScannedBook[] = [
       ...scanned,
@@ -117,6 +117,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           title: b.title,
           author: b.author,
           fingerprint: b.fingerprint,
+          first_chapter_hash: b.first_chapter_hash,
           chapter_count: b.chapter_count,
           first_chapter_preview: '',
         })),
@@ -376,6 +377,7 @@ async function processFile(
     file_path: fullPath,
     title,
     fingerprint: fp.fingerprint,
+    first_chapter_hash: fp.first_chapter_hash,
     chapter_count: fp.chapter_count,
     first_chapter_preview: firstChapterPreview,
     file_format: ext,

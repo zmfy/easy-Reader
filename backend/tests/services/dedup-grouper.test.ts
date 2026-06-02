@@ -60,4 +60,40 @@ describe('buildCandidateGroups', () => {
     expect(r.hard_groups).toEqual([]);
     expect(r.soft_groups).toEqual([]);
   });
+
+  it('groups same-author books with low title edit distance', () => {
+    const books: ScannedBook[] = [
+      { file_path: '/a', title: '斗破苍穹', author: '天蚕土豆', fingerprint: fp('a') },
+      { file_path: '/b', title: '斗破苍穹（修订版）', author: '天蚕土豆', fingerprint: fp('b') },
+      { file_path: '/c', title: '完全不同的书', author: '别人', fingerprint: fp('c') },
+    ];
+    const r = buildCandidateGroups(books);
+    expect(r.soft_groups).toHaveLength(1);
+    expect(r.soft_groups[0]).toHaveLength(2);
+    expect(r.soft_groups[0].map(b => b.file_path).sort()).toEqual(['/a', '/b']);
+  });
+
+  it('groups books with same chapter_count + same first_chapter_hash', () => {
+    const books: ScannedBook[] = [
+      { file_path: '/a', title: '三体 v1', fingerprint: fp('fa'), chapter_count: 50, first_chapter_hash: 'H1' },
+      { file_path: '/b', title: '三体 v2', fingerprint: fp('fb'), chapter_count: 50, first_chapter_hash: 'H1' },
+      { file_path: '/c', title: '别的书', fingerprint: fp('fc'), chapter_count: 30, first_chapter_hash: 'H2' },
+    ];
+    const r = buildCandidateGroups(books);
+    expect(r.soft_groups).toHaveLength(1);
+    expect(r.soft_groups[0].map(b => b.file_path).sort()).toEqual(['/a', '/b']);
+  });
+
+  it('merges overlapping soft sources into one cluster', () => {
+    // Book /a appears in both norm-group and author-cluster → should end up
+    // in a single merged soft group with all 3 books.
+    const books: ScannedBook[] = [
+      { file_path: '/a', title: '斗破苍穹', author: '天蚕土豆', fingerprint: fp('a') },
+      { file_path: '/b', title: '斗破苍穹', author: '别人', fingerprint: fp('b') },     // norm-equal with /a
+      { file_path: '/c', title: '斗破苍穹（番外）', author: '天蚕土豆', fingerprint: fp('c') }, // author+distance with /a
+    ];
+    const r = buildCandidateGroups(books);
+    expect(r.soft_groups).toHaveLength(1);
+    expect(r.soft_groups[0]).toHaveLength(3);
+  });
 });
