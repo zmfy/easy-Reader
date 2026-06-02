@@ -19,6 +19,10 @@
         <span class="cover-format">{{ book.file_format?.toUpperCase() }}</span>
         <span class="cover-title">{{ book.title }}</span>
       </div>
+      <!-- 状态徽章（重复 / 乱码） -->
+      <el-tag v-if="badge" :type="badge.type" size="small" class="status-badge">
+        {{ badge.label }}
+      </el-tag>
       <!-- 悬停操作层 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" @click.stop="$emit('read')">
@@ -26,6 +30,15 @@
           阅读
         </el-button>
         <el-button size="small" @click.stop="$emit('detail')">详情</el-button>
+        <el-button
+          v-if="authStore.isAdmin"
+          type="danger"
+          size="small"
+          plain
+          @click.stop="$emit('delete', book)"
+        >
+          删除
+        </el-button>
       </div>
       <!-- 底部渐变（有封面时增加层次感） -->
       <div v-if="!imgError && book.cover_url" class="cover-bottom-fade" />
@@ -46,9 +59,18 @@
 import { ref, computed } from 'vue'
 import { VideoPlay } from '@element-plus/icons-vue'
 import type { Book } from '@/types'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ book: Book }>()
-defineEmits<{ click: []; read: []; detail: [] }>()
+defineEmits<{ click: []; read: []; detail: []; delete: [Book] }>()
+
+const authStore = useAuthStore()
+
+const badge = computed<{ type: 'danger' | 'warning'; label: string } | null>(() => {
+  if (props.book.status === 'duplicate') return { type: 'danger', label: '重复' }
+  if (props.book.status === 'garbled') return { type: 'warning', label: '乱码' }
+  return null
+})
 
 const imgLoaded = ref(false)
 const imgError = ref(false)
@@ -245,5 +267,12 @@ const placeholderGradient = computed(() => {
 .tag.finished {
   background: rgba(255, 184, 108, 0.12);
   color: var(--warning);
+}
+
+.status-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
 }
 </style>
