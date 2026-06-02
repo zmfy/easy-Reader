@@ -58,11 +58,23 @@ export interface AiSeriesResult {
   confidence?: 'high' | 'medium' | 'low';
 }
 
+function readSummaryLength(db: Database.Database): string {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_summary_length'").get() as
+    | { value: string }
+    | undefined;
+  const n = parseInt(row?.value ?? '100', 10);
+  if (!Number.isFinite(n) || n < 30 || n > 1000) return '100';
+  return String(n);
+}
+
 export const aiManager = {
   async fillBookInfo(rawText: string, db: Database.Database): Promise<Partial<Book>> {
     const active = getActivePlugin(db);
     if (!active) throw new Error('未配置 AI 插件');
-    return active.plugin.fillBookInfo(rawText, active.config);
+    return active.plugin.fillBookInfo(rawText, {
+      ...active.config,
+      summary_length: readSummaryLength(db),
+    });
   },
 
   async classifyBook(bookInfo: Partial<Book>, db: Database.Database): Promise<string> {

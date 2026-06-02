@@ -192,6 +192,17 @@
                 />
               </div>
             </div>
+            <div class="form-field" style="margin-top: 16px">
+              <label>书籍简介长度（字）</label>
+              <el-select v-model="aiSummaryLength" style="width: 100%">
+                <el-option label="50 字（极简）" :value="50" />
+                <el-option label="100 字（默认）" :value="100" />
+                <el-option label="200 字" :value="200" />
+                <el-option label="300 字" :value="300" />
+                <el-option label="500 字" :value="500" />
+              </el-select>
+              <div class="field-hint">影响 AI 填充 + 批量填充时生成的简介字数</div>
+            </div>
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
           </div>
 
@@ -470,6 +481,7 @@ const users = ref<Array<{ id: string; username: string; role: string; created_at
 const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string> }>>([])
 const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
+const aiSummaryLength = ref<number>(100)
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
@@ -636,6 +648,10 @@ async function loadSettings() {
     selectedAiPlugin.value = plugin
     populateAiForm(plugin)
   }
+  const summaryLenStored = parseInt(data['ai_summary_length'] ?? '')
+  if (Number.isFinite(summaryLenStored) && summaryLenStored >= 30 && summaryLenStored <= 1000) {
+    aiSummaryLength.value = summaryLenStored
+  }
 }
 
 async function loadPlugins() {
@@ -668,6 +684,7 @@ async function saveSettings(tab: string) {
       }
     } else if (tab === 'ai' && currentAiPlugin.value) {
       payload['ai_plugin'] = selectedAiPlugin.value
+      payload['ai_summary_length'] = String(aiSummaryLength.value)
       for (const field of currentAiPlugin.value.fields) {
         if (aiForm[field]) {
           payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field]
