@@ -192,7 +192,10 @@ async function fetchBooks() {
         sortBy: safeSortBy,
         sortOrder: sortOrderFor(safeSortBy),
         include_dirty: includeDirty.value,
-        series_grouped: true,
+        // Only hide series members from the flat grid in the unfiltered browse
+        // view (where SeriesCards represent them). When searching/filtering,
+        // show members inline so e.g. searching "女生" surfaces 女生寝室 volumes.
+        series_grouped: isUnfiltered,
       }),
       shouldFetchSeries ? seriesApi.list() : Promise.resolve(null),
     ]
