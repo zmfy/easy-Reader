@@ -21,6 +21,7 @@ import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../servi
 import { markFieldsAsEdited } from '../services/ai-batch-fill';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
+import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
 
 const router = Router();
 
@@ -445,8 +446,9 @@ router.get('/:id/ai-metadata', authMiddleware, (req: Request, res: Response) => 
 
 // POST /api/library/lookup-by-titles — bulk title→bookId resolution
 // Body: { titles: [{title, author?}] }  → returns same array with book_id added
-// where found in the library. Exact title match preferred; if multiple match,
-// prefer same-author then shortest path.
+// where found in the library. Matching is normalized (volume/episode suffixes,
+// brackets, width, case stripped) so an AI-suggested base title like "盗墓笔记"
+// links to an in-library numbered volume. See matchTitlesToBooks for ranking.
 const lookupSchema = z.object({
   titles: z.array(z.object({ title: z.string().min(1), author: z.string().optional() })).max(50),
 });
@@ -454,21 +456,12 @@ router.post('/lookup-by-titles', authMiddleware, (req: Request, res: Response) =
   const parsed = lookupSchema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
-  const stmt = db.prepare(
-    `SELECT id, title, author, file_path FROM books
-     WHERE title = ? AND status IN ('normal','encoding_fixed')
+  const books = db.prepare(
+    `SELECT id, title, author, chapter_count FROM books
+     WHERE status IN ('normal','encoding_fixed')
        AND (duplicate_of IS NULL OR duplicate_of = '')`
-  );
-  const result = parsed.data.titles.map(q => {
-    const rows = stmt.all(q.title) as Array<{ id: string; title: string; author?: string; file_path: string }>;
-    if (rows.length === 0) return { title: q.title, author: q.author, book_id: null };
-    let chosen = rows[0];
-    if (q.author) {
-      const sameAuthor = rows.find(r => r.author === q.author);
-      if (sameAuthor) chosen = sameAuthor;
-    }
-    return { title: q.title, author: q.author, book_id: chosen.id };
-  });
+  ).all() as LibraryBookForLookup[];
+  const result = matchTitlesToBooks(parsed.data.titles, books);
   successResponse(res, result);
 });
 
