@@ -43,16 +43,16 @@ export function estimateCalls(input: EstimateInput): EstimateOutput {
  * — instead we use heuristics based on the current books table.
  *
  * Note: this is approximate. The real scan may find more or fewer candidates.
+ * Note: full_rescan is part of the scan API surface but does not change the fill estimate.
  */
 export function estimateFromCurrentDb(opts: {
   ai_fill: boolean;
-  // full_rescan is part of the scan API surface but does not change the fill estimate.
   full_rescan: boolean;
+  force?: boolean;
 }): EstimateOutput & { active_plugin: string | null; tier: CostTier } {
   const db = getDb();
-  // Mirror the real ai-fill candidate set (missing author/summary, not yet
-  // filled at the current AI_FILL_VERSION) so the estimate matches what runs.
-  const fillCandidates = selectFillCandidates(db, false).length;
+  // Mirror the real ai-fill candidate set for the chosen mode (force re-fills all).
+  const fillCandidates = selectFillCandidates(db, opts.force ?? false).length;
 
   const est = estimateCalls({ ai_fill: opts.ai_fill, books_to_fill: fillCandidates });
   const active = getActivePluginName();

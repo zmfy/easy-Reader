@@ -102,7 +102,7 @@
         <p>对书库中<strong>缺少作者/简介且尚未填充</strong>的书批量调用 AI 补全（作者、简介、分类、标签、封面）。</p>
         <el-checkbox v-model="fillForce">强制重填（忽略已填充记录，对全库重跑，会消耗更多 token）</el-checkbox>
         <div v-if="fillEstimate" class="fill-estimate">
-          预计调用 <strong>{{ fillForce ? fillEstimate.total : fillEstimate.fill }}</strong> 次 ·
+          预计调用 <strong>{{ fillEstimate.total }}</strong> 次 ·
           当前 AI <strong>{{ fillEstimate.active_plugin ?? '未配置' }}</strong>
         </div>
         <template #footer>
@@ -303,13 +303,14 @@ const showFillDialog = ref(false)
 const fillForce = ref(false)
 const fillEstimate = ref<CostEstimate | null>(null)
 
-watch(showFillDialog, async (open) => {
-  if (!open) return
+async function refreshFillEstimate() {
   try {
-    const resp = await libraryApi.estimate({ ai_fill: true, full_rescan: false })
+    const resp = await libraryApi.estimate({ ai_fill: true, full_rescan: false, force: fillForce.value })
     fillEstimate.value = resp.data.data ?? null
   } catch { fillEstimate.value = null }
-})
+}
+watch(showFillDialog, (open) => { if (open) void refreshFillEstimate() })
+watch(fillForce, () => { if (showFillDialog.value) void refreshFillEstimate() })
 
 async function onStartFill() {
   try {

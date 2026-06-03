@@ -97,6 +97,7 @@ const scanOptionsSchema = z.object({
 const estimateSchema = z.object({
   ai_fill: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
   full_rescan: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  force: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
 });
 
 // GET /api/library/scan/estimate — pre-scan cost estimation
@@ -106,6 +107,7 @@ router.get('/scan/estimate', authMiddleware, adminMiddleware, (req: Request, res
   const result = estimateFromCurrentDb({
     ai_fill: !!parsed.data.ai_fill,
     full_rescan: !!parsed.data.full_rescan,
+    force: !!parsed.data.force,
   });
   successResponse(res, result);
 });
