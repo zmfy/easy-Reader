@@ -47,6 +47,10 @@
             <el-icon><Refresh /></el-icon>
             扫描导入
           </el-button>
+          <el-button v-if="authStore.isAdmin" :loading="scanStore.isRunning" @click="showFillDialog = true">
+            <el-icon><MagicStick /></el-icon>
+            批量 AI 填充
+          </el-button>
           <el-button v-if="authStore.isAdmin" @click="$router.push('/library/problems')">
             问题书籍管理
           </el-button>
@@ -63,19 +67,13 @@
         </el-skeleton>
       </div>
 
-      <div v-else-if="books.length === 0 && seriesList.length === 0" class="empty-state">
+      <div v-else-if="books.length === 0" class="empty-state">
         <div class="empty-icon">📚</div>
         <div class="empty-title">书库空空如也</div>
         <div class="empty-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
       </div>
 
       <div v-else class="books-grid">
-        <SeriesCard
-          v-for="s in seriesList"
-          :key="'series-' + s.id"
-          :series="s"
-          @click="(series) => router.push(`/library/series/${series.id}`)"
-        />
         <BookCard
           v-for="book in books"
           :key="book.id"
@@ -99,25 +97,36 @@
       </div>
 
       <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
+
+      <el-dialog v-model="showFillDialog" title="批量 AI 填充" width="460px">
+        <p>对书库中<strong>缺少作者/简介且尚未填充</strong>的书批量调用 AI 补全（作者、简介、分类、标签、封面）。</p>
+        <el-checkbox v-model="fillForce">强制重填（忽略已填充记录，对全库重跑，会消耗更多 token）</el-checkbox>
+        <div v-if="fillEstimate" class="fill-estimate">
+          预计调用 <strong>{{ fillForce ? fillEstimate.total : fillEstimate.fill }}</strong> 次 ·
+          当前 AI <strong>{{ fillEstimate.active_plugin ?? '未配置' }}</strong>
+        </div>
+        <template #footer>
+          <el-button @click="showFillDialog = false">取消</el-button>
+          <el-button type="primary" :loading="scanStore.isRunning" @click="onStartFill">开始填充</el-button>
+        </template>
+      </el-dialog>
     </div>
   </DefaultLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, MagicStick } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
-import SeriesCard from '@/components/SeriesCard.vue'
 import ScanOptionsDialog from '@/components/ScanOptionsDialog.vue'
 import { libraryApi } from '@/api/library'
 import { scanBatchesApi } from '@/api/scan-batches'
-import { seriesApi } from '@/api/series'
 import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
-import type { Book, ScanStartOptions, ScanBatch, Series } from '@/types'
+import type { Book, ScanStartOptions, ScanBatch, CostEstimate } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -137,7 +146,6 @@ async function refreshPendingBatch(): Promise<void> {
 }
 
 const books = ref<Book[]>([])
-const seriesList = ref<Series[]>([])
 const includeDirty = ref(false)
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
@@ -173,36 +181,19 @@ async function fetchBooks() {
   loading.value = true
   syncQuery()
   try {
-    // Series are shown on page 1 only AND only when not searching/filtering.
-    // Search/category implies "find a specific book"; series cards would be
-    // noise in that flow.
-    const isFirstPage = pagination.page === 1
-    const isUnfiltered = !searchQuery.value && !selectedCategory.value
-    const shouldFetchSeries = isFirstPage && isUnfiltered
     const safeSortBy = sortBy.value === 'rating' ? 'imported_at' : sortBy.value
-    const promises: [
-      ReturnType<typeof libraryApi.listAdmin>,
-      ReturnType<typeof seriesApi.list> | Promise<null>,
-    ] = [
-      libraryApi.listAdmin({
-        page: pagination.page,
-        pageSize: pagination.pageSize,
-        search: searchQuery.value || undefined,
-        category: selectedCategory.value || undefined,
-        sortBy: safeSortBy,
-        sortOrder: sortOrderFor(safeSortBy),
-        include_dirty: includeDirty.value,
-        // Only hide series members from the flat grid in the unfiltered browse
-        // view (where SeriesCards represent them). When searching/filtering,
-        // show members inline so e.g. searching "女生" surfaces 女生寝室 volumes.
-        series_grouped: isUnfiltered,
-      }),
-      shouldFetchSeries ? seriesApi.list() : Promise.resolve(null),
-    ]
-    const [booksResp, seriesResp] = await Promise.all(promises)
+    const booksResp = await libraryApi.listAdmin({
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      search: searchQuery.value || undefined,
+      category: selectedCategory.value || undefined,
+      sortBy: safeSortBy,
+      sortOrder: sortOrderFor(safeSortBy),
+      include_dirty: includeDirty.value,
+      series_grouped: false,
+    })
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
-    seriesList.value = (shouldFetchSeries && seriesResp) ? (seriesResp.data.data ?? []) : []
   } finally {
     loading.value = false
   }
@@ -307,6 +298,33 @@ async function onScanConfirm(options: ScanStartOptions): Promise<void> {
   }
 }
 
+// 批量 AI 填充对话框
+const showFillDialog = ref(false)
+const fillForce = ref(false)
+const fillEstimate = ref<CostEstimate | null>(null)
+
+watch(showFillDialog, async (open) => {
+  if (!open) return
+  try {
+    const resp = await libraryApi.estimate({ ai_fill: true, full_rescan: false })
+    fillEstimate.value = resp.data.data ?? null
+  } catch { fillEstimate.value = null }
+})
+
+async function onStartFill() {
+  try {
+    await libraryApi.aiFillBatch(fillForce.value)
+    // Mirror the same mechanism used after libraryApi.scan(): refresh() picks up
+    // the newly created active task, then startPolling() keeps it updated.
+    await scanStore.refresh()
+    scanStore.startPolling()
+    showFillDialog.value = false
+    ElMessage.success('已开始批量填充，进度见顶部进度条')
+  } catch (e) {
+    ElMessage.error('启动失败：' + ((e as Error)?.message ?? '未知错误'))
+  }
+}
+
 // 任务完成后刷新书库与 pending batch
 watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
   if (oldStatus === 'running' && newStatus !== 'running') {
@@ -402,5 +420,11 @@ onMounted(refreshPendingBatch)
 
 .batch-alert {
   margin-bottom: 20px;
+}
+
+.fill-estimate {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-2);
 }
 </style>
