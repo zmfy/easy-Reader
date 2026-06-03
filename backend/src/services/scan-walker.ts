@@ -217,17 +217,12 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // after the admin applies the batch and runs another scan with ai_fill on.)
     if (options.ai_fill) {
       setScanProgress(taskId, { stage: 'ai_fill' });
-      const { batchFill } = await import('./ai-batch-fill');
-      const toFill = db.prepare(`
-        SELECT id, file_path, file_format FROM books
-        WHERE status = 'normal' AND duplicate_of IS NULL
-          AND (author IS NULL OR author = '')
-          AND (summary IS NULL OR summary = '')
-      `).all() as Array<{ id: string; file_path: string; file_format: string }>;
+      const { batchFill, selectFillCandidates } = await import('./ai-batch-fill');
+      const toFill = selectFillCandidates(db, false);
       console.log(`[scan ${taskId}] AI fill candidates: ${toFill.length}`);
       if (toFill.length > 0) {
-        const result = await batchFill({ taskId, books: toFill });
-        console.log(`[scan ${taskId}] AI fill done: ${result.succeeded.length} ok, ${result.failed.length} failed`);
+        const r = await batchFill({ taskId, books: toFill });
+        console.log(`[scan ${taskId}] AI fill done: ${r.succeeded.length} ok, ${r.failed.length} failed`);
       }
     }
 

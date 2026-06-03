@@ -1,4 +1,5 @@
 import { getDb } from '../db';
+import { selectFillCandidates } from './ai-batch-fill';
 
 export type CostTier = 'free' | 'low' | 'high' | 'unknown';
 
@@ -49,10 +50,9 @@ export function estimateFromCurrentDb(opts: {
   full_rescan: boolean;
 }): EstimateOutput & { active_plugin: string | null; tier: CostTier } {
   const db = getDb();
-  // Pessimistic upper bound: counts books missing author OR summary; does not yet subtract already-filled books (ai_fill_version, Task 5).
-  const fillCandidates = (db.prepare(
-    "SELECT COUNT(*) as c FROM books WHERE status = 'normal' AND duplicate_of IS NULL AND ((author IS NULL OR author = '') OR (summary IS NULL OR summary = ''))"
-  ).get() as { c: number }).c;
+  // Mirror the real ai-fill candidate set (missing author/summary, not yet
+  // filled at the current AI_FILL_VERSION) so the estimate matches what runs.
+  const fillCandidates = selectFillCandidates(db, false).length;
 
   const est = estimateCalls({ ai_fill: opts.ai_fill, books_to_fill: fillCandidates });
   const active = getActivePluginName();

@@ -1,11 +1,13 @@
 import fs from 'fs';
 import pLimit from 'p-limit';
+import Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { setScanProgress } from './scan-task';
 import { writeAudit } from './audit-log';
 import { fetchAndSaveCover } from '../utils/cover';
 import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
+import { AI_FILL_VERSION } from './scan-versions';
 
 const CONCURRENCY = 3;
 const RETRIES = 2;
@@ -21,6 +23,33 @@ export interface BatchFillResult {
   succeeded: string[];
   failed: Array<{ book_id: string; file_path: string; error: string }>;
   covers_fetched: number;
+}
+
+export interface FillCandidate { id: string; file_path: string; file_format: string; }
+
+/**
+ * Books eligible for AI fill. Normal mode: missing author/summary AND not yet
+ * attempted at the current AI_FILL_VERSION. Force: every normal non-duplicate
+ * book regardless of version/fields (manually-edited fields stay protected
+ * inside batchFill).
+ */
+export function selectFillCandidates(db: Database.Database, force: boolean): FillCandidate[] {
+  if (force) {
+    return db.prepare(
+      `SELECT id, file_path, file_format FROM books
+       WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')`
+    ).all() as FillCandidate[];
+  }
+  return db.prepare(
+    `SELECT id, file_path, file_format FROM books
+     WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')
+       AND ((author IS NULL OR author = '') OR (summary IS NULL OR summary = ''))
+       AND (ai_fill_version IS NULL OR ai_fill_version < ?)`
+  ).all(AI_FILL_VERSION) as FillCandidate[];
+}
+
+export function stampFillVersion(db: Database.Database, bookId: string): void {
+  db.prepare('UPDATE books SET ai_fill_version = ? WHERE id = ?').run(AI_FILL_VERSION, bookId);
 }
 
 export async function batchFill(input: BatchFillInput): Promise<BatchFillResult> {
@@ -114,6 +143,10 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
     } catch (err) {
       result.failed.push({ book_id: b.id, file_path: b.file_path, error: (err as Error).message });
     } finally {
+      // Stamp even on failure: avoids re-queuing persistently unfillable books
+      // every scan. Transient failures are already retried by callWithRetry above;
+      // use force=true to re-fill after a provider outage.
+      stampFillVersion(db, b.id);
       done++;
       if (input.taskId && (done % 2 === 0 || done === total)) {
         setScanProgress(input.taskId, { processed_files: done });
