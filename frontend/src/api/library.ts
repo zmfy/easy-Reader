@@ -76,7 +76,7 @@ export const libraryApi = {
   } = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 
-  estimate: (params: { ai_dedup?: boolean; ai_series?: boolean; ai_fill?: boolean; full_rescan?: boolean }) =>
+  estimate: (params: { ai_fill?: boolean; full_rescan?: boolean }) =>
     http.get<ApiResponse<import('@/types').CostEstimate>>('/library/scan/estimate', { params }),
 
   removeWithOptions: (id: string, opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}) =>

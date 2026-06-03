@@ -144,9 +144,7 @@ export interface ScanBatchItem {
 }
 
 export interface ScanStartOptions {
-  mode: 'auto' | 'review' | 'hybrid'
-  ai_dedup: boolean
-  ai_series: boolean
+  mode: 'auto' | 'review'
   ai_fill: boolean
   full_rescan: boolean
 }
@@ -238,8 +236,6 @@ export interface BookAiMetadata {
 }
 
 export interface CostEstimate {
-  dedup: number
-  series: number
   fill: number
   total: number
   active_plugin: string | null

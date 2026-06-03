@@ -11,33 +11,22 @@
           <el-radio-group v-model="form.mode">
             <el-radio value="review">暂存审核（推荐）</el-radio>
             <el-radio value="auto">自动写入</el-radio>
-            <el-radio value="hybrid">混合模式</el-radio>
           </el-radio-group>
           <div class="mode-hint">
             <span v-if="form.mode === 'review'">扫描结果先入暂存批次，admin 审核后再应用</span>
-            <span v-else-if="form.mode === 'auto'">AI 判定直接落库，无审核环节</span>
-            <span v-else>硬重复自动入库；AI 判定 + 系列归类进审核</span>
+            <span v-else>结果直接落库，无审核环节</span>
           </div>
         </el-form-item>
 
         <el-form-item label="AI 功能">
           <div class="ai-toggles">
-            <el-checkbox v-model="form.ai_dedup">
-              AI 去重判定
-              <span v-if="estimate" class="toggle-meta">（预估 {{ estimate.dedup }} 次）</span>
-            </el-checkbox>
-            <el-checkbox v-model="form.ai_series">
-              AI 系列归类
-              <span v-if="estimate" class="toggle-meta">（预估 {{ estimate.series }} 次）</span>
-            </el-checkbox>
             <el-checkbox v-model="form.ai_fill">
               AI 批量填充
               <span v-if="estimate" class="toggle-meta">（预估 {{ estimate.fill }} 次）</span>
             </el-checkbox>
             <div v-if="estimate" class="estimate-summary">
               当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
-              （{{ tierLabel }}）
-              · 总调用 <strong>{{ estimate.total }}</strong> 次
+              （{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
             </div>
           </div>
         </el-form-item>
@@ -83,8 +72,6 @@ watch(visible, v => emit('update:modelValue', v))
 
 const form = reactive<ScanStartOptions>({
   mode: 'review',
-  ai_dedup: false,
-  ai_series: false,
   ai_fill: false,
   full_rescan: false,
 })
@@ -94,21 +81,14 @@ const showCostWarning = ref(false)
 
 async function refreshEstimate(): Promise<void> {
   try {
-    const resp = await libraryApi.estimate({
-      ai_dedup: form.ai_dedup,
-      ai_series: form.ai_series,
-      ai_fill: form.ai_fill,
-      full_rescan: form.full_rescan,
-    })
+    const resp = await libraryApi.estimate({ ai_fill: form.ai_fill, full_rescan: form.full_rescan })
     estimate.value = resp.data.data ?? null
   } catch {
     estimate.value = null
   }
 }
 
-watch([() => form.ai_dedup, () => form.ai_series, () => form.ai_fill, () => form.full_rescan], () => {
-  void refreshEstimate()
-})
+watch([() => form.ai_fill, () => form.full_rescan], () => { void refreshEstimate() })
 watch(visible, (v) => { if (v) void refreshEstimate() })
 
 const tierLabel = computed(() => {

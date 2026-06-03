@@ -9,8 +9,6 @@
         :closable="false"
       />
       <div class="breakdown">
-        <div v-if="estimate.dedup > 0">AI 去重判定：约 <strong>{{ estimate.dedup }}</strong> 次</div>
-        <div v-if="estimate.series > 0">AI 系列归类：约 <strong>{{ estimate.series }}</strong> 次</div>
         <div v-if="estimate.fill > 0">AI 批量填充：约 <strong>{{ estimate.fill }}</strong> 次</div>
         <div class="total">合计：约 <strong>{{ estimate.total }}</strong> 次 API 调用</div>
       </div>
