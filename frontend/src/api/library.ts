@@ -30,6 +30,9 @@ export const libraryApi = {
   scan: (payload: import('@/types').ScanStartOptions) =>
     http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan', payload),
 
+  aiFillBatch: (force = false) =>
+    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/ai-fill-batch', { force }),
+
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),
 

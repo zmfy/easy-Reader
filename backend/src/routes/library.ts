@@ -14,11 +14,13 @@ import {
   getScanTaskById,
   cancelScanTask,
   hasRunningTask,
+  setScanProgress,
+  finishScanTask,
 } from '../services/scan-task';
 import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
-import { markFieldsAsEdited } from '../services/ai-batch-fill';
+import { markFieldsAsEdited, batchFill, selectFillCandidates } from '../services/ai-batch-fill';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
@@ -150,6 +152,46 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
   });
 
   successResponse(res, { taskId: task.id, status: task.status }, '扫描任务已启动');
+});
+
+const aiFillBatchSchema = z.object({ force: z.boolean().default(false) });
+
+// POST /api/library/ai-fill-batch — admin-triggered batch AI fill over the library
+router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = aiFillBatchSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const { force } = parsed.data;
+
+  let task;
+  try {
+    // Reuse scan-task machinery so the existing progress bar works.
+    task = createScanTask(req.user!.userId, { mode: 'review', ai_fill: true, full_rescan: false });
+  } catch {
+    const active = getActiveScanTask()!;
+    res.status(409).json({ success: false, code: 'TASK_RUNNING', message: '已有扫描/填充任务在运行', data: { activeTaskId: active.id } });
+    return;
+  }
+
+  const taskId = task.id;
+
+  // Fire and forget.
+  setImmediate(() => {
+    void (async () => {
+      try {
+        const db = getDb();
+        setScanProgress(taskId, { stage: 'ai_fill' });
+        const toFill = selectFillCandidates(db, force);
+        if (toFill.length > 0) {
+          await batchFill({ taskId, user_id: req.user!.userId, books: toFill });
+        }
+        finishScanTask(taskId, 'completed');
+      } catch (e) {
+        finishScanTask(taskId, 'failed', (e as Error).message);
+      }
+    })();
+  });
+
+  successResponse(res, { taskId, status: 'running' }, '批量填充任务已启动');
 });
 
 // GET /api/library/scan/tasks/active
