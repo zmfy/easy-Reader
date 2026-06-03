@@ -135,10 +135,8 @@ export interface ScanTask {
 }
 
 export interface ScanOptions {
-  mode: 'auto' | 'review' | 'hybrid';
-  ai_dedup: boolean;
-  ai_series: boolean;
-  ai_fill: boolean;        // Plan 3 才生效，Plan 2 仅占位
+  mode: 'auto' | 'review';
+  ai_fill: boolean;
   full_rescan: boolean;
 }
 

@@ -46,14 +46,14 @@ afterEach(() => {
 
 describe('scan-task state machine', () => {
   it('createScanTask returns running task', () => {
-    const task = createScanTask('user1', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
+    const task = createScanTask('user1', { mode: 'auto', ai_fill: false, full_rescan: false });
     expect(task.id).toBeTruthy();
     expect(task.status).toBe('running');
     expect(task.started_by).toBe('user1');
   });
 
   it('hasRunningTask returns true after create, false after finish', () => {
-    createScanTask('user1', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
+    createScanTask('user1', { mode: 'auto', ai_fill: false, full_rescan: false });
     expect(hasRunningTask()).toBe(true);
     const active = getActiveScanTask()!;
     finishScanTask(active.id, 'completed');
@@ -61,7 +61,7 @@ describe('scan-task state machine', () => {
   });
 
   it('setScanProgress updates counters', () => {
-    const task = createScanTask('u', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
+    const task = createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
     setScanProgress(task.id, { stage: 'fingerprinting', total_files: 100, processed_files: 42 });
     const reloaded = getScanTaskById(task.id)!;
     expect(reloaded.stage).toBe('fingerprinting');
@@ -70,7 +70,7 @@ describe('scan-task state machine', () => {
   });
 
   it('finishScanTask sets finished_at', () => {
-    const task = createScanTask('u', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
+    const task = createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
     finishScanTask(task.id, 'completed');
     const reloaded = getScanTaskById(task.id)!;
     expect(reloaded.status).toBe('completed');
@@ -78,14 +78,14 @@ describe('scan-task state machine', () => {
   });
 
   it('cancelScanTask marks cancelled', () => {
-    const task = createScanTask('u', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
+    const task = createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
     cancelScanTask(task.id);
     const reloaded = getScanTaskById(task.id)!;
     expect(reloaded.status).toBe('cancelled');
   });
 
   it('createScanTask throws if another task is running', () => {
-    createScanTask('u', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false });
-    expect(() => createScanTask('u', { mode: 'auto', ai_dedup: false, ai_series: false, ai_fill: false, full_rescan: false })).toThrow(/already running/i);
+    createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
+    expect(() => createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false })).toThrow(/already running/i);
   });
 });

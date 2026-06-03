@@ -18,28 +18,11 @@ describe('tierForPlugin', () => {
   });
 });
 
-describe('estimateCalls', () => {
-  it('returns zero counts when all flags disabled', () => {
-    const r = estimateCalls({
-      ai_dedup: false, ai_series: false, ai_fill: false,
-      soft_dup_candidate_groups: 5, series_fuzzy_groups: 3, books_to_fill: 100,
-    });
-    expect(r).toEqual({ dedup: 0, series: 0, fill: 0, total: 0 });
+describe('estimateCalls (fill-only)', () => {
+  it('counts fill candidates when ai_fill on', () => {
+    expect(estimateCalls({ ai_fill: true, books_to_fill: 7 })).toEqual({ fill: 7, total: 7 });
   });
-
-  it('sums enabled flag counts', () => {
-    const r = estimateCalls({
-      ai_dedup: true, ai_series: true, ai_fill: true,
-      soft_dup_candidate_groups: 5, series_fuzzy_groups: 3, books_to_fill: 100,
-    });
-    expect(r).toEqual({ dedup: 5, series: 3, fill: 100, total: 108 });
-  });
-
-  it('respects disable mix', () => {
-    const r = estimateCalls({
-      ai_dedup: true, ai_series: false, ai_fill: true,
-      soft_dup_candidate_groups: 5, series_fuzzy_groups: 3, books_to_fill: 100,
-    });
-    expect(r).toEqual({ dedup: 5, series: 0, fill: 100, total: 105 });
+  it('zero when ai_fill off', () => {
+    expect(estimateCalls({ ai_fill: false, books_to_fill: 7 })).toEqual({ fill: 0, total: 0 });
   });
 });

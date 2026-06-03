@@ -23,26 +23,18 @@ export function getActivePluginName(): string | null {
 }
 
 export interface EstimateInput {
-  ai_dedup: boolean;
-  ai_series: boolean;
   ai_fill: boolean;
-  soft_dup_candidate_groups: number;
-  series_fuzzy_groups: number;
   books_to_fill: number;
 }
 
 export interface EstimateOutput {
-  dedup: number;
-  series: number;
   fill: number;
   total: number;
 }
 
 export function estimateCalls(input: EstimateInput): EstimateOutput {
-  const dedup = input.ai_dedup ? input.soft_dup_candidate_groups : 0;
-  const series = input.ai_series ? input.series_fuzzy_groups : 0;
   const fill = input.ai_fill ? input.books_to_fill : 0;
-  return { dedup, series, fill, total: dedup + series + fill };
+  return { fill, total: fill };
 }
 
 /**
@@ -52,33 +44,17 @@ export function estimateCalls(input: EstimateInput): EstimateOutput {
  * Note: this is approximate. The real scan may find more or fewer candidates.
  */
 export function estimateFromCurrentDb(opts: {
-  ai_dedup: boolean;
-  ai_series: boolean;
   ai_fill: boolean;
+  // full_rescan is part of the scan API surface but does not change the fill estimate.
   full_rescan: boolean;
 }): EstimateOutput & { active_plugin: string | null; tier: CostTier } {
   const db = getDb();
-  const totalBooks = (db.prepare("SELECT COUNT(*) as c FROM books").get() as { c: number }).c;
-  const softGroups = Math.max(1, Math.floor(totalBooks / 20));
-  const fuzzySeries = Math.max(1, Math.floor(totalBooks / 30));
-
+  // Pessimistic upper bound: counts books missing author OR summary; does not yet subtract already-filled books (ai_fill_version, Task 5).
   const fillCandidates = (db.prepare(
     "SELECT COUNT(*) as c FROM books WHERE status = 'normal' AND duplicate_of IS NULL AND ((author IS NULL OR author = '') OR (summary IS NULL OR summary = ''))"
   ).get() as { c: number }).c;
 
-  const est = estimateCalls({
-    ai_dedup: opts.ai_dedup,
-    ai_series: opts.ai_series,
-    ai_fill: opts.ai_fill,
-    soft_dup_candidate_groups: softGroups,
-    series_fuzzy_groups: fuzzySeries,
-    books_to_fill: fillCandidates,
-  });
-
+  const est = estimateCalls({ ai_fill: opts.ai_fill, books_to_fill: fillCandidates });
   const active = getActivePluginName();
-  return {
-    ...est,
-    active_plugin: active,
-    tier: active ? tierForPlugin(active) : 'unknown',
-  };
+  return { ...est, active_plugin: active, tier: active ? tierForPlugin(active) : 'unknown' };
 }
