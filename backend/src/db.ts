@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { backfillFingerprintVersion } from './services/scan-versions';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -135,10 +136,14 @@ function initSchema(): void {
     "ALTER TABLE books ADD COLUMN first_chapter_hash TEXT",
     "ALTER TABLE books ADD COLUMN encoding_detected TEXT",
     "ALTER TABLE books ADD COLUMN manually_edited_fields TEXT",
+    "ALTER TABLE books ADD COLUMN file_mtime REAL",
+    "ALTER TABLE books ADD COLUMN fingerprint_version INTEGER",
+    "ALTER TABLE books ADD COLUMN ai_fill_version INTEGER",
   ];
   for (const stmt of booksAlters) {
     try { database.exec(stmt); } catch { /* column exists */ }
   }
+  backfillFingerprintVersion(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_books_fingerprint ON books(fingerprint);
     CREATE INDEX IF NOT EXISTS idx_books_duplicate_of ON books(duplicate_of);
