@@ -193,6 +193,8 @@ export interface NewBookPayload {
   first_chapter_hash?: string;
   encoding_detected?: string;
   status?: 'normal' | 'encoding_fixed';
+  file_mtime?: number;
+  fingerprint_version?: number;
 }
 
 export interface DuplicateGroupPayload {

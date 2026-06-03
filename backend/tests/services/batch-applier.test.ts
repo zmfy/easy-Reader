@@ -17,7 +17,8 @@ function setup(): void {
       file_format TEXT NOT NULL, file_size INTEGER, status TEXT DEFAULT 'normal',
       duplicate_of TEXT, series_id TEXT, chapter_count INTEGER, fingerprint TEXT,
       first_chapter_hash TEXT, encoding_detected TEXT, manually_edited_fields TEXT,
-      imported_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_finished INTEGER DEFAULT 0
+      imported_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_finished INTEGER DEFAULT 0,
+      file_mtime REAL, fingerprint_version INTEGER
     );
     CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT NOT NULL, summary TEXT, cover_url TEXT, author TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT, apply_summary TEXT);

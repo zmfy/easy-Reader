@@ -8,6 +8,7 @@ import {
   finishScanTask,
   isCancelled,
 } from './scan-task';
+import { FINGERPRINT_VERSION, shouldReuseFingerprint } from './scan-versions';
 import {
   ScanOptions,
   NewBookPayload,
@@ -66,27 +67,40 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     let processed = 0;
 
     // Performance: prefetch all existing books in ONE query so the per-file
-    // skip check (existing.fingerprint && !full_rescan) is an in-memory lookup
-    // rather than N individual SQL hits. For 8000+ books this turns 8000
-    // prepare/get round-trips into 1.
-    const prefetched = new Map<string, { id: string; fingerprint?: string }>();
+    // skip check is an in-memory lookup rather than N individual SQL hits.
+    // For 8000+ books this turns 8000 prepare/get round-trips into 1.
+    const prefetched = new Map<string, { id: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null }>();
     if (!options.full_rescan) {
-      const rows = getDb().prepare('SELECT id, file_path, fingerprint FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string }>;
-      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint });
+      const rows = getDb().prepare('SELECT id, file_path, fingerprint, file_size, file_mtime, fingerprint_version FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null }>;
+      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version });
     }
+
+    // Prepare once outside the loop — recompiling SQL on every migration-cohort
+    // row would be wasteful for large libraries.
+    const backfillMtimeStmt = getDb().prepare(
+      'UPDATE books SET file_mtime = ? WHERE id = ?'
+    );
 
     for (const fullPath of allFiles) {
       if (isCancelled(taskId)) return;
-      // Fast skip via prefetched map (no SQL per file)
+      let st: fs.Stats;
+      try { st = fs.statSync(fullPath); } catch { processed++; continue; }
       const pre = prefetched.get(fullPath);
-      if (pre && pre.fingerprint && !options.full_rescan) {
+      if (shouldReuseFingerprint({ existing: pre, statSize: st.size, statMtime: st.mtimeMs, fingerprintVersion: FINGERPRINT_VERSION, fullRescan: options.full_rescan })) {
+        // Backfill a migration-leftover NULL mtime without re-reading the file.
+        // fingerprint_version is NOT written here: shouldReuseFingerprint only
+        // returns true when fingerprint_version === FINGERPRINT_VERSION already,
+        // so that column is already correct.
+        if (pre && pre.file_mtime == null) {
+          backfillMtimeStmt.run(st.mtimeMs, pre.id);
+        }
         processed++;
         if (processed % 50 === 0 || processed === allFiles.length) {
           setScanProgress(taskId, { processed_files: processed });
         }
         continue;
       }
-      const result = await processFile(fullPath, options);
+      const result = await processFile(fullPath, options, st);
       if (result.scanned) scanned.push(result.scanned);
       if (result.garbled) garbled.push(result.garbled);
       if (result.encoding_fixed) encodingFixed.push(result.encoding_fixed);
@@ -280,6 +294,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
 interface ScannedBookEx extends ScannedBook {
   file_format: string;
   file_size: number;
+  file_mtime: number;
   encoding_detected: string;
   status: 'normal' | 'encoding_fixed';
 }
@@ -290,6 +305,8 @@ function toNewPayload(b: ScannedBookEx): NewBookPayload {
     title: b.title,
     file_format: b.file_format,
     file_size: b.file_size,
+    file_mtime: b.file_mtime,
+    fingerprint_version: FINGERPRINT_VERSION,
     chapter_count: b.chapter_count,
     fingerprint: b.fingerprint,
     encoding_detected: b.encoding_detected,
@@ -332,6 +349,7 @@ function collectFiles(root: string): string[] {
 async function processFile(
   fullPath: string,
   options: ScanOptions,
+  st: fs.Stats,
 ): Promise<{
   scanned?: ScannedBookEx;
   garbled?: GarbledPayload;
@@ -339,14 +357,8 @@ async function processFile(
 }> {
   const db = getDb();
   const ext = path.extname(fullPath).slice(1).toLowerCase();
-  const existing = db.prepare('SELECT * FROM books WHERE file_path = ?').get(fullPath) as
-    | { id: string; fingerprint?: string; status?: string }
-    | undefined;
-
-  // Skip if already present with fingerprint AND not full_rescan
-  if (existing && existing.fingerprint && !options.full_rescan) {
-    return {};
-  }
+  // NOTE: the main loop owns skip decisions via shouldReuseFingerprint;
+  // processFile only runs for files that need re-reading/re-hashing.
 
   let status: 'normal' | 'encoding_fixed' | 'garbled' = 'normal';
   let encoding = 'utf-8';
@@ -391,7 +403,6 @@ async function processFile(
     return { garbled: { file_path: fullPath, reason: 'failed fingerprint' } };
   }
 
-  const stat = fs.statSync(fullPath);
   const title = path.basename(fullPath, path.extname(fullPath));
 
   // Read first chapter preview for AI dedup
@@ -420,7 +431,8 @@ async function processFile(
     chapter_count: fp.chapter_count,
     first_chapter_preview: firstChapterPreview,
     file_format: ext,
-    file_size: stat.size,
+    file_size: st.size,
+    file_mtime: st.mtimeMs,
     encoding_detected: encoding,
     status: wasEncodingFixed ? 'encoding_fixed' : 'normal',
   };

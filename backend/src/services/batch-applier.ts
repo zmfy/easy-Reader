@@ -69,7 +69,7 @@ export function applyBatch(
       | undefined;
     if (existing) {
       db.prepare(
-        `UPDATE books SET title = ?, fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, file_size = ? WHERE id = ?`
+        `UPDATE books SET title = ?, fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
       ).run(
         payload.title,
         payload.fingerprint ?? null,
@@ -78,6 +78,8 @@ export function applyBatch(
         payload.encoding_detected ?? null,
         payload.status ?? 'normal',
         payload.file_size,
+        payload.file_mtime ?? null,
+        payload.fingerprint_version ?? null,
         existing.id,
       );
       result.updated++;
@@ -85,8 +87,8 @@ export function applyBatch(
     }
     const id = uuidv4();
     db.prepare(
-      `INSERT INTO books (id, title, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO books (id, title, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected, file_mtime, fingerprint_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       payload.title,
@@ -98,6 +100,8 @@ export function applyBatch(
       payload.first_chapter_hash ?? null,
       payload.chapter_count ?? null,
       payload.encoding_detected ?? null,
+      payload.file_mtime ?? null,
+      payload.fingerprint_version ?? null,
     );
     result.inserted++;
     return id;
