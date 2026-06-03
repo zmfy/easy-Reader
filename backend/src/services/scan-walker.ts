@@ -18,11 +18,7 @@ import {
   SeriesGroupPayload,
 } from '../types';
 import { buildCandidateGroups, ScannedBook } from './dedup-grouper';
-import { extractSeriesCandidates } from './series-regex';
-import { judgeSoftDuplicateGroups } from './ai-dedup';
-import { judgeFuzzySeriesGroups } from './ai-series';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
-import { aiManager } from '../ai/ai-manager';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
@@ -157,20 +153,10 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         })),
     ];
 
-    const seriesInput = [
-      ...scanned.map(b => ({ file_path: b.file_path, title: b.title, author: b.author })),
-      ...existing
-        .filter(b => !scannedPaths.has(b.file_path))
-        .map(b => ({ file_path: b.file_path, title: b.title, author: b.author })),
-    ];
+    const { hard_groups } = buildCandidateGroups(dedupInput);
 
-    const { hard_groups, soft_groups } = buildCandidateGroups(dedupInput);
-
-    // Phase 3: AI dedup judge (only soft groups, only if enabled)
-    let aiDupGroups: DuplicateGroupPayload[] = [];
-    if (options.ai_dedup && soft_groups.length > 0) {
-      aiDupGroups = await judgeSoftDuplicateGroups(soft_groups, undefined, taskId);
-    }
+    // AI dedup removed from scan (deterministic fingerprint dedup only).
+    const aiDupGroups: DuplicateGroupPayload[] = [];
 
     // Hard groups always become duplicate_groups
     const hardDupPayloads: DuplicateGroupPayload[] = hard_groups.map(group => ({
@@ -182,24 +168,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       })),
     }));
 
-    // Phase 4: series — regex first
-    setScanProgress(taskId, { stage: 'series' });
-    const regexSeriesCandidates = extractSeriesCandidates(seriesInput);
-    const regexSeriesPayloads: SeriesGroupPayload[] = regexSeriesCandidates.map(s => ({
-      series_name: s.series_name,
-      author: s.author,
-      members: s.members.map(m => ({ file_path: m.file_path, sequence: m.sequence })),
-      source: 'regex' as const,
-    }));
+    // Series grouping removed from scan (deferred to the future AI agent).
+    const regexSeriesPayloads: SeriesGroupPayload[] = [];
+    const aiSeriesPayloads: SeriesGroupPayload[] = [];
 
-    // Phase 5: AI series — fuzzy candidates not already in regex
-    const regexPaths = new Set(regexSeriesCandidates.flatMap(s => s.members.map(m => m.file_path)));
-    let aiSeriesPayloads: SeriesGroupPayload[] = [];
-    if (options.ai_series) {
-      aiSeriesPayloads = await judgeFuzzySeriesGroups(dedupInput, regexPaths, taskId);
-    }
-
-    // Phase 6: assemble result
+    // Phase 3: assemble result
     const result: ScanResult = {
       new_books: scanned.map(toNewPayload),
       hard_duplicate_groups: hardDupPayloads,
@@ -209,7 +182,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       encoding_fixed: encodingFixed,
     };
 
-    // Phase 7: dispatch by mode
+    // Phase 4: dispatch by mode
     const isEmpty = (r: ScanResult): boolean =>
       r.new_books.length === 0 &&
       r.hard_duplicate_groups.length === 0 &&
@@ -227,31 +200,6 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
-    } else if (options.mode === 'hybrid') {
-      const auto: ScanResult = {
-        new_books: result.new_books,
-        hard_duplicate_groups: result.hard_duplicate_groups,
-        ai_duplicate_groups: [],
-        series_groups: [],
-        garbled: result.garbled,
-        encoding_fixed: result.encoding_fixed,
-      };
-      const review: ScanResult = {
-        new_books: [],
-        hard_duplicate_groups: [],
-        ai_duplicate_groups: result.ai_duplicate_groups,
-        series_groups: result.series_groups,
-        garbled: [],
-        encoding_fixed: [],
-      };
-      if (!isEmpty(auto)) {
-        const autoBatch = buildBatchFromScan(taskId, auto);
-        const { applyBatch } = await import('./batch-applier');
-        applyBatch(autoBatch.id, 'system-hybrid-auto');
-      }
-      if (review.ai_duplicate_groups.length > 0 || review.series_groups.length > 0) {
-        buildBatchFromScan(taskId, review);
-      }
     } else {
       // mode === 'review' — skip batch creation when result has nothing to review
       if (!isEmpty(result)) {
@@ -261,10 +209,10 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       }
     }
 
-    // Phase 8: AI batch fill (if enabled).
+    // Phase 5: AI batch fill (if enabled).
     // Decoupled from mode — ai_fill operates on books ALREADY in the books table
     // that are missing author or summary, regardless of whether this scan ran
-    // in review/auto/hybrid. (For review mode, books staged in this scan are in
+    // in review or auto mode. (For review mode, books staged in this scan are in
     // scan_batch_items, not books table — they'll be eligible for AI fill only
     // after the admin applies the batch and runs another scan with ai_fill on.)
     if (options.ai_fill) {
@@ -365,27 +313,11 @@ async function processFile(
   if (ext === 'txt') {
     try {
       const enc = await detectAndFixEncoding(fullPath);
-      if (enc.status === 'uncertain' && options.ai_dedup === true && enc.sample) {
-        // Gray zone — AI verification (only if AI features are turned on this scan)
-        try {
-          const verdict = await aiManager.judgeGarbled(enc.sample, getDb());
-          if (verdict.is_garbled) {
-            return { garbled: { file_path: fullPath, reason: `AI: ${verdict.reason ?? 'looks garbled'}` } };
-          }
-          // AI says it's readable — treat as normal but don't auto-fix encoding
-          status = 'normal';
-          encoding = enc.encoding;
-        } catch {
-          // AI unreachable → fall back to "garbled" (safer than false-positive)
-          return { garbled: { file_path: fullPath, reason: 'encoding uncertain, AI verify failed' } };
-        }
-      } else if (enc.status === 'uncertain') {
-        // AI not enabled this scan; preserve previous behavior (mark garbled)
+      if (enc.status === 'uncertain') {
         return { garbled: { file_path: fullPath, reason: `low ratio ${(enc.best_ratio ?? 0).toFixed(2)}` } };
-      } else {
-        status = enc.status;
-        encoding = enc.encoding;
       }
+      status = enc.status;
+      encoding = enc.encoding;
     } catch {
       status = 'garbled';
       encoding = 'unknown';
@@ -405,23 +337,6 @@ async function processFile(
 
   const title = path.basename(fullPath, path.extname(fullPath));
 
-  // Read first chapter preview for AI dedup
-  let firstChapterPreview = '';
-  if (ext === 'txt') {
-    try {
-      const { TxtParser } = await import('../plugins/parser-txt');
-      const p = new TxtParser();
-      await p.load(fullPath);
-      const chapters = await p.getChapters();
-      if (chapters.length > 0) {
-        const html = await p.getChapterContent(0);
-        firstChapterPreview = html.replace(/<[^>]+>/g, '').slice(0, 300);
-      }
-    } catch {
-      // ok, leave empty
-    }
-  }
-
   const wasEncodingFixed = status === 'encoding_fixed';
   const result: ScannedBookEx = {
     file_path: fullPath,
@@ -429,7 +344,7 @@ async function processFile(
     fingerprint: fp.fingerprint,
     first_chapter_hash: fp.first_chapter_hash,
     chapter_count: fp.chapter_count,
-    first_chapter_preview: firstChapterPreview,
+    first_chapter_preview: '',
     file_format: ext,
     file_size: st.size,
     file_mtime: st.mtimeMs,
