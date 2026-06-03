@@ -42,8 +42,7 @@ const stageLabel = computed(() => {
   const stageMap: Record<string, string> = {
     walking: '遍历文件中…',
     fingerprinting: '计算指纹中…',
-    dedup: 'AI 判定重复书籍…',
-    series: 'AI 识别系列归类…',
+    dedup: '查找重复书籍…',
     staging: '保存审核批次…',
     ai_fill: 'AI 补充书籍信息…',
   }

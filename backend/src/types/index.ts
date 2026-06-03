@@ -119,7 +119,7 @@ export interface ReaderPlugin {
   getProgress(): Promise<number>;
 }
 
-export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'series' | 'staging' | 'ai_fill';
+export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill';
 
 export interface ScanTask {
   id: string;

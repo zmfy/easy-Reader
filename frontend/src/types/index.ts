@@ -103,7 +103,7 @@ export interface ReaderSettings {
   pageMode: 'scroll' | 'waterfall'
 }
 
-export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'series' | 'staging' | 'ai_fill'
+export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill'
 
 export interface ScanTask {
   id: string
