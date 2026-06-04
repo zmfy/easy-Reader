@@ -34,6 +34,9 @@ export const libraryApi = {
   aiFillBatch: (force = false) =>
     http.post<ApiResponse<{ taskId: string; status: string }>>('/library/ai-fill-batch', { force }),
 
+  aiFillResetFailed: () =>
+    http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-failed'),
+
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),
 

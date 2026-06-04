@@ -116,6 +116,9 @@
           预计调用 <strong>{{ fillEstimate.total }}</strong> 次 ·
           当前 AI <strong>{{ fillEstimate.active_plugin ?? '未配置' }}</strong>
         </div>
+        <div style="margin-top: 12px">
+          <el-button size="small" @click="onResetFailedFills">重置「填充失败」记录（下次重试）</el-button>
+        </div>
         <template #footer>
           <el-button @click="showFillDialog = false">取消</el-button>
           <el-button type="primary" :loading="scanStore.isRunning" @click="onStartFill">开始填充</el-button>
@@ -340,6 +343,23 @@ async function onStartFill() {
     ElMessage.success('已开始批量填充，进度见顶部进度条')
   } catch (e) {
     ElMessage.error('启动失败：' + ((e as Error)?.message ?? '未知错误'))
+  }
+}
+
+async function onResetFailedFills() {
+  try {
+    await ElMessageBox.confirm(
+      '将把所有「填充失败」的书重置为未尝试，下次普通 AI 填充会自动重试它们。继续？',
+      '重置填充失败记录',
+      { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  try {
+    const resp = await libraryApi.aiFillResetFailed()
+    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的失败记录`)
+    await fetchBooks()
+  } catch {
+    ElMessage.error('重置失败')
   }
 }
 

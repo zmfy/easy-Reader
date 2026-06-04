@@ -205,6 +205,14 @@ router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, re
   successResponse(res, { taskId, status: 'running' }, '批量填充任务已启动');
 });
 
+// POST /api/library/ai-fill-reset-failed — admin: requeue books whose AI fill failed
+router.post('/ai-fill-reset-failed', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const r = getDb().prepare(
+    "UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL WHERE ai_fill_status = 'failed'"
+  ).run();
+  successResponse(res, { reset: r.changes }, '已重置填充失败记录');
+});
+
 // GET /api/library/scan/tasks/active
 router.get('/scan/tasks/active', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
   const active = getActiveScanTask();
