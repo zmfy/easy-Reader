@@ -19,6 +19,7 @@ import {
 } from '../types';
 import { buildCandidateGroups, ScannedBook } from './dedup-grouper';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
+import { extractAuthorFromName } from '../utils/title-normalizer';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
@@ -153,7 +154,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         })),
     ];
 
-    const { hard_groups } = buildCandidateGroups(dedupInput);
+    const { hard_groups, title_author_groups } = buildCandidateGroups(dedupInput);
 
     // AI dedup removed from scan (deterministic fingerprint dedup only).
     const aiDupGroups: DuplicateGroupPayload[] = [];
@@ -168,6 +169,15 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       })),
     }));
 
+    const softDupPayloads: DuplicateGroupPayload[] = title_author_groups.map(group => ({
+      canonical_file_path: pickCanonical(group).file_path,
+      members: group.map(b => ({
+        file_path: b.file_path,
+        fingerprint: b.fingerprint ?? '',
+        decision_type: 'soft' as const,
+      })),
+    }));
+
     // Series grouping removed from scan (deferred to the future AI agent).
     const regexSeriesPayloads: SeriesGroupPayload[] = [];
     const aiSeriesPayloads: SeriesGroupPayload[] = [];
@@ -178,6 +188,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       hard_duplicate_groups: hardDupPayloads,
       ai_duplicate_groups: aiDupGroups,
       series_groups: [...regexSeriesPayloads, ...aiSeriesPayloads],
+      soft_duplicate_groups: softDupPayloads,
       garbled,
       encoding_fixed: encodingFixed,
     };
@@ -188,6 +199,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       r.hard_duplicate_groups.length === 0 &&
       r.ai_duplicate_groups.length === 0 &&
       r.series_groups.length === 0 &&
+      r.soft_duplicate_groups.length === 0 &&
       r.garbled.length === 0 &&
       r.encoding_fixed.length === 0;
 
@@ -246,6 +258,7 @@ function toNewPayload(b: ScannedBookEx): NewBookPayload {
   return {
     file_path: b.file_path,
     title: b.title,
+    author: b.author,
     file_format: b.file_format,
     file_size: b.file_size,
     file_mtime: b.file_mtime,
@@ -336,6 +349,7 @@ async function processFile(
   const result: ScannedBookEx = {
     file_path: fullPath,
     title,
+    author: extractAuthorFromName(path.basename(fullPath)) ?? undefined,
     fingerprint: fp.fingerprint,
     first_chapter_hash: fp.first_chapter_hash,
     chapter_count: fp.chapter_count,
