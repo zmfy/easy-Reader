@@ -52,4 +52,8 @@ describe('extractAuthorFromName', () => {
   it('去掉首尾空白', () => {
     expect(extractAuthorFromName('某书 作者： 夜的七宗罪 ')).toBe('夜的七宗罪');
   });
+  it('剥离作者名尾部的括号注释', () => {
+    expect(extractAuthorFromName('《斗罗大陆》作者：唐家三少（精校全本）.txt')).toBe('唐家三少');
+    expect(extractAuthorFromName('某书 作者:打眼(全本)')).toBe('打眼');
+  });
 });

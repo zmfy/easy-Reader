@@ -60,5 +60,7 @@ export function levenshtein(a: string, b: string): number {
 export function extractAuthorFromName(name: string): string | null {
   const noExt = name.replace(/\.[^.]+$/, '');
   const m = noExt.match(/作者[：:]\s*(.+?)\s*$/);
-  return m ? m[1].trim() || null : null;
+  if (!m) return null;
+  const author = m[1].replace(/\s*[（(][^（()）]*[)）]\s*$/, '').trim();
+  return author || null;
 }
