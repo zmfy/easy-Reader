@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useScanTaskStore } from '@/stores/scan-task'
 import { useAuthStore } from '@/stores/auth'
@@ -29,16 +29,21 @@ import { useAuthStore } from '@/stores/auth'
 const store = useScanTaskStore()
 const authStore = useAuthStore()
 
+const recentlyDone = ref(false)
+let doneTimer: ReturnType<typeof setTimeout> | null = null
+
 const show = computed(() => {
   const t = store.activeTask
   if (!t) return false
-  // Show while running or 5s after completion / failure
-  return t.status === 'running'
+  return t.status === 'running' || recentlyDone.value
 })
 
 const stageLabel = computed(() => {
   const t = store.activeTask
   if (!t) return ''
+  if (t.status === 'completed') return '扫描完成'
+  if (t.status === 'failed') return '扫描失败'
+  if (t.status === 'cancelled') return '已取消'
   const stageMap: Record<string, string> = {
     walking: '遍历文件中…',
     fingerprinting: '计算指纹中…',
@@ -64,6 +69,15 @@ onMounted(() => {
   void store.refresh().then(() => {
     if (store.isRunning) store.startPolling()
   })
+})
+
+// Keep progress bar visible for 6s after reaching a terminal state (catches fast scans)
+watch(() => store.activeTask?.status, (s, old) => {
+  if (s && s !== 'running' && old === 'running') {
+    recentlyDone.value = true
+    if (doneTimer) clearTimeout(doneTimer)
+    doneTimer = setTimeout(() => { recentlyDone.value = false }, 6000)
+  }
 })
 
 // Desktop notification when scan finishes (regardless of which page user is on)

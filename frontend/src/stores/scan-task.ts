@@ -20,9 +20,13 @@ export const useScanTaskStore = defineStore('scanTask', () => {
   async function refresh(): Promise<void> {
     try {
       const resp = await scanTaskApi.getActive()
-      activeTask.value = resp.data.data ?? null
-      // If task is no longer running, stop polling
-      if (activeTask.value && activeTask.value.status !== 'running') {
+      const fresh = resp.data.data ?? null
+      if (fresh) {
+        activeTask.value = fresh
+        if (fresh.status !== 'running') stopPolling()
+      } else if (activeTask.value && activeTask.value.status === 'running') {
+        // Task finished between polls (fast scan) — surface completion to the UI.
+        activeTask.value = { ...activeTask.value, status: 'completed' }
         stopPolling()
       }
     } catch {
@@ -46,8 +50,11 @@ export const useScanTaskStore = defineStore('scanTask', () => {
   }
 
   async function startScan(payload: import('@/types').ScanStartOptions): Promise<void> {
-    await scanTaskApi.start(payload)
-    await refresh()
+    const resp = await scanTaskApi.start(payload)
+    const taskId = resp.data.data?.taskId
+    if (taskId) {
+      activeTask.value = { id: taskId, status: 'running', stage: 'walking', processed_files: 0, total_files: 0 } as unknown as ScanTask
+    }
     startPolling()
   }
 

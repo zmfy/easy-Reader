@@ -157,8 +157,10 @@ async function refreshPendingBatch(): Promise<void> {
 }
 
 const books = ref<Book[]>([])
-const includeDirty = ref(false)
-const aiFillFilter = ref<'all' | 'filled' | 'failed' | 'none'>('all')
+const includeDirty = ref(route.query.dirty === '1')
+const aiFillFilter = ref<'all' | 'filled' | 'failed' | 'none'>(
+  (route.query.ai_fill as 'all' | 'filled' | 'failed' | 'none') || 'all',
+)
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
@@ -186,6 +188,8 @@ function syncQuery() {
   if (searchQuery.value) query.search = searchQuery.value
   if (selectedCategory.value) query.category = selectedCategory.value
   if (sortBy.value !== 'imported_at') query.sort = sortBy.value
+  if (aiFillFilter.value !== 'all') query.ai_fill = aiFillFilter.value
+  if (includeDirty.value) query.dirty = '1'
   router.replace({ query })
 }
 
