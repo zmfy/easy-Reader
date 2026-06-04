@@ -27,7 +27,7 @@
     <!-- Toolbar Top -->
     <div class="reader-toolbar top" :class="{ visible: toolbarVisible }">
       <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
-      <span class="chapter-title">{{ currentChapter?.title || '加载中...' }}</span>
+      <span class="chapter-title">{{ currentChapter ? (currentChapter.title || `第 ${currentChapter.index + 1} 页`) : '加载中...' }}</span>
       <div class="toolbar-actions">
         <el-button :icon="Bookmark" circle title="书签" @click="bookmarkDrawerVisible = true" />
         <el-button :icon="Setting" circle title="阅读设置" @click="settingsPanelVisible = true" />
@@ -197,7 +197,7 @@
           :class="{ active: ch.index === reader.currentChapterIndex.value }"
           @click="jumpToChapter(ch.index)"
         >
-          {{ ch.title }}
+          {{ ch.title || `第 ${ch.index + 1} 页` }}
         </div>
       </div>
     </el-drawer>
