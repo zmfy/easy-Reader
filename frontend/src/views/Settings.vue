@@ -103,6 +103,41 @@
             <div class="changelog-list">
               <div class="changelog-item">
                 <div class="changelog-main">
+                  <span class="changelog-tag tag-epub">EPUB</span>
+                  <span class="changelog-text">漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-epub">EPUB</span>
+                  <span class="changelog-text">支持 EPUB 内嵌图片显示，图片通过独立 API 端点从 EPUB 包中提取并返回浏览器</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-epub">EPUB</span>
+                  <span class="changelog-text">修复 EPUB 章节内链接点击后跳转错误（内部 href 现映射至正确章节索引）</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-epub">EPUB</span>
+                  <span class="changelog-text">修复 EPUB 章节内容无法加载的问题（TOC id 与 flow id 不匹配导致 File not found）</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-reader">阅读</span>
+                  <span class="changelog-text">瀑布流模式：章节内容较短时自动预加载后续章节，确保从首章即可流畅下翻</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
                   <span class="changelog-tag tag-ui">界面</span>
                   <span class="changelog-text">优化书库封面图片加载与样式展示</span>
                 </div>
@@ -1360,6 +1395,7 @@ onMounted(async () => {
 .tag-lib    { background: #1a3a2a; color: #6ee7b7; }
 .tag-auth   { background: #1e2e50; color: #93c5fd; }
 .tag-reader { background: #2d2010; color: #fcd34d; }
+.tag-epub   { background: #1a2e3b; color: #67e8f9; }
 .tag-ai     { background: #2d1020; color: #f9a8d4; }
 .tag-infra  { background: #1f2937; color: #9ca3af; }
 .tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }

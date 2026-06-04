@@ -68,6 +68,7 @@ export interface Bookmark {
 export interface Chapter {
   index: number
   title: string
+  href?: string
 }
 
 export interface ApiResponse<T = unknown> {

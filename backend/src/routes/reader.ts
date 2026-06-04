@@ -15,6 +15,30 @@ const window = new JSDOM('').window;
 // @ts-ignore
 const purify = DOMPurify(window);
 
+// Resolve a relative path (src) against a base file path (chapterHref)
+function resolveEpubPath(chapterHref: string, src: string): string {
+  const dir = chapterHref.split('/').slice(0, -1);
+  const parts = [...dir, ...src.split('/')];
+  const out: string[] = [];
+  for (const p of parts) {
+    if (p === '..') out.pop();
+    else if (p !== '.') out.push(p);
+  }
+  return out.join('/');
+}
+
+// Replace relative img src with API asset URLs so the browser can load them
+function rewriteEpubAssetUrls(content: string, bookId: string, chapterHref: string): string {
+  return content.replace(
+    /(<img\b[^>]*?\s)src="([^"]+)"([^>]*>)/gi,
+    (_match, pre, src, post) => {
+      if (/^(https?:|data:|\/)/i.test(src)) return _match;
+      const resolved = resolveEpubPath(chapterHref, src);
+      return `${pre}src="/api/reader/${bookId}/asset/${resolved}"${post}`;
+    }
+  );
+}
+
 // GET /api/reader/:bookId/chapters
 router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
@@ -38,6 +62,49 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
     successResponse(res, extra);
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节: ' + (err instanceof Error ? err.message : ''));
+  }
+});
+
+// Only serve raster image types — SVG is excluded because it can embed scripts,
+// and text/* / application/* are excluded to prevent XSS via attacker-controlled manifest MIME types.
+const ALLOWED_ASSET_MIME = new Set([
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+]);
+
+// GET /api/reader/:bookId/asset/* — serve embedded EPUB assets (images, etc.)
+// No authMiddleware: browsers load <img src="..."> without Authorization headers.
+// BookId is a UUID (unguessable), content is non-sensitive book images — acceptable for a personal NAS reader.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  const assetPath = (req.params as any)[0] as string;
+  if (!assetPath) { errorResponse(res, 400, 'VALIDATION_ERROR', '资源路径不能为空'); return; }
+
+  try {
+    const plugin = await getReaderPlugin(book);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const epubPlugin = plugin as any;
+    if (typeof epubPlugin.getAsset !== 'function') {
+      errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '该格式不支持内嵌资源'); return;
+    }
+    const asset: { buffer: Buffer; mimeType: string } | null = await epubPlugin.getAsset(assetPath);
+    if (!asset) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '资源不存在'); return; }
+
+    // Reject any MIME type not on the allowlist — manifest values are attacker-controlled
+    // and could carry text/html or application/xhtml+xml to achieve XSS on this origin.
+    if (!ALLOWED_ASSET_MIME.has(asset.mimeType.toLowerCase())) {
+      errorResponse(res, 415, 'UNSUPPORTED_MEDIA_TYPE', '不支持的资源类型'); return;
+    }
+
+    res.setHeader('Content-Type', asset.mimeType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(asset.buffer);
+  } catch (err) {
+    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取资源: ' + (err instanceof Error ? err.message : ''));
   }
 });
 
@@ -73,7 +140,13 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
   try {
     const plugin = await getReaderPlugin(book);
     const rawContent = await plugin.getChapterContent(index);
-    const safeContent = purify.sanitize(rawContent);
+    let processedContent = rawContent;
+    if (book.file_format.toLowerCase() === 'epub') {
+      const chapters = await plugin.getChapters();
+      const chapterHref = chapters[index]?.href || '';
+      processedContent = rewriteEpubAssetUrls(rawContent, book.id, chapterHref);
+    }
+    const safeContent = purify.sanitize(processedContent);
     successResponse(res, { index, content: safeContent });
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节内容: ' + (err instanceof Error ? err.message : ''));
