@@ -45,6 +45,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const statusFilter = (req.query.status as string) || 'normal';
   const includeDirty = req.query.include_dirty === '1' || req.query.include_dirty === 'true';
   const seriesGrouped = req.query.series_grouped === '1' || req.query.series_grouped === 'true';
+  const aiFill = (req.query.ai_fill as string) || 'all';
   const sortBy = ALLOWED_SORT_FIELDS.includes(req.query.sortBy as string) ? (req.query.sortBy as string) : 'imported_at';
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
@@ -70,6 +71,14 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)
   if (seriesGrouped) {
     whereClause += " AND (series_id IS NULL OR series_id = '')";
+  }
+
+  if (aiFill === 'filled') {
+    whereClause += " AND ai_fill_status = 'filled'";
+  } else if (aiFill === 'failed') {
+    whereClause += " AND ai_fill_status = 'failed'";
+  } else if (aiFill === 'none') {
+    whereClause += " AND ai_fill_status IS NULL";
   }
 
   if (search) {
