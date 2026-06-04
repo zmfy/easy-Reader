@@ -128,6 +128,7 @@ export function buildCandidateGroups(books: ScannedBook[]): CandidateGroups {
   const softGroups = mergeOverlappingClusters(allSoftSources);
 
   // --- Title + author groups (deterministic soft-dup, excludes hard members) ---
+  // Kept separate from soft_groups (not merged) — this is an independent deterministic signal.
   const byTitleAuthor = new Map<string, ScannedBook[]>();
   for (const b of books) {
     if (!b.fingerprint || inHard.has(b.file_path)) continue;

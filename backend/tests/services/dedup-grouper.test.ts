@@ -100,7 +100,7 @@ describe('buildCandidateGroups', () => {
 
 describe('buildCandidateGroups.title_author_groups', () => {
   const mk = (file_path: string, title: string, author: string, fingerprint: string) =>
-    ({ file_path, title, author, fingerprint, chapter_count: 10, first_chapter_hash: 'h', first_chapter_preview: '' });
+    ({ file_path, title, author, fingerprint, chapter_count: 10, first_chapter_hash: fingerprint, first_chapter_preview: '' });
 
   it('同书名同作者、指纹不同 → 成一组', () => {
     const r = buildCandidateGroups([
