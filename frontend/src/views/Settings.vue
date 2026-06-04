@@ -103,6 +103,13 @@
             <div class="changelog-list">
               <div class="changelog-item">
                 <div class="changelog-main">
+                  <span class="changelog-tag tag-txt">TXT</span>
+                  <span class="changelog-text">修复 UTF-16 编码的 TXT 小说打开后乱码的问题，并将编码自动识别的采样范围扩大至 64KB，提升 GBK/中文文件的识别准确度</span>
+                </div>
+                <span class="changelog-date">2026-06-04</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
                   <span class="changelog-tag tag-epub">EPUB</span>
                   <span class="changelog-text">漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）</span>
                 </div>
@@ -1379,6 +1386,7 @@ onMounted(async () => {
 .tag-auth   { background: #1e2e50; color: #93c5fd; }
 .tag-reader { background: #2d2010; color: #fcd34d; }
 .tag-epub   { background: #1a2e3b; color: #67e8f9; }
+.tag-txt    { background: #3a2410; color: #fdba74; }
 .tag-ai     { background: #2d1020; color: #f9a8d4; }
 .tag-infra  { background: #1f2937; color: #9ca3af; }
 .tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }
