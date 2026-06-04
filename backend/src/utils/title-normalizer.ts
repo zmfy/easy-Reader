@@ -51,3 +51,14 @@ export function levenshtein(a: string, b: string): number {
 
   return matrix[b.length][a.length];
 }
+
+/**
+ * Extract the author from a book filename like
+ * "《黄金瞳》（精校版全本）作者：打眼.txt" → "打眼".
+ * Returns null when no "作者：…" segment is present.
+ */
+export function extractAuthorFromName(name: string): string | null {
+  const noExt = name.replace(/\.[^.]+$/, '');
+  const m = noExt.match(/作者[：:]\s*(.+?)\s*$/);
+  return m ? m[1].trim() || null : null;
+}

@@ -1,4 +1,4 @@
-import { normalizeTitle, levenshtein } from '../../src/utils/title-normalizer';
+import { normalizeTitle, levenshtein, extractAuthorFromName } from '../../src/utils/title-normalizer';
 
 describe('normalizeTitle', () => {
   it('strips parenthesized suffixes', () => {
@@ -36,5 +36,20 @@ describe('levenshtein', () => {
   it('returns length for empty vs string', () => {
     expect(levenshtein('', 'abc')).toBe(3);
     expect(levenshtein('abc', '')).toBe(3);
+  });
+});
+
+describe('extractAuthorFromName', () => {
+  it('提取「作者：X」', () => {
+    expect(extractAuthorFromName('《黄金瞳(典当)》（精校版全本）作者：打眼.txt')).toBe('打眼');
+  });
+  it('提取「作者:X」半角冒号', () => {
+    expect(extractAuthorFromName('18《轻狂》作者:巫哲')).toBe('巫哲');
+  });
+  it('无作者段返回 null', () => {
+    expect(extractAuthorFromName('绿林七宗罪大史记.txt')).toBeNull();
+  });
+  it('去掉首尾空白', () => {
+    expect(extractAuthorFromName('某书 作者： 夜的七宗罪 ')).toBe('夜的七宗罪');
   });
 });
