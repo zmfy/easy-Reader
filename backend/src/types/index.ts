@@ -23,6 +23,7 @@ export interface Book {
   imported_at: string;
   // 扫描增强字段（Plan 1）
   status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed';
+  ai_fill_status?: 'filled' | 'failed' | null;
   duplicate_of?: string | null;
   series_id?: string | null;
   chapter_count?: number;
@@ -101,7 +102,7 @@ export interface AiPlugin {
   label: string;
   fields: string[];
   placeholders?: Record<string, string>;
-  fillBookInfo(rawText: string, config: Record<string, string>): Promise<Partial<Book>>;
+  fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>>;
   classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string>;
   /**
    * Low-level chat primitive. Used by AI dedup/series judgement.
@@ -184,6 +185,7 @@ export interface ScanBatchItem {
 export interface NewBookPayload {
   file_path: string;
   title: string;
+  author?: string;
   file_format: string;
   file_size: number;
   chapter_count?: number;
@@ -200,7 +202,7 @@ export interface DuplicateGroupPayload {
   members: Array<{
     file_path: string;
     fingerprint: string;
-    decision_type: 'hard' | 'ai';     // hard = 指纹完全相同；ai = AI 判定
+    decision_type: 'hard' | 'ai' | 'soft';     // hard=指纹相同；soft=书名+作者；ai=AI判定
     ai_confidence?: number;           // 0..1
   }>;
 }
