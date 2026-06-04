@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill } from '../../src/services/ai-batch-fill';
+import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
 
@@ -232,5 +232,114 @@ describe('batchFill two-pass', () => {
       | { summary: string | null }
       | undefined;
     expect(row?.summary).toBe('简介内容');
+  });
+});
+
+// ── isRateLimitError unit tests ─────────────────────────────────────────────
+
+describe('isRateLimitError', () => {
+  it('returns true for message containing "429"', () => {
+    expect(isRateLimitError(new Error('MiniMax API error: 429 - rate_limit_error'))).toBe(true);
+  });
+
+  it('returns true for message containing "rate_limit"', () => {
+    expect(isRateLimitError(new Error('rate_limit exceeded'))).toBe(true);
+  });
+
+  it('returns true for message containing "rate limit" (with space)', () => {
+    expect(isRateLimitError(new Error('API rate limit reached for model'))).toBe(true);
+  });
+
+  it('returns true for message containing "Too Many Requests" (case-insensitive)', () => {
+    expect(isRateLimitError(new Error('Too Many Requests'))).toBe(true);
+  });
+
+  it('returns true for too many requests (lowercase)', () => {
+    expect(isRateLimitError(new Error('too many requests'))).toBe(true);
+  });
+
+  it('returns false for "book not found"', () => {
+    expect(isRateLimitError(new Error('book not found'))).toBe(false);
+  });
+
+  it('returns false for generic error messages', () => {
+    expect(isRateLimitError(new Error('Internal server error'))).toBe(false);
+    expect(isRateLimitError(new Error('Network timeout'))).toBe(false);
+  });
+
+  it('handles non-Error objects (string)', () => {
+    expect(isRateLimitError('429 rate_limit')).toBe(true);
+    expect(isRateLimitError('some other string')).toBe(false);
+  });
+});
+
+// ── Rate-limit transient failure tests ─────────────────────────────────────
+
+describe('batchFill rate-limit transient failure', () => {
+  let fillSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    fillSpy.mockRestore();
+    jest.useRealTimers();
+    if (_testDb) {
+      _testDb.close();
+      _testDb = null;
+    }
+  });
+
+  it('rate-limit error leaves ai_fill_version NULL and ai_fill_status NULL (re-queuable)', async () => {
+    // Book with known author → goes through Pass A path.
+    insBook(_testDb!, { id: 'rl1', title: '限流书', author: '作者A', file_path: '/nonexistent/rl1.txt' });
+
+    // All AI calls reject with a 429 rate-limit error.
+    fillSpy.mockRejectedValue(new Error('MiniMax API error: 429 - rate_limit_error'));
+
+    // Run batchFill and advance all fake timers so retry backoff completes.
+    const fillPromise = batchFill({
+      books: [{ id: 'rl1', file_path: '/nonexistent/rl1.txt', file_format: 'txt', title: '限流书', author: '作者A' }],
+    });
+    await jest.runAllTimersAsync();
+    const result = await fillPromise;
+
+    // Book must be in failed list (reported back to caller).
+    expect(result.failed.map(f => f.book_id)).toContain('rl1');
+    expect(result.succeeded).not.toContain('rl1');
+
+    // ai_fill_version must NOT have been stamped (transient → re-queuable).
+    const row = _testDb!.prepare('SELECT ai_fill_version, ai_fill_status FROM books WHERE id = ?').get('rl1') as
+      | { ai_fill_version: number | null; ai_fill_status: string | null }
+      | undefined;
+    expect(row?.ai_fill_version).toBeNull();
+
+    // ai_fill_status must NOT be 'failed' (transient → not permanently marked).
+    expect(row?.ai_fill_status).toBeNull();
+  });
+
+  it('non-rate-limit error DOES stamp version and marks ai_fill_status=failed', async () => {
+    insBook(_testDb!, { id: 'err1', title: '普通错误书', author: '作者B', file_path: '/nonexistent/err1.txt' });
+
+    // Non-rate-limit error: linear backoff (1.5s, 3s, 4.5s) — advance fake timers.
+    fillSpy.mockRejectedValue(new Error('Internal server error'));
+
+    const fillPromise = batchFill({
+      books: [{ id: 'err1', file_path: '/nonexistent/err1.txt', file_format: 'txt', title: '普通错误书', author: '作者B' }],
+    });
+    await jest.runAllTimersAsync();
+    const result = await fillPromise;
+
+    expect(result.failed.map(f => f.book_id)).toContain('err1');
+
+    const row = _testDb!.prepare('SELECT ai_fill_version, ai_fill_status FROM books WHERE id = ?').get('err1') as
+      | { ai_fill_version: number | null; ai_fill_status: string | null }
+      | undefined;
+    // Permanent failure: version IS stamped and status IS 'failed'.
+    expect(row?.ai_fill_version).toBe(AI_FILL_VERSION);
+    expect(row?.ai_fill_status).toBe('failed');
   });
 });

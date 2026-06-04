@@ -13,9 +13,16 @@ import { lookupKey } from './title-lookup';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
 
-const CONCURRENCY = 3;
-const RETRIES = 2;
+const DEFAULT_CONCURRENCY = 2;
+const RETRIES = 3;
 const RETRY_BACKOFF_MS = 1500;
+const RATE_LIMIT_BACKOFF_MS = 5000;
+
+/** Rate-limit / transient errors that should be retried, not permanently failed. */
+export function isRateLimitError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return m.includes('429') || m.includes('rate_limit') || m.includes('rate limit') || m.includes('too many requests');
+}
 
 export interface BatchFillInput {
   taskId?: string;
@@ -65,7 +72,10 @@ export function stampFillVersion(db: Database.Database, bookId: string): void {
 
 export async function batchFill(input: BatchFillInput): Promise<BatchFillResult> {
   const db = getDb();
-  const limit = pLimit(CONCURRENCY);
+  const concRow = db.prepare("SELECT value FROM settings WHERE key = 'ai_fill_concurrency'").get() as { value?: string } | undefined;
+  const parsedConc = parseInt(concRow?.value ?? '');
+  const concurrency = Number.isFinite(parsedConc) && parsedConc >= 1 && parsedConc <= 10 ? parsedConc : DEFAULT_CONCURRENCY;
+  const limit = pLimit(concurrency);
   const result: BatchFillResult = { succeeded: [], failed: [], covers_fetched: 0 };
   let done = 0;
   const total = input.books.length;
@@ -76,6 +86,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
   }
 
   await Promise.all(input.books.map(b => limit(async () => {
+    let transientFail = false;
     try {
       const rawText = readPreview(b.file_path, b.file_format);
       const knownTitle = lookupKey(b.title) || b.title;
@@ -104,7 +115,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       if (fillStatus === 'failed') {
         db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
         result.failed.push({ book_id: b.id, file_path: b.file_path, error: 'author mismatch (AI 查到的作者与文件名作者不一致)' });
-        return; // skip field writes; finally still stamps version
+        return; // skip field writes; finally still stamps version (permanent failure)
       }
 
       const current = db.prepare('SELECT title, author, summary, category, cover_url, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
@@ -180,13 +191,19 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(b.id);
       result.succeeded.push(b.id);
     } catch (err) {
-      db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
-      result.failed.push({ book_id: b.id, file_path: b.file_path, error: (err as Error).message });
+      if (isRateLimitError(err)) {
+        transientFail = true;
+        result.failed.push({ book_id: b.id, file_path: b.file_path, error: '限流(429)，将在下次填充重试' });
+        // do NOT set ai_fill_status, do NOT stamp version → left as 未尝试, re-queued next run
+      } else {
+        db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
+        result.failed.push({ book_id: b.id, file_path: b.file_path, error: (err as Error).message });
+      }
     } finally {
-      // Stamp even on failure: avoids re-queuing persistently unfillable books
-      // every scan. Transient failures are already retried by callWithRetry above;
-      // use force=true to re-fill after a provider outage.
-      stampFillVersion(db, b.id);
+      // Stamp on permanent failures/success: avoids re-queuing persistently unfillable books
+      // every scan. Rate-limit (transient) failures are NOT stamped so the next normal run
+      // picks them up automatically. Use force=true to re-fill after a provider outage.
+      if (!transientFail) stampFillVersion(db, b.id);
       done++;
       if (input.taskId && (done % 2 === 0 || done === total)) {
         setScanProgress(input.taskId, { processed_files: done });
@@ -225,7 +242,10 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries: number): Promise<
     } catch (err) {
       lastErr = err;
       if (attempt < retries) {
-        await new Promise(res => setTimeout(res, RETRY_BACKOFF_MS * (attempt + 1)));
+        const delay = isRateLimitError(err)
+          ? RATE_LIMIT_BACKOFF_MS * Math.pow(2, attempt)   // 5s, 10s, 20s…
+          : RETRY_BACKOFF_MS * (attempt + 1);              // 1.5s, 3s, 4.5s…
+        await new Promise(res => setTimeout(res, delay));
       }
     }
   }

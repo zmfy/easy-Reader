@@ -245,6 +245,16 @@
               </el-select>
               <div class="field-hint">影响 AI 填充 + 批量填充时生成的简介字数</div>
             </div>
+            <div class="form-field" style="margin-top: 16px">
+              <label>AI 填充并发数</label>
+              <el-select v-model="aiFillConcurrency" style="width: 100%">
+                <el-option label="1（最稳，限流套餐推荐）" :value="1" />
+                <el-option label="2（默认）" :value="2" />
+                <el-option label="3" :value="3" />
+                <el-option label="5（最快，易触发限流）" :value="5" />
+              </el-select>
+              <div class="field-hint">同时向 AI 发起请求的书籍数量，MiniMax 个人版建议设为 1 或 2</div>
+            </div>
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
           </div>
 
@@ -524,6 +534,7 @@ const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; pla
 const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
 const aiSummaryLength = ref<number>(100)
+const aiFillConcurrency = ref<number>(2)
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
@@ -694,6 +705,10 @@ async function loadSettings() {
   if (Number.isFinite(summaryLenStored) && summaryLenStored >= 30 && summaryLenStored <= 1000) {
     aiSummaryLength.value = summaryLenStored
   }
+  const fillConcStored = parseInt(data['ai_fill_concurrency'] ?? '')
+  if (Number.isFinite(fillConcStored) && fillConcStored >= 1 && fillConcStored <= 10) {
+    aiFillConcurrency.value = fillConcStored
+  }
 }
 
 async function loadPlugins() {
@@ -727,6 +742,7 @@ async function saveSettings(tab: string) {
     } else if (tab === 'ai' && currentAiPlugin.value) {
       payload['ai_plugin'] = selectedAiPlugin.value
       payload['ai_summary_length'] = String(aiSummaryLength.value)
+      payload['ai_fill_concurrency'] = String(aiFillConcurrency.value)
       for (const field of currentAiPlugin.value.fields) {
         if (aiForm[field]) {
           payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field]
