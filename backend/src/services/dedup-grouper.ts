@@ -1,4 +1,6 @@
 import { normalizeTitle, levenshtein } from '../utils/title-normalizer';
+import { lookupKey } from './title-lookup';
+import { normalizeAuthor } from '../utils/author-match';
 
 export interface ScannedBook {
   file_path: string;
@@ -19,6 +21,8 @@ export interface CandidateGroups {
    *  - 章节数相同 + first_chapter_hash 相同（fingerprint 不同，可能是排版差异）
    */
   soft_groups: ScannedBook[][];
+  /** 同 lookupKey(title) + 同 normalizeAuthor(author)，指纹不同（≥2 本、≥2 指纹）。 */
+  title_author_groups: ScannedBook[][];
 }
 
 const AUTHOR_TITLE_DISTANCE_THRESHOLD = 5;
@@ -123,7 +127,27 @@ export function buildCandidateGroups(books: ScannedBook[]): CandidateGroups {
 
   const softGroups = mergeOverlappingClusters(allSoftSources);
 
-  return { hard_groups: hardGroups, soft_groups: softGroups };
+  // --- Title + author groups (deterministic soft-dup, excludes hard members) ---
+  const byTitleAuthor = new Map<string, ScannedBook[]>();
+  for (const b of books) {
+    if (!b.fingerprint || inHard.has(b.file_path)) continue;
+    const author = normalizeAuthor(b.author ?? '');
+    if (!author) continue;
+    const titleKey = lookupKey(b.title);
+    if (!titleKey) continue;
+    const key = `${titleKey}::${author}`;
+    const arr = byTitleAuthor.get(key);
+    if (arr) arr.push(b);
+    else byTitleAuthor.set(key, [b]);
+  }
+  const titleAuthorGroups: ScannedBook[][] = [];
+  for (const [, group] of byTitleAuthor) {
+    if (group.length < 2) continue;
+    const fps = new Set(group.map(b => b.fingerprint));
+    if (fps.size >= 2) titleAuthorGroups.push(group);
+  }
+
+  return { hard_groups: hardGroups, soft_groups: softGroups, title_author_groups: titleAuthorGroups };
 }
 
 /**

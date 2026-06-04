@@ -97,3 +97,42 @@ describe('buildCandidateGroups', () => {
     expect(r.soft_groups[0]).toHaveLength(3);
   });
 });
+
+describe('buildCandidateGroups.title_author_groups', () => {
+  const mk = (file_path: string, title: string, author: string, fingerprint: string) =>
+    ({ file_path, title, author, fingerprint, chapter_count: 10, first_chapter_hash: 'h', first_chapter_preview: '' });
+
+  it('同书名同作者、指纹不同 → 成一组', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '《黄金瞳(典当)》（精校版全本）作者：打眼', '打眼', 'fpA'),
+      mk('/b.txt', '《黄金瞳(典当)》（校对版全本）作者：打眼', '打眼', 'fpB'),
+    ]);
+    expect(r.title_author_groups.length).toBe(1);
+    expect(r.title_author_groups[0].map(x => x.file_path).sort()).toEqual(['/a.txt', '/b.txt']);
+  });
+
+  it('同书名不同作者 → 不成组', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '黄金瞳', '打眼', 'fpA'),
+      mk('/b.txt', '黄金瞳', '别人', 'fpB'),
+    ]);
+    expect(r.title_author_groups.length).toBe(0);
+  });
+
+  it('指纹相同 → 归 hard，不计入 title_author_groups', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '黄金瞳', '打眼', 'same'),
+      mk('/b.txt', '黄金瞳', '打眼', 'same'),
+    ]);
+    expect(r.hard_groups.length).toBe(1);
+    expect(r.title_author_groups.length).toBe(0);
+  });
+
+  it('author 为空 → 跳过', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '黄金瞳', '', 'fpA'),
+      mk('/b.txt', '黄金瞳', '', 'fpB'),
+    ]);
+    expect(r.title_author_groups.length).toBe(0);
+  });
+});
