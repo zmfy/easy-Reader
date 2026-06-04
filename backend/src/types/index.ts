@@ -99,7 +99,7 @@ export interface AiPlugin {
 export interface ReaderPlugin {
   format: string;
   load(filePath: string): Promise<void>;
-  getChapters(): Promise<Array<{ index: number; title: string }>>;
+  getChapters(): Promise<Array<{ index: number; title: string; href?: string }>>;
   getChapterContent(index: number): Promise<string>;
   getTotalProgress(): Promise<number>;
   getProgress(): Promise<number>;

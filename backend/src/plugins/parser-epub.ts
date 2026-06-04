@@ -18,7 +18,7 @@ export class EpubParser implements ReaderPlugin {
   format = 'epub';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private epub: any = null;
-  private chapters: Array<{ index: number; title: string; id: string }> = [];
+  private chapters: Array<{ index: number; title: string; id: string; href: string }> = [];
 
   async load(filePath: string): Promise<void> {
     // epub2 v3: class is at require('epub2').EPub
@@ -29,19 +29,33 @@ export class EpubParser implements ReaderPlugin {
 
   private buildChapterList(): void {
     const toc: Array<{ id: string; title?: string; href?: string }> = this.epub.toc || [];
-    const flow: Array<{ id: string; title?: string }> = this.epub.flow || [];
+    const flow: Array<{ id: string; href?: string; title?: string }> = this.epub.flow || [];
 
-    // Prefer TOC entries if they exist — they represent meaningful reading sections
-    // and skip cover/image-only pages
+    // Build a map from href (without anchor) to flow item
+    // TOC hrefs contain anchors (e.g. "text/part0004.html#section1") but flow hrefs don't
+    const hrefToFlow = new Map<string, { id: string; href: string }>();
+    for (const item of flow) {
+      if (item.href) hrefToFlow.set(item.href, { id: item.id, href: item.href });
+    }
+
+    // Prefer TOC entries — they represent meaningful reading sections
+    // TOC ids (e.g. "num_1") cannot be used with getChapterRawAsync directly;
+    // resolve via href to get the actual flow id
     if (toc.length > 0) {
-      this.chapters = toc
-        .filter(item => !!item.id)
-        .map((item, idx) => ({
-          index: idx,
-          title: item.title || `第 ${idx + 1} 章`,
-          id: item.id,
-        }));
-      return;
+      const seen = new Set<string>();
+      const result: Array<{ index: number; title: string; id: string; href: string }> = [];
+      for (const item of toc) {
+        if (!item.href) continue;
+        const hrefBase = item.href.split('#')[0];
+        const flowItem = hrefToFlow.get(hrefBase);
+        if (!flowItem || seen.has(flowItem.id)) continue;
+        seen.add(flowItem.id);
+        result.push({ index: result.length, title: item.title || `第 ${result.length + 1} 章`, id: flowItem.id, href: flowItem.href });
+      }
+      if (result.length > 0) {
+        this.chapters = result;
+        return;
+      }
     }
 
     // Fallback: use flow (spine) items, skip obvious non-text items
@@ -55,11 +69,12 @@ export class EpubParser implements ReaderPlugin {
         index: idx,
         title: item.title || `第 ${idx + 1} 章`,
         id: item.id,
+        href: item.href || '',
       }));
   }
 
-  async getChapters(): Promise<Array<{ index: number; title: string }>> {
-    return this.chapters.map(c => ({ index: c.index, title: c.title }));
+  async getChapters(): Promise<Array<{ index: number; title: string; href?: string }>> {
+    return this.chapters.map(c => ({ index: c.index, title: c.title, href: c.href }));
   }
 
   async getChapterContent(index: number): Promise<string> {

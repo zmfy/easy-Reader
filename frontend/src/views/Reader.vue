@@ -53,6 +53,7 @@
             class="chapter-content"
             v-html="reader.currentContent.value"
             :style="contentStyle"
+            @click.capture="handleContentClick"
           />
         </div>
       </template>
@@ -69,7 +70,7 @@
             <div class="waterfall-chapter-divider">
               <span>{{ ch.title }}</span>
             </div>
-            <div class="chapter-content" v-html="ch.content" :style="contentStyle" />
+            <div class="chapter-content" v-html="ch.content" :style="contentStyle" @click.capture="handleContentClick" />
           </div>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
@@ -317,16 +318,33 @@ async function loadWaterfallChapter(index: number) {
   }
 }
 
+// If chapter content is shorter than the viewport, the scroll event never fires
+// and the next chapter never auto-loads. Keep appending chapters until the
+// container is tall enough to be scrollable (with a 300px trigger margin).
+async function fillWaterfallIfNeeded() {
+  await nextTick()
+  await new Promise<void>(r => requestAnimationFrame(() => r()))
+  const container = contentRef.value
+  if (!container) return
+  while (hasMoreChapters.value && !waterfallLoading.value) {
+    if (container.scrollHeight > container.clientHeight + 300) break
+    const nextIndex = waterfallChapters.value[waterfallChapters.value.length - 1].index + 1
+    await loadWaterfallChapter(nextIndex)
+    await nextTick()
+    await new Promise<void>(r => requestAnimationFrame(() => r()))
+  }
+}
+
 async function initWaterfall() {
   waterfallChapters.value = []
   const startIndex = reader.currentChapterIndex.value
   await loadWaterfallChapter(startIndex)
   await nextTick()
   if (contentRef.value) contentRef.value.scrollTop = 0
-  // Belt-and-suspenders: also reset after a frame in case fonts/transitions shift layout
   requestAnimationFrame(() => {
     if (contentRef.value) contentRef.value.scrollTop = 0
   })
+  await fillWaterfallIfNeeded()
 }
 
 // ── Toolbar auto-hide ────────────────────────────────────────
@@ -382,7 +400,45 @@ function handleWaterfallScroll(scrollTop: number) {
   const nearBottom = scrollTop + container.clientHeight >= container.scrollHeight - 300
   if (nearBottom && hasMoreChapters.value && !waterfallLoading.value) {
     const nextIndex = waterfallChapters.value[waterfallChapters.value.length - 1].index + 1
-    loadWaterfallChapter(nextIndex)
+    loadWaterfallChapter(nextIndex).then(() => fillWaterfallIfNeeded())
+  }
+}
+
+// ── EPUB internal link interception ─────────────────────────
+// Build a map from href basename to chapter index for EPUB link navigation.
+// EPUB internal links look like "part0004.html" or "text/part0004.html".
+// We normalise to just the filename to handle both forms.
+function buildHrefIndexMap(): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const ch of reader.chapters.value) {
+    if (ch.href) {
+      map.set(ch.href, ch.index)
+      // Also index by basename only (strip directory prefix)
+      const base = ch.href.split('/').pop()
+      if (base && base !== ch.href) map.set(base, ch.index)
+    }
+  }
+  return map
+}
+
+function handleContentClick(e: MouseEvent) {
+  const target = (e.target as HTMLElement).closest('a')
+  if (!target) return
+  const href = target.getAttribute('href')
+  if (!href) return
+  // Allow external links to open normally
+  if (/^https?:\/\//i.test(href)) return
+  // Strip anchor to get the file path
+  const hrefBase = href.split('#')[0]
+  if (!hrefBase) return
+  e.preventDefault()
+  e.stopPropagation()
+  const hrefMap = buildHrefIndexMap()
+  // Try full path first, then basename
+  const base = hrefBase.split('/').pop() || hrefBase
+  const idx = hrefMap.get(hrefBase) ?? hrefMap.get(base)
+  if (idx !== undefined) {
+    jumpToChapter(idx)
   }
 }
 
@@ -408,6 +464,7 @@ async function jumpToChapter(index: number) {
     await loadWaterfallChapter(index)
     await nextTick()
     if (contentRef.value) contentRef.value.scrollTop = 0
+    await fillWaterfallIfNeeded()
   } else {
     await reader.loadChapter(index)
     await reader.saveProgress(0)
