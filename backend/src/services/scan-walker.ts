@@ -77,6 +77,9 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const backfillMtimeStmt = getDb().prepare(
       'UPDATE books SET file_mtime = ? WHERE id = ?'
     );
+    const backfillAuthorStmt = getDb().prepare(
+      "UPDATE books SET author = ? WHERE id = ? AND (author IS NULL OR author = '')"
+    );
 
     for (const fullPath of allFiles) {
       if (isCancelled(taskId)) return;
@@ -90,6 +93,12 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         // so that column is already correct.
         if (pre && pre.file_mtime == null) {
           backfillMtimeStmt.run(st.mtimeMs, pre.id);
+        }
+        // Backfill author for books imported before author-extraction was added.
+        // The WHERE guard ensures an existing non-empty author is never overwritten.
+        if (pre) {
+          const a = extractAuthorFromName(path.basename(fullPath));
+          if (a) backfillAuthorStmt.run(a, pre.id);
         }
         processed++;
         if (processed % 50 === 0 || processed === allFiles.length) {
