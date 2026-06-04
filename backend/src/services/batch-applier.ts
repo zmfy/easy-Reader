@@ -69,9 +69,10 @@ export function applyBatch(
       | undefined;
     if (existing) {
       db.prepare(
-        `UPDATE books SET title = ?, fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
+        `UPDATE books SET title = ?, author = COALESCE(NULLIF(author, ''), ?), fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
       ).run(
         payload.title,
+        payload.author ?? null,
         payload.fingerprint ?? null,
         payload.first_chapter_hash ?? null,
         payload.chapter_count ?? null,
@@ -87,11 +88,12 @@ export function applyBatch(
     }
     const id = uuidv4();
     db.prepare(
-      `INSERT INTO books (id, title, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected, file_mtime, fingerprint_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO books (id, title, author, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected, file_mtime, fingerprint_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       payload.title,
+      payload.author ?? null,
       payload.file_path,
       payload.file_format,
       payload.file_size,

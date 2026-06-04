@@ -128,6 +128,25 @@ describe('applyBatch', () => {
     expect(batch.applied_at).toBeTruthy();
   });
 
+  it('new 书 INSERT 写入 author；UPDATE 不覆盖已有 author', () => {
+    // Case 1: fresh file_path with author → INSERT should write it
+    const batchId1 = makeBatch([
+      { type: 'new', payload: { file_path: '/author-test', title: '书名', file_format: 'txt', file_size: 100, status: 'normal', author: 'A' } },
+    ]);
+    applyBatch(batchId1, 'admin1', db);
+    const row1 = db.prepare('SELECT author FROM books WHERE file_path = ?').get('/author-test') as { author: string };
+    expect(row1.author).toBe('A');
+
+    // Case 2: existing book with author='旧' → UPDATE with author='新' should preserve '旧'
+    db.prepare(`INSERT INTO books (id, title, file_path, file_format, file_size, status, author) VALUES ('pre1', '旧书', '/author-preserve', 'txt', 50, 'normal', '旧')`).run();
+    const batchId2 = makeBatch([
+      { type: 'new', payload: { file_path: '/author-preserve', title: '旧书', file_format: 'txt', file_size: 50, status: 'normal', author: '新' } },
+    ]);
+    applyBatch(batchId2, 'admin1', db);
+    const row2 = db.prepare('SELECT author FROM books WHERE file_path = ?').get('/author-preserve') as { author: string };
+    expect(row2.author).toBe('旧');
+  });
+
   it('records manual_overrides for rejected duplicate members', () => {
     const batchId = makeBatch([
       {
