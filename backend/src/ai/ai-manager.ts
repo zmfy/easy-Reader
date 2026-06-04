@@ -68,13 +68,13 @@ function readSummaryLength(db: Database.Database): string {
 }
 
 export const aiManager = {
-  async fillBookInfo(rawText: string, db: Database.Database): Promise<Partial<Book>> {
+  async fillBookInfo(rawText: string, db: Database.Database, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {
     const active = getActivePlugin(db);
     if (!active) throw new Error('未配置 AI 插件');
     return active.plugin.fillBookInfo(rawText, {
       ...active.config,
       summary_length: readSummaryLength(db),
-    });
+    }, hint);
   },
 
   async classifyBook(bookInfo: Partial<Book>, db: Database.Database): Promise<string> {
