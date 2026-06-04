@@ -74,6 +74,7 @@ export const libraryApi = {
     page?: number; pageSize?: number; search?: string; category?: string;
     include_dirty?: boolean; series_grouped?: boolean;
     sortBy?: string; sortOrder?: 'asc' | 'desc';
+    ai_fill?: 'all' | 'filled' | 'failed' | 'none';
   } = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 

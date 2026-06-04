@@ -23,6 +23,9 @@
       <el-tag v-if="badge" :type="badge.type" size="small" class="status-badge">
         {{ badge.label }}
       </el-tag>
+      <el-tag v-if="aiFillBadge" :type="aiFillBadge.type" size="small" class="ai-fill-badge">
+        {{ aiFillBadge.label }}
+      </el-tag>
       <!-- 悬停操作层 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" @click.stop="$emit('read')">
@@ -69,6 +72,12 @@ const authStore = useAuthStore()
 const badge = computed<{ type: 'danger' | 'warning'; label: string } | null>(() => {
   if (props.book.status === 'duplicate') return { type: 'danger', label: '重复' }
   if (props.book.status === 'garbled') return { type: 'warning', label: '乱码' }
+  return null
+})
+
+const aiFillBadge = computed<{ type: 'success' | 'warning'; label: string } | null>(() => {
+  if (props.book.ai_fill_status === 'filled') return { type: 'success', label: 'AI已填充' }
+  if (props.book.ai_fill_status === 'failed') return { type: 'warning', label: 'AI填充失败' }
   return null
 })
 
@@ -274,5 +283,12 @@ const placeholderGradient = computed(() => {
   top: 8px;
   right: 8px;
   z-index: 4;
+}
+
+.ai-fill-badge {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  z-index: 2;
 }
 </style>

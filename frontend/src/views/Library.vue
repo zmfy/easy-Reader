@@ -35,6 +35,17 @@
             <el-option label="书名（A→Z）" value="title" />
             <el-option label="网络评分（待上线）" value="rating" disabled />
           </el-select>
+          <el-select
+            v-if="authStore.isAdmin"
+            v-model="aiFillFilter"
+            style="width: 140px"
+            @change="fetchBooks"
+          >
+            <el-option label="AI填充：全部" value="all" />
+            <el-option label="已AI填充" value="filled" />
+            <el-option label="填充失败" value="failed" />
+            <el-option label="未尝试填充" value="none" />
+          </el-select>
           <el-switch
             v-if="authStore.isAdmin"
             v-model="includeDirty"
@@ -147,6 +158,7 @@ async function refreshPendingBatch(): Promise<void> {
 
 const books = ref<Book[]>([])
 const includeDirty = ref(false)
+const aiFillFilter = ref<'all' | 'filled' | 'failed' | 'none'>('all')
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
@@ -190,6 +202,7 @@ async function fetchBooks() {
       sortBy: safeSortBy,
       sortOrder: sortOrderFor(safeSortBy),
       include_dirty: includeDirty.value,
+      ai_fill: aiFillFilter.value,
       series_grouped: false,
     })
     books.value = booksResp.data.data
