@@ -158,7 +158,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
 
       // Cover fetch: only when no existing cover + we have a title to search with.
-      const titleForCover = (filledFields.title ?? current.title ?? '').trim();
+      const titleForCover = ((info.title && info.title.trim()) || knownTitle || filledFields.title || current.title || '').trim();
       if (!current.cover_url && titleForCover.length > 0) {
         try {
           const coverUrl = await fetchAndSaveCover(titleForCover, b.id);
