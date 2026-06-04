@@ -9,6 +9,7 @@ export interface LibraryQuery {
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
   status?: 'normal' | 'problems' | 'duplicate' | 'garbled' | 'all'
+  ai_fill?: 'filled' | 'failed' | 'none' | 'all'
 }
 
 export interface UpdateBookPayload {

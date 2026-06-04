@@ -22,6 +22,7 @@ export interface Book {
   imported_at: string
   // 扫描增强字段（Plan 1/2）
   status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed'
+  ai_fill_status?: 'filled' | 'failed' | null
   duplicate_of?: string | null
   series_id?: string | null
   chapter_count?: number
