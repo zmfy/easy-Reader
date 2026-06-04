@@ -1,7 +1,41 @@
 import Database from 'better-sqlite3';
-import { selectFillCandidates, stampFillVersion, authorMatchDecision } from '../../src/services/ai-batch-fill';
+import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
+import { aiManager } from '../../src/ai/ai-manager';
 
+// ── mock out modules that have side-effects or need real infra ──────────────
+
+// Make getDb() return our in-memory DB (set per-test via setTestDb below).
+let _testDb: Database.Database | null = null;
+jest.mock('../../src/db', () => ({
+  getDb: () => {
+    if (!_testDb) throw new Error('test DB not initialised');
+    return _testDb;
+  },
+  default: () => {
+    if (!_testDb) throw new Error('test DB not initialised');
+    return _testDb;
+  },
+}));
+
+// No-op cover fetch – avoids real network calls.
+jest.mock('../../src/utils/cover', () => ({
+  fetchAndSaveCover: jest.fn().mockResolvedValue(undefined),
+}));
+
+// No-op scan-task progress – avoids needing scan_tasks table.
+jest.mock('../../src/services/scan-task', () => ({
+  setScanProgress: jest.fn(),
+}));
+
+// No-op audit writes – avoids needing audit_log table.
+jest.mock('../../src/services/audit-log', () => ({
+  writeAudit: jest.fn(),
+}));
+
+// ── shared helpers ──────────────────────────────────────────────────────────
+
+/** Minimal books table used by the pure-function tests (no ai_fill_status). */
 function db(): Database.Database {
   const d = new Database(':memory:');
   d.exec(`CREATE TABLE books (
@@ -11,10 +45,59 @@ function db(): Database.Database {
   );`);
   return d;
 }
+
+/** Full schema used by batchFill integration tests. */
+function makeIntegrationDb(): Database.Database {
+  const d = new Database(':memory:');
+  d.exec(`
+    CREATE TABLE books (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      author TEXT,
+      summary TEXT,
+      category TEXT,
+      cover_url TEXT,
+      file_path TEXT NOT NULL,
+      file_format TEXT NOT NULL,
+      status TEXT DEFAULT 'normal',
+      duplicate_of TEXT,
+      ai_fill_version INTEGER,
+      ai_fill_status TEXT,
+      manually_edited_fields TEXT
+    );
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE book_ai_metadata (
+      book_id TEXT PRIMARY KEY,
+      recommended_tags TEXT,
+      similar_works TEXT,
+      generated_by TEXT,
+      generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  return d;
+}
+
 const ins = (d: Database.Database, o: Record<string, unknown>) =>
   d.prepare(`INSERT INTO books (id,title,author,summary,file_path,file_format,status,duplicate_of,ai_fill_version)
              VALUES (@id,@title,@author,@summary,@file_path,@file_format,@status,@duplicate_of,@ai_fill_version)`)
     .run({ author: null, summary: null, status: 'normal', duplicate_of: null, ai_fill_version: null, file_format: 'txt', ...o });
+
+/** Insert a book row into the integration DB (includes ai_fill_status). */
+function insBook(d: Database.Database, o: Record<string, unknown>): void {
+  d.prepare(`INSERT INTO books
+    (id, title, author, summary, category, cover_url, file_path, file_format,
+     status, duplicate_of, ai_fill_version, ai_fill_status, manually_edited_fields)
+    VALUES
+    (@id, @title, @author, @summary, @category, @cover_url, @file_path, @file_format,
+     @status, @duplicate_of, @ai_fill_version, @ai_fill_status, @manually_edited_fields)`)
+    .run({
+      author: null, summary: null, category: null, cover_url: null,
+      status: 'normal', duplicate_of: null, ai_fill_version: null,
+      ai_fill_status: null, manually_edited_fields: null,
+      file_format: 'txt',
+      ...o,
+    });
+}
 
 describe('selectFillCandidates', () => {
   it('includes books missing author/summary and not yet filled at current version', () => {
@@ -58,4 +141,96 @@ describe('authorMatchDecision', () => {
   it('Pass B 作者与已知一致 → filled', () => { expect(authorMatchDecision('打眼', '打眼')).toBe('filled'); });
   it('Pass B 作者与已知不一致 → failed', () => { expect(authorMatchDecision('打眼', '唐家三少')).toBe('failed'); });
   it('Pass B 没返回作者(空) → filled', () => { expect(authorMatchDecision('打眼', '')).toBe('filled'); });
+});
+
+// ── batchFill integration tests ─────────────────────────────────────────────
+
+describe('batchFill two-pass', () => {
+  let fillSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+  });
+
+  afterEach(() => {
+    fillSpy.mockRestore();
+    if (_testDb) {
+      _testDb.close();
+      _testDb = null;
+    }
+  });
+
+  /** Helper: read the ai_fill_status column from the test DB. */
+  function getStatus(id: string): string | null {
+    const row = _testDb!.prepare('SELECT ai_fill_status FROM books WHERE id = ?').get(id) as
+      | { ai_fill_status: string | null }
+      | undefined;
+    return row?.ai_fill_status ?? null;
+  }
+
+  it('Pass A found → filled (single call)', async () => {
+    // author is known from the row; Pass A returns non-empty result.
+    insBook(_testDb!, { id: 'b1', title: '鉴宝', author: '打眼', file_path: '/nonexistent/b1.txt' });
+
+    fillSpy.mockResolvedValueOnce({ author: '打眼', summary: '简介…' });
+
+    const result = await batchFill({
+      books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '鉴宝', author: '打眼' }],
+    });
+
+    expect(getStatus('b1')).toBe('filled');
+    expect(result.succeeded).toContain('b1');
+    expect(result.failed).toHaveLength(0);
+    // Only Pass A was called (Pass B is skipped when Pass A has data).
+    expect(fillSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('Pass A empty → Pass B author mismatch → failed (two calls, fields not written)', async () => {
+    insBook(_testDb!, { id: 'b2', title: '斗破苍穹', author: '打眼', file_path: '/nonexistent/b2.txt' });
+
+    // Pass A returns nothing; Pass B returns a different author.
+    fillSpy
+      .mockResolvedValueOnce({})                             // Pass A: empty
+      .mockResolvedValueOnce({ author: '唐家三少', summary: '某简介' }); // Pass B: mismatch
+
+    const result = await batchFill({
+      books: [{ id: 'b2', file_path: '/nonexistent/b2.txt', file_format: 'txt', title: '斗破苍穹', author: '打眼' }],
+    });
+
+    expect(getStatus('b2')).toBe('failed');
+    expect(result.failed.map(f => f.book_id)).toContain('b2');
+    expect(result.succeeded).not.toContain('b2');
+    expect(fillSpy).toHaveBeenCalledTimes(2);
+
+    // Fields must NOT have been written (summary stays null).
+    const row = _testDb!.prepare('SELECT summary FROM books WHERE id = ?').get('b2') as
+      | { summary: string | null }
+      | undefined;
+    expect(row?.summary).toBeNull();
+  });
+
+  it('Pass A empty → Pass B author match → filled (two calls, summary written)', async () => {
+    insBook(_testDb!, { id: 'b3', title: '寻宝', author: '打眼', file_path: '/nonexistent/b3.txt' });
+
+    // Pass A empty; Pass B returns matching author + summary.
+    fillSpy
+      .mockResolvedValueOnce({})                                       // Pass A: empty
+      .mockResolvedValueOnce({ author: '打眼', summary: '简介内容' }); // Pass B: match
+
+    const result = await batchFill({
+      books: [{ id: 'b3', file_path: '/nonexistent/b3.txt', file_format: 'txt', title: '寻宝', author: '打眼' }],
+    });
+
+    expect(getStatus('b3')).toBe('filled');
+    expect(result.succeeded).toContain('b3');
+    expect(result.failed).toHaveLength(0);
+    expect(fillSpy).toHaveBeenCalledTimes(2);
+
+    // Summary must have been written.
+    const row = _testDb!.prepare('SELECT summary FROM books WHERE id = ?').get('b3') as
+      | { summary: string | null }
+      | undefined;
+    expect(row?.summary).toBe('简介内容');
+  });
 });
