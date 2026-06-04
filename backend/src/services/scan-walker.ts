@@ -65,10 +65,10 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // Performance: prefetch all existing books in ONE query so the per-file
     // skip check is an in-memory lookup rather than N individual SQL hits.
     // For 8000+ books this turns 8000 prepare/get round-trips into 1.
-    const prefetched = new Map<string, { id: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null }>();
+    const prefetched = new Map<string, { id: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null }>();
     if (!options.full_rescan) {
-      const rows = getDb().prepare('SELECT id, file_path, fingerprint, file_size, file_mtime, fingerprint_version FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null }>;
-      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version });
+      const rows = getDb().prepare('SELECT id, file_path, fingerprint, file_size, file_mtime, fingerprint_version, status FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null }>;
+      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version, status: r.status });
     }
 
     // Prepare once outside the loop — recompiling SQL on every migration-cohort

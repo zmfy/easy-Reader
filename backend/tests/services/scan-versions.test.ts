@@ -60,4 +60,10 @@ describe('shouldReuseFingerprint', () => {
   it('trusts a null mtime (migration leftover) and reuses', () => {
     expect(call({ existing: { ...base, file_mtime: null } })).toBe(true);
   });
+  it('re-processes a garbled book even when fingerprint+size+mtime match, so improved detection can rescue it', () => {
+    expect(call({ existing: { ...base, status: 'garbled' } })).toBe(false);
+  });
+  it('still reuses a normal book (status set, not garbled)', () => {
+    expect(call({ existing: { ...base, status: 'normal' } })).toBe(true);
+  });
 });

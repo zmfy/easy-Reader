@@ -22,6 +22,7 @@ export interface ReuseCheckInput {
     file_size?: number | null;
     file_mtime?: number | null;
     fingerprint_version?: number | null;
+    status?: string | null;
   };
   statSize: number;
   statMtime: number;
@@ -35,11 +36,17 @@ export interface ReuseCheckInput {
  * row with a fingerprint at the current algorithm version, matching file size,
  * and matching mtime — except a NULL stored mtime (migration leftover) is
  * trusted so an upgraded library doesn't force a one-time full re-read.
+ *
+ * A book currently flagged 'garbled' is NEVER reused: it keeps a fingerprint
+ * from a prior run, so size/mtime would match and it would be skipped forever —
+ * even after the encoding/garbled detection improves. Always re-process garbled
+ * books so better detection can rescue them on the next ordinary scan.
  */
 export function shouldReuseFingerprint(i: ReuseCheckInput): boolean {
   if (i.fullRescan) return false;
   const e = i.existing;
   if (!e || !e.fingerprint) return false;
+  if (e.status === 'garbled') return false;
   if (e.fingerprint_version !== i.fingerprintVersion) return false;
   if (e.file_size !== i.statSize) return false;
   if (e.file_mtime != null && e.file_mtime !== i.statMtime) return false;
