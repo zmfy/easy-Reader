@@ -25,4 +25,7 @@ describe('authorsMatch', () => {
     expect(authorsMatch('', '打眼')).toBe(false);
     expect(authorsMatch('打眼', '')).toBe(false);
   });
+  it('过短的包含不算一致（避免误判）', () => {
+    expect(authorsMatch('A', 'ABCDEFG')).toBe(false);
+  });
 });

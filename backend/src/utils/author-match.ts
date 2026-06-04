@@ -19,7 +19,7 @@ export function authorsMatch(a: string, b: string): boolean {
   const nb = normalizeAuthor(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.includes(nb) || nb.includes(na)) return true;
+  if (Math.min(na.length, nb.length) >= 2 && (na.includes(nb) || nb.includes(na))) return true;
   const sim = 1 - levenshtein(na, nb) / Math.max(na.length, nb.length);
   return sim >= 2 / 3;
 }
