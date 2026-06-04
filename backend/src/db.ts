@@ -139,6 +139,7 @@ function initSchema(): void {
     "ALTER TABLE books ADD COLUMN file_mtime REAL",
     "ALTER TABLE books ADD COLUMN fingerprint_version INTEGER",
     "ALTER TABLE books ADD COLUMN ai_fill_version INTEGER",
+    "ALTER TABLE books ADD COLUMN ai_fill_status TEXT",
   ];
   for (const stmt of booksAlters) {
     try { database.exec(stmt); } catch { /* column exists */ }
