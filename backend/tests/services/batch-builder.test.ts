@@ -43,6 +43,7 @@ describe('buildBatchFromScan', () => {
         },
       ],
       ai_duplicate_groups: [],
+      soft_duplicate_groups: [],
       series_groups: [
         {
           series_name: '女生宿舍',
@@ -72,5 +73,23 @@ describe('buildBatchFromScan', () => {
     const summary = JSON.parse(batch.summary_counts) as Record<string, number>;
     expect(summary.new).toBe(1);
     expect(summary.duplicate_groups).toBe(1);
+  });
+
+  it('soft_duplicate_groups 作为 duplicate_group 入库且计入 summary', () => {
+    const scan: ScanResult = {
+      new_books: [], hard_duplicate_groups: [], ai_duplicate_groups: [],
+      soft_duplicate_groups: [{
+        canonical_file_path: '/a.txt',
+        members: [
+          { file_path: '/a.txt', fingerprint: 'fpA', decision_type: 'soft' as const },
+          { file_path: '/b.txt', fingerprint: 'fpB', decision_type: 'soft' as const },
+        ],
+      }],
+      series_groups: [], garbled: [], encoding_fixed: [],
+    };
+    const batch = buildBatchFromScan('task-soft', scan, db);
+    const items = db.prepare("SELECT type FROM scan_batch_items WHERE batch_id = ?").all(batch.id) as Array<{ type: string }>;
+    expect(items.filter(i => i.type === 'duplicate_group').length).toBe(1);
+    expect(JSON.parse(batch.summary_counts).duplicate_groups).toBe(1);
   });
 });

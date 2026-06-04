@@ -14,6 +14,7 @@ export interface ScanResult {
   new_books: NewBookPayload[];
   hard_duplicate_groups: DuplicateGroupPayload[];
   ai_duplicate_groups: DuplicateGroupPayload[];
+  soft_duplicate_groups: DuplicateGroupPayload[];
   series_groups: SeriesGroupPayload[];
   garbled: GarbledPayload[];
   encoding_fixed: EncodingFixedPayload[];
@@ -32,7 +33,7 @@ export function buildBatchFromScan(
   const batchId = uuidv4();
   const summary = {
     new: scan.new_books.length,
-    duplicate_groups: scan.hard_duplicate_groups.length + scan.ai_duplicate_groups.length,
+    duplicate_groups: scan.hard_duplicate_groups.length + scan.ai_duplicate_groups.length + scan.soft_duplicate_groups.length,
     series: scan.series_groups.length,
     garbled: scan.garbled.length,
     encoding_fixed: scan.encoding_fixed.length,
@@ -49,7 +50,7 @@ export function buildBatchFromScan(
     for (const nb of scan.new_books) {
       insert.run(uuidv4(), batchId, 'new', JSON.stringify(nb));
     }
-    for (const dg of [...scan.hard_duplicate_groups, ...scan.ai_duplicate_groups]) {
+    for (const dg of [...scan.hard_duplicate_groups, ...scan.ai_duplicate_groups, ...scan.soft_duplicate_groups]) {
       insert.run(uuidv4(), batchId, 'duplicate_group', JSON.stringify(dg));
     }
     for (const sg of scan.series_groups) {

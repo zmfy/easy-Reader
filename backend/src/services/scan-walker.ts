@@ -113,6 +113,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         new_books: scanned.map(toNewPayload),
         hard_duplicate_groups: [],
         ai_duplicate_groups: [],
+        soft_duplicate_groups: [],
         series_groups: [],
         garbled,
         encoding_fixed: encodingFixed,
