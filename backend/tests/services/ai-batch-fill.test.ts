@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { selectFillCandidates, stampFillVersion } from '../../src/services/ai-batch-fill';
+import { selectFillCandidates, stampFillVersion, authorMatchDecision } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 
 function db(): Database.Database {
@@ -51,4 +51,11 @@ describe('stampFillVersion', () => {
     const v = (d.prepare("SELECT ai_fill_version v FROM books WHERE id='a'").get() as { v: number }).v;
     expect(v).toBe(AI_FILL_VERSION);
   });
+});
+
+describe('authorMatchDecision', () => {
+  it('knownAuthor 为空 → filled', () => { expect(authorMatchDecision('', '随便')).toBe('filled'); });
+  it('Pass B 作者与已知一致 → filled', () => { expect(authorMatchDecision('打眼', '打眼')).toBe('filled'); });
+  it('Pass B 作者与已知不一致 → failed', () => { expect(authorMatchDecision('打眼', '唐家三少')).toBe('failed'); });
+  it('Pass B 没返回作者(空) → filled', () => { expect(authorMatchDecision('打眼', '')).toBe('filled'); });
 });

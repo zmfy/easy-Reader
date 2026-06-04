@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import pLimit from 'p-limit';
 import Database from 'better-sqlite3';
 import { getDb } from '../db';
@@ -8,6 +9,9 @@ import { writeAudit } from './audit-log';
 import { fetchAndSaveCover } from '../utils/cover';
 import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
+import { lookupKey } from './title-lookup';
+import { extractAuthorFromName } from '../utils/title-normalizer';
+import { authorsMatch } from '../utils/author-match';
 
 const CONCURRENCY = 3;
 const RETRIES = 2;
@@ -16,7 +20,7 @@ const RETRY_BACKOFF_MS = 1500;
 export interface BatchFillInput {
   taskId?: string;
   user_id?: string;          // for audit attribution; defaults to 'system-scan'
-  books: Array<{ id: string; file_path: string; file_format: string }>;
+  books: Array<{ id: string; file_path: string; file_format: string; title: string; author?: string }>;
 }
 
 export interface BatchFillResult {
@@ -25,7 +29,7 @@ export interface BatchFillResult {
   covers_fetched: number;
 }
 
-export interface FillCandidate { id: string; file_path: string; file_format: string; }
+export interface FillCandidate { id: string; file_path: string; file_format: string; title: string; author?: string; }
 
 /**
  * Books eligible for AI fill. Normal mode: missing author/summary AND not yet
@@ -36,16 +40,23 @@ export interface FillCandidate { id: string; file_path: string; file_format: str
 export function selectFillCandidates(db: Database.Database, force: boolean): FillCandidate[] {
   if (force) {
     return db.prepare(
-      `SELECT id, file_path, file_format FROM books
+      `SELECT id, file_path, file_format, title, author FROM books
        WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')`
     ).all() as FillCandidate[];
   }
   return db.prepare(
-    `SELECT id, file_path, file_format FROM books
+    `SELECT id, file_path, file_format, title, author FROM books
      WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')
        AND ((author IS NULL OR author = '') OR (summary IS NULL OR summary = ''))
        AND (ai_fill_version IS NULL OR ai_fill_version < ?)`
   ).all(AI_FILL_VERSION) as FillCandidate[];
+}
+
+/** 给定已知作者与 Pass B 返回的作者，判定 filled/failed。 */
+export function authorMatchDecision(knownAuthor: string, aiAuthor: string): 'filled' | 'failed' {
+  if (!knownAuthor) return 'filled';
+  if (!aiAuthor || !aiAuthor.trim()) return 'filled';
+  return authorsMatch(aiAuthor, knownAuthor) ? 'filled' : 'failed';
 }
 
 export function stampFillVersion(db: Database.Database, bookId: string): void {
@@ -67,7 +78,34 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
   await Promise.all(input.books.map(b => limit(async () => {
     try {
       const rawText = readPreview(b.file_path, b.file_format);
-      const info = await callWithRetry(() => aiManager.fillBookInfo(rawText, db), RETRIES);
+      const knownTitle = lookupKey(b.title) || b.title;
+      const knownAuthor = ((b.author ?? '').trim()) || (extractAuthorFromName(path.basename(b.file_path)) ?? '');
+
+      let info: Awaited<ReturnType<typeof aiManager.fillBookInfo>>;
+      let fillStatus: 'filled' | 'failed' = 'filled';
+
+      if (knownAuthor) {
+        const passA = await callWithRetry(
+          () => aiManager.fillBookInfo(rawText, db, { title: knownTitle, author: knownAuthor }),
+          RETRIES,
+        );
+        const foundA = !!(passA.author && passA.author.trim()) || !!(passA.summary && passA.summary.trim());
+        if (foundA) {
+          info = passA;
+        } else {
+          const passB = await callWithRetry(() => aiManager.fillBookInfo(rawText, db, { title: knownTitle }), RETRIES);
+          info = passB;
+          fillStatus = authorMatchDecision(knownAuthor, passB.author ?? '');
+        }
+      } else {
+        info = await callWithRetry(() => aiManager.fillBookInfo(rawText, db, { title: knownTitle }), RETRIES);
+      }
+
+      if (fillStatus === 'failed') {
+        db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
+        result.failed.push({ book_id: b.id, file_path: b.file_path, error: 'author mismatch (AI 查到的作者与文件名作者不一致)' });
+        return; // skip field writes; finally still stamps version
+      }
 
       const current = db.prepare('SELECT title, author, summary, category, cover_url, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
         | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; manually_edited_fields?: string }
@@ -139,8 +177,10 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         }
       }
 
+      db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(b.id);
       result.succeeded.push(b.id);
     } catch (err) {
+      db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
       result.failed.push({ book_id: b.id, file_path: b.file_path, error: (err as Error).message });
     } finally {
       // Stamp even on failure: avoids re-queuing persistently unfillable books
