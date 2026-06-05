@@ -37,9 +37,15 @@
         </el-form-item>
 
         <el-form-item label="扫描范围">
-          <el-checkbox v-model="form.full_rescan">
-            包含已入库书籍重新检测（重建指纹）
-          </el-checkbox>
+          <div class="scan-scope">
+            <div class="scope-note">
+              普通扫描即会：导入新增书籍、移除磁盘上已删除的书、重新检测重复——
+              不重读已有文件，速度快。直接「开始扫描」即可。
+            </div>
+            <el-checkbox v-model="form.full_rescan">
+              重建指纹（重读全部已入库文件，较慢；仅在怀疑重复/乱码判定有误时才需要）
+            </el-checkbox>
+          </div>
         </el-form-item>
       </el-form>
 
@@ -156,4 +162,6 @@ async function onResetAll(): Promise<void> {
 }
 .reset-row { display: flex; gap: 8px; margin-top: 10px; }
 .reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.scan-scope { display: flex; flex-direction: column; gap: 8px; }
+.scope-note { font-size: 12px; color: var(--text-2); line-height: 1.6; }
 </style>
