@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
+import { fetchAndSaveCover } from '../../src/utils/cover';
 
 // ── mock out modules that have side-effects or need real infra ──────────────
 
@@ -208,6 +209,22 @@ describe('batchFill two-pass', () => {
       | { summary: string | null }
       | undefined;
     expect(row?.summary).toBeNull();
+  });
+
+  it('writes the fetched cover_url to the books row when a cover is found', async () => {
+    insBook(_testDb!, { id: 'cv1', title: '有封面的书', author: '某作者', file_path: '/nonexistent/cv1.txt' });
+
+    fillSpy.mockResolvedValueOnce({ author: '某作者', summary: '简介…' });
+    (fetchAndSaveCover as jest.Mock).mockResolvedValueOnce('/covers/cv1.jpg');
+
+    await batchFill({
+      books: [{ id: 'cv1', file_path: '/nonexistent/cv1.txt', file_format: 'txt', title: '有封面的书', author: '某作者' }],
+    });
+
+    const row = _testDb!.prepare('SELECT cover_url FROM books WHERE id = ?').get('cv1') as
+      | { cover_url: string | null }
+      | undefined;
+    expect(row?.cover_url).toBe('/covers/cv1.jpg');
   });
 
   it('Pass A empty → Pass B author match → filled (two calls, summary written)', async () => {

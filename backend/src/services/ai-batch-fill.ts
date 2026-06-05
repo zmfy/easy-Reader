@@ -174,6 +174,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         try {
           const coverUrl = await fetchAndSaveCover(titleForCover, b.id);
           if (coverUrl) {
+            db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
             result.covers_fetched++;
             writeAudit({
               user_id: userId,
