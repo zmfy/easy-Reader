@@ -21,10 +21,10 @@
         <div class="header-actions">
           <el-input
             v-model="searchQuery"
-            placeholder="搜索书名、作者..."
+            placeholder="搜索书名/作者；输入「重复」「ai填充」「填充失败」"
             :prefix-icon="Search"
             clearable
-            style="width: 240px"
+            style="width: 340px"
             @input="debouncedSearch"
           />
           <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="fetchBooks">
@@ -33,37 +33,11 @@
           <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
             <el-option label="入库时间（最新）" value="imported_at" />
             <el-option label="书名（A→Z）" value="title" />
-            <el-option label="网络评分（待上线）" value="rating" disabled />
+            <el-option label="网络评分（高→低）" value="rating" />
           </el-select>
-          <el-select
-            v-if="authStore.isAdmin"
-            v-model="aiFillFilter"
-            style="width: 140px"
-            @change="fetchBooks"
-          >
-            <el-option label="AI填充：全部" value="all" />
-            <el-option label="已AI填充" value="filled" />
-            <el-option label="填充失败" value="failed" />
-            <el-option label="未尝试填充" value="none" />
-          </el-select>
-          <el-switch
-            v-if="authStore.isAdmin"
-            v-model="includeDirty"
-            inline-prompt
-            active-text="显示脏数据"
-            inactive-text="仅正常"
-            @change="fetchBooks"
-          />
           <el-button v-if="authStore.isAdmin" type="primary" :loading="scanStore.isRunning" @click="handleScan">
             <el-icon><Refresh /></el-icon>
             扫描导入
-          </el-button>
-          <el-button v-if="authStore.isAdmin" :loading="scanStore.isRunning" @click="showFillDialog = true">
-            <el-icon><MagicStick /></el-icon>
-            批量 AI 填充
-          </el-button>
-          <el-button v-if="authStore.isAdmin" @click="$router.push('/library/problems')">
-            问题书籍管理
           </el-button>
         </div>
       </div>
@@ -109,28 +83,13 @@
 
       <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
 
-      <el-dialog v-model="showFillDialog" title="批量 AI 填充" width="460px">
-        <p>对书库中<strong>缺少作者/简介且尚未填充</strong>的书批量调用 AI 补全（作者、简介、分类、标签、封面）。</p>
-        <el-checkbox v-model="fillForce">强制重填（忽略已填充记录，对全库重跑，会消耗更多 token）</el-checkbox>
-        <div v-if="fillEstimate" class="fill-estimate">
-          预计调用 <strong>{{ fillEstimate.total }}</strong> 次 ·
-          当前 AI <strong>{{ fillEstimate.active_plugin ?? '未配置' }}</strong>
-        </div>
-        <div style="margin-top: 12px">
-          <el-button size="small" @click="onResetFailedFills">重置「填充失败」记录（下次重试）</el-button>
-        </div>
-        <template #footer>
-          <el-button @click="showFillDialog = false">取消</el-button>
-          <el-button type="primary" :loading="scanStore.isRunning" @click="onStartFill">开始填充</el-button>
-        </template>
-      </el-dialog>
     </div>
   </DefaultLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { Search, Refresh, MagicStick } from '@element-plus/icons-vue'
+import { Search, Refresh } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -140,7 +99,7 @@ import { libraryApi } from '@/api/library'
 import { scanBatchesApi } from '@/api/scan-batches'
 import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
-import type { Book, ScanStartOptions, ScanBatch, CostEstimate } from '@/types'
+import type { Book, ScanStartOptions, ScanBatch } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -160,10 +119,6 @@ async function refreshPendingBatch(): Promise<void> {
 }
 
 const books = ref<Book[]>([])
-const includeDirty = ref(route.query.dirty === '1')
-const aiFillFilter = ref<'all' | 'filled' | 'failed' | 'none'>(
-  (route.query.ai_fill as 'all' | 'filled' | 'failed' | 'none') || 'all',
-)
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
@@ -191,27 +146,34 @@ function syncQuery() {
   if (searchQuery.value) query.search = searchQuery.value
   if (selectedCategory.value) query.category = selectedCategory.value
   if (sortBy.value !== 'imported_at') query.sort = sortBy.value
-  if (aiFillFilter.value !== 'all') query.ai_fill = aiFillFilter.value
-  if (includeDirty.value) query.dirty = '1'
   router.replace({ query })
+}
+
+type ListParams = Parameters<typeof libraryApi.listAdmin>[0]
+
+function resolveListParams(): ListParams {
+  const raw = searchQuery.value.trim()
+  const base: ListParams = {
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    category: selectedCategory.value || undefined,
+    sortBy: sortBy.value,
+    sortOrder: sortOrderFor(sortBy.value),
+    series_grouped: false,
+  }
+  if (authStore.isAdmin) {
+    if (raw === '重复') return { ...base, status: 'duplicate_groups' }
+    if (raw === 'ai填充' || raw === '已填充') return { ...base, ai_fill: 'filled' }
+    if (raw === '填充失败') return { ...base, ai_fill: 'failed' }
+  }
+  return { ...base, search: raw || undefined }
 }
 
 async function fetchBooks() {
   loading.value = true
   syncQuery()
   try {
-    const safeSortBy = sortBy.value === 'rating' ? 'imported_at' : sortBy.value
-    const booksResp = await libraryApi.listAdmin({
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      search: searchQuery.value || undefined,
-      category: selectedCategory.value || undefined,
-      sortBy: safeSortBy,
-      sortOrder: sortOrderFor(safeSortBy),
-      include_dirty: includeDirty.value,
-      ai_fill: aiFillFilter.value,
-      series_grouped: false,
-    })
+    const booksResp = await libraryApi.listAdmin(resolveListParams())
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
   } finally {
@@ -318,51 +280,6 @@ async function onScanConfirm(options: ScanStartOptions): Promise<void> {
   }
 }
 
-// 批量 AI 填充对话框
-const showFillDialog = ref(false)
-const fillForce = ref(false)
-const fillEstimate = ref<CostEstimate | null>(null)
-
-async function refreshFillEstimate() {
-  try {
-    const resp = await libraryApi.estimate({ ai_fill: true, full_rescan: false, force: fillForce.value })
-    fillEstimate.value = resp.data.data ?? null
-  } catch { fillEstimate.value = null }
-}
-watch(showFillDialog, (open) => { if (open) void refreshFillEstimate() })
-watch(fillForce, () => { if (showFillDialog.value) void refreshFillEstimate() })
-
-async function onStartFill() {
-  try {
-    await libraryApi.aiFillBatch(fillForce.value)
-    // Mirror the same mechanism used after libraryApi.scan(): refresh() picks up
-    // the newly created active task, then startPolling() keeps it updated.
-    await scanStore.refresh()
-    scanStore.startPolling()
-    showFillDialog.value = false
-    ElMessage.success('已开始批量填充，进度见顶部进度条')
-  } catch (e) {
-    ElMessage.error('启动失败：' + ((e as Error)?.message ?? '未知错误'))
-  }
-}
-
-async function onResetFailedFills() {
-  try {
-    await ElMessageBox.confirm(
-      '将把所有「填充失败」的书重置为未尝试，下次普通 AI 填充会自动重试它们。继续？',
-      '重置填充失败记录',
-      { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' },
-    )
-  } catch { return }
-  try {
-    const resp = await libraryApi.aiFillResetFailed()
-    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的失败记录`)
-    await fetchBooks()
-  } catch {
-    ElMessage.error('重置失败')
-  }
-}
-
 // 任务完成后刷新书库与 pending batch
 watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
   if (oldStatus === 'running' && newStatus !== 'running') {
@@ -458,11 +375,5 @@ onMounted(refreshPendingBatch)
 
 .batch-alert {
   margin-bottom: 20px;
-}
-
-.fill-estimate {
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--text-2);
 }
 </style>
