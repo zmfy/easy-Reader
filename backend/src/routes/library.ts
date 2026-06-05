@@ -28,7 +28,7 @@ import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-look
 
 const router = Router();
 
-const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category'];
+const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category', 'rating'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
