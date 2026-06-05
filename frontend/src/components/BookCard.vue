@@ -23,6 +23,7 @@
       <el-tag v-if="badge" :type="badge.type" size="small" class="status-badge">
         {{ badge.label }}
       </el-tag>
+      <span v-if="book.rating" class="rating-badge">★ {{ book.rating.toFixed(1) }}</span>
       <el-tag v-if="aiFillBadge" :type="aiFillBadge.type" size="small" class="ai-fill-badge">
         {{ aiFillBadge.label }}
       </el-tag>
@@ -290,5 +291,18 @@ const placeholderGradient = computed(() => {
   bottom: 6px;
   right: 6px;
   z-index: 2;
+}
+
+.rating-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd666;
+  background: rgba(11, 16, 32, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 </style>

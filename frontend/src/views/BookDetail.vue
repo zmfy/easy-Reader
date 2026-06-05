@@ -111,6 +111,10 @@
             </div>
 
             <div class="info-meta">
+              <div v-if="book.rating" class="meta-item">
+                <span class="meta-label">豆瓣评分</span>
+                <span class="meta-value">★ {{ book.rating.toFixed(1) }}</span>
+              </div>
               <div v-if="book.publish_date" class="meta-item">
                 <span class="meta-label">发布时间</span>
                 <span class="meta-value">{{ book.publish_date }}</span>
