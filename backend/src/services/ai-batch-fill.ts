@@ -39,10 +39,10 @@ export interface BatchFillResult {
 export interface FillCandidate { id: string; file_path: string; file_format: string; title: string; author?: string; }
 
 /**
- * Books eligible for AI fill. Normal mode: missing author/summary AND not yet
- * attempted at the current AI_FILL_VERSION. Force: every normal non-duplicate
- * book regardless of version/fields (manually-edited fields stay protected
- * inside batchFill).
+ * Books eligible for AI fill. Normal mode: any normal non-duplicate book not yet
+ * filled at the current AI_FILL_VERSION (version-driven; fields irrelevant, so
+ * resetting the version stamp re-queues a book). Force: every normal non-duplicate
+ * book regardless of version. Manually-edited fields stay protected inside batchFill.
  */
 export function selectFillCandidates(db: Database.Database, force: boolean): FillCandidate[] {
   if (force) {
