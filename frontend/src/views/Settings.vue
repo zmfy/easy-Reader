@@ -103,6 +103,41 @@
             <div class="changelog-list">
               <div class="changelog-item">
                 <div class="changelog-main">
+                  <span class="changelog-tag tag-lib">书库</span>
+                  <span class="changelog-text">扫描导入重做：可选「暂存审核 / 自动写入」，自动识别重复书籍并分组、自动清理磁盘上已删除的书、从文件名提取作者；普通扫描即为快速增量同步，无需重建指纹</span>
+                </div>
+                <span class="changelog-date">2026-06-05</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-ai">AI</span>
+                  <span class="changelog-text">新增 AI 批量填充书籍信息（作者、简介、分类、推荐标签、封面），支持失败重试与「重置全部填充」重跑；AI 填充并入扫描流程</span>
+                </div>
+                <span class="changelog-date">2026-06-05</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-ai">AI</span>
+                  <span class="changelog-text">新增豆瓣评分：AI 填充时自动抓取，书库封面角标与书籍详情页显示评分，并支持按评分排序</span>
+                </div>
+                <span class="changelog-date">2026-06-05</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-lib">书库</span>
+                  <span class="changelog-text">搜索框支持关键词筛选：输入「重复」查看重复书籍、「ai填充」查看已填充、「填充失败」查看失败；搜索框旁新增「?」用法说明</span>
+                </div>
+                <span class="changelog-date">2026-06-05</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
+                  <span class="changelog-tag tag-ui">界面</span>
+                  <span class="changelog-text">书籍详情页新增推荐标签与「类似作品」（本库已有的可直接跳转），并修复类似作品链接跳转到错误书籍的问题</span>
+                </div>
+                <span class="changelog-date">2026-06-05</span>
+              </div>
+              <div class="changelog-item">
+                <div class="changelog-main">
                   <span class="changelog-tag tag-txt">TXT</span>
                   <span class="changelog-text">修复 UTF-16 编码的 TXT 小说打开后乱码的问题，并将编码自动识别的采样范围扩大至 64KB，提升 GBK/中文文件的识别准确度</span>
                 </div>
