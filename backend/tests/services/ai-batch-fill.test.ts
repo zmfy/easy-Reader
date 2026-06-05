@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError } from '../../src/services/ai-batch-fill';
+import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError, resetAllFills } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
 import { fetchAndSaveCover } from '../../src/utils/cover';
@@ -36,13 +36,13 @@ jest.mock('../../src/services/audit-log', () => ({
 
 // ── shared helpers ──────────────────────────────────────────────────────────
 
-/** Minimal books table used by the pure-function tests (no ai_fill_status). */
+/** Minimal books table used by the pure-function tests. */
 function db(): Database.Database {
   const d = new Database(':memory:');
   d.exec(`CREATE TABLE books (
     id TEXT PRIMARY KEY, title TEXT, author TEXT, summary TEXT,
     file_path TEXT, file_format TEXT, status TEXT, duplicate_of TEXT,
-    ai_fill_version INTEGER
+    ai_fill_version INTEGER, ai_fill_status TEXT
   );`);
   return d;
 }
@@ -372,5 +372,19 @@ describe('batchFill rate-limit transient failure', () => {
     // Permanent failure: version IS stamped and status IS 'failed'.
     expect(row?.ai_fill_version).toBe(AI_FILL_VERSION);
     expect(row?.ai_fill_status).toBe('failed');
+  });
+});
+
+describe('resetAllFills', () => {
+  it('clears ai_fill_version and ai_fill_status for all stamped books, returns count', () => {
+    const d = db();
+    ins(d, { id: 'a', title: 'A', file_path: '/a', ai_fill_version: AI_FILL_VERSION });
+    ins(d, { id: 'b', title: 'B', file_path: '/b' });
+    d.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = 'a'").run();
+    const n = resetAllFills(d);
+    const a = d.prepare("SELECT ai_fill_version v, ai_fill_status s FROM books WHERE id='a'").get() as { v: number | null; s: string | null };
+    expect(a.v).toBeNull();
+    expect(a.s).toBeNull();
+    expect(n).toBeGreaterThanOrEqual(1);
   });
 });

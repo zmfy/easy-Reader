@@ -69,6 +69,15 @@ export function stampFillVersion(db: Database.Database, bookId: string): void {
   db.prepare('UPDATE books SET ai_fill_version = ? WHERE id = ?').run(AI_FILL_VERSION, bookId);
 }
 
+/** Clear AI-fill stamps on all books so the next AI-fill scan re-processes them. */
+export function resetAllFills(db: Database.Database): number {
+  const info = db.prepare(
+    `UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL
+     WHERE ai_fill_version IS NOT NULL OR ai_fill_status IS NOT NULL`
+  ).run();
+  return info.changes;
+}
+
 export async function batchFill(input: BatchFillInput): Promise<BatchFillResult> {
   const db = getDb();
   const concRow = db.prepare("SELECT value FROM settings WHERE key = 'ai_fill_concurrency'").get() as { value?: string } | undefined;

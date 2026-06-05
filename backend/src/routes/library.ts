@@ -20,7 +20,7 @@ import {
 import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
-import { markFieldsAsEdited, batchFill, selectFillCandidates } from '../services/ai-batch-fill';
+import { markFieldsAsEdited, batchFill, selectFillCandidates, resetAllFills } from '../services/ai-batch-fill';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
@@ -211,6 +211,12 @@ router.post('/ai-fill-reset-failed', authMiddleware, adminMiddleware, (_req: Req
     "UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL WHERE ai_fill_status = 'failed'"
   ).run();
   successResponse(res, { reset: r.changes }, '已重置填充失败记录');
+});
+
+// POST /api/library/ai-fill-reset-all — admin: clear ALL fill stamps (re-fill everything next scan)
+router.post('/ai-fill-reset-all', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const reset = resetAllFills(getDb());
+  successResponse(res, { reset });
 });
 
 // GET /api/library/scan/tasks/active
