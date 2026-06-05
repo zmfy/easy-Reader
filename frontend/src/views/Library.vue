@@ -19,6 +19,26 @@
           <span class="book-count">{{ pagination.total }} 本</span>
         </div>
         <div class="header-actions">
+          <el-popover placement="bottom-start" :width="340" trigger="click">
+            <template #reference>
+              <el-icon class="search-help" title="搜索帮助"><QuestionFilled /></el-icon>
+            </template>
+            <div class="search-help-pop">
+              <div class="help-title">搜索框用法</div>
+              <ul>
+                <li><strong>书名 / 作者</strong>：直接输入关键词，模糊匹配</li>
+                <li>清空搜索框：显示全部书籍</li>
+                <template v-if="authStore.isAdmin">
+                  <li><strong>重复</strong>：显示所有重复的书（含审核后保留的正常本）</li>
+                  <li><strong>ai填充</strong> / <strong>已填充</strong>：只看已 AI 填充的书</li>
+                  <li><strong>填充失败</strong>：只看 AI 填充失败的书</li>
+                </template>
+              </ul>
+              <div v-if="authStore.isAdmin" class="help-note">
+                「重复 / ai填充 / 填充失败」为精确触发的筛选词，输入其它内容均按书名/作者搜索。
+              </div>
+            </div>
+          </el-popover>
           <el-input
             v-model="searchQuery"
             placeholder="搜索书名/作者；输入「重复」「ai填充」「填充失败」"
@@ -89,7 +109,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, QuestionFilled } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -330,6 +350,32 @@ onMounted(refreshPendingBatch)
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.search-help {
+  font-size: 18px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.search-help:hover { color: var(--accent); }
+
+.search-help-pop .help-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-0);
+}
+.search-help-pop ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+  font-size: 13px;
+}
+.search-help-pop .help-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
 }
 
 .books-grid {
