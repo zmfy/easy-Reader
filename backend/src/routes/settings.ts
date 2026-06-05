@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
-import { aiPlugins } from '../ai/ai-manager';
+import { aiPlugins, isAiConfigured, getActivePluginName } from '../ai/ai-manager';
 import { User } from '../types';
 import nodemailer from 'nodemailer';
 
@@ -59,6 +59,12 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
 router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
   const plugins = aiPlugins.map(p => ({ name: p.name, label: p.label, fields: p.fields, placeholders: p.placeholders || {} }));
   successResponse(res, plugins);
+});
+
+// GET /api/settings/ai-status — whether AI is usable (plugin selected + credential filled)
+router.get('/ai-status', authMiddleware, (_req: Request, res: Response) => {
+  const db = getDb();
+  successResponse(res, { configured: isAiConfigured(db), active_plugin: getActivePluginName(db) });
 });
 
 // GET /api/settings/reader-plugins

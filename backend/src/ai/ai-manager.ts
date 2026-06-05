@@ -28,6 +28,26 @@ function getActivePlugin(db: Database.Database): { plugin: AiPlugin; config: Rec
   return { plugin, config };
 }
 
+/**
+ * Whether AI is usable: an active plugin is selected AND its credential is filled.
+ * Plugins declaring an `apiKey` field require it to be non-empty; otherwise just
+ * requiring a valid selected plugin is enough.
+ */
+export function isAiConfigured(db: Database.Database): boolean {
+  const active = getActivePlugin(db);
+  if (!active) return false;
+  if (active.plugin.fields.includes('apiKey')) {
+    return !!(active.config.apiKey && active.config.apiKey.trim());
+  }
+  return true;
+}
+
+/** Name of the selected AI plugin (the raw `ai_plugin` setting), or null. */
+export function getActivePluginName(db: Database.Database): string | null {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined;
+  return row?.value || null;
+}
+
 export interface AiDedupCandidate {
   index: number;
   title: string;

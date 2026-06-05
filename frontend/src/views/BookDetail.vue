@@ -57,11 +57,12 @@
                   </template>
                   <el-tooltip
                     placement="top"
-                    content="AI 不会覆盖 admin 修改过的字段。想让 AI 重写，请先清空对应字段再保存。"
+                    :content="aiConfigured ? 'AI 不会覆盖 admin 修改过的字段。想让 AI 重写，请先清空对应字段再保存。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
                   >
                     <el-button
                       size="small"
                       :loading="aiFilling"
+                      :disabled="!aiConfigured"
                       @click="handleAiFill"
                     >
                       <el-icon><MagicStick /></el-icon>
@@ -160,6 +161,7 @@ import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
+import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { Book, BookAiMetadata } from '@/types'
 
@@ -175,6 +177,7 @@ const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
+const aiConfigured = ref(true)
 const addingShelf = ref(false)
 
 const editForm = reactive({
@@ -212,6 +215,14 @@ async function fetchBook() {
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
+
+    // Gate the AI-fill button on whether AI is configured (admin-only feature).
+    if (authStore.isAdmin) {
+      try {
+        const s = await settingsApi.getAiStatus()
+        aiConfigured.value = !!s.data.data?.configured
+      } catch { aiConfigured.value = false }
+    }
 
     // Resolve "similar works" titles to in-library book ids so the UI can link
     similarLinks.value = new Map()

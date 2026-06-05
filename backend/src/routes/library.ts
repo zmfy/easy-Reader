@@ -7,7 +7,7 @@ import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, paginatedResponse, errorResponse } from '../utils/response';
 import { Book, ScanOptions } from '../types';
-import { aiManager } from '../ai/ai-manager';
+import { aiManager, isAiConfigured } from '../ai/ai-manager';
 import {
   createScanTask,
   getActiveScanTask,
@@ -177,6 +177,7 @@ const aiFillBatchSchema = z.object({ force: z.boolean().default(false) });
 
 // POST /api/library/ai-fill-batch — admin-triggered batch AI fill over the library
 router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (!isAiConfigured(getDb())) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', '未配置 AI 插件，请先在「AI 插件设置」中配置'); return; }
   const parsed = aiFillBatchSchema.safeParse(req.body ?? {});
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const { force } = parsed.data;
@@ -416,6 +417,7 @@ router.post('/:id/cover-test', authMiddleware, adminMiddleware, async (req: Requ
 // POST /api/library/:id/ai-fill
 router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', '未配置 AI 插件，请先在「AI 插件设置」中配置'); return; }
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
   if (!book) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');

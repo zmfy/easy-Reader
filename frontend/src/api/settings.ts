@@ -14,6 +14,9 @@ export const settingsApi = {
   getAiPlugins: () =>
     http.get<ApiResponse<Array<{ name: string; label: string; fields: string[] }>>>('/settings/ai-plugins'),
 
+  getAiStatus: () =>
+    http.get<ApiResponse<{ configured: boolean; active_plugin: string | null }>>('/settings/ai-status'),
+
   getReaderPlugins: () =>
     http.get<ApiResponse<Array<{ format: string; label: string; description: string }>>>('/settings/reader-plugins'),
 
