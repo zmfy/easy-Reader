@@ -52,99 +52,69 @@ interface DoubanSuggest {
   year?: string;
 }
 
-function saveDebug(bookId: string, info: Record<string, unknown>) {
+/** One suggest request; returns the best book item (prefers one with a real cover), or undefined. */
+export async function doubanSuggest(title: string): Promise<DoubanSuggest | undefined> {
   try {
-    fs.writeFileSync(path.join(COVERS_DIR, `${bookId}.json`), JSON.stringify(info, null, 2));
-  } catch (e) {
-    console.error('[cover] 写调试文件失败:', e);
-  }
-}
-
-export async function fetchAndSaveCover(title: string, bookId: string): Promise<string | undefined> {
-  const debug: Record<string, unknown> = {
-    title,
-    bookId,
-    coversDir: COVERS_DIR,
-    startedAt: new Date().toISOString(),
-  };
-
-  // 第一次写入，确认函数被调用且目录可写
-  saveDebug(bookId, debug);
-
-  try {
-    // Step 1: 豆瓣 suggest API
     const apiUrl = `https://book.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`;
-    debug.apiUrl = apiUrl;
-    saveDebug(bookId, debug);
-
     const buf = await request(apiUrl, {
       'Accept': 'application/json, text/javascript, */*',
       'Referer': 'https://book.douban.com/',
     });
-
-    const rawText = buf.toString('utf-8');
-    debug.rawResponse = rawText;
-    debug.rawLength = rawText.length;
-    saveDebug(bookId, debug);
-
-    let suggestions: DoubanSuggest[] = [];
-    try {
-      suggestions = JSON.parse(rawText);
-    } catch (e) {
-      debug.parseError = String(e);
-      saveDebug(bookId, debug);
-      return undefined;
-    }
-
-    debug.suggestionCount = Array.isArray(suggestions) ? suggestions.length : 'not array';
-    debug.suggestions = suggestions;
-    saveDebug(bookId, debug);
-
+    const suggestions = JSON.parse(buf.toString('utf-8')) as DoubanSuggest[];
     if (!Array.isArray(suggestions) || suggestions.length === 0) return undefined;
+    return suggestions.find(s => s.pic && !s.pic.includes('book-default')) ?? suggestions[0];
+  } catch {
+    return undefined;
+  }
+}
 
-    const item = suggestions.find(s => s.pic && !s.pic.includes('book-default'));
-    debug.selectedItem = item ?? null;
-    saveDebug(bookId, debug);
-
-    if (!item?.pic) return undefined;
-
-    // Step 2: 换大图 URL
+/** Download the cover image for an already-fetched suggest item. Returns /covers/… or undefined. */
+export async function downloadCover(item: DoubanSuggest, bookId: string): Promise<string | undefined> {
+  try {
+    if (!item.pic || item.pic.includes('book-default')) return undefined;
     const imgUrl = item.pic
       .replace('/spic/', '/lpic/')
       .replace('/view/subject/s/', '/view/subject/l/')
       .replace('/view/subject/m/', '/view/subject/l/');
-    debug.imgUrl = imgUrl;
-    saveDebug(bookId, debug);
-
-    // Step 3: 下载图片
     const imgBuf = await request(imgUrl, {
       'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
       'Referer': 'https://book.douban.com/',
     });
-
-    debug.downloadedBytes = imgBuf.length;
-    saveDebug(bookId, debug);
-
-    if (imgBuf.length < 1024) {
-      debug.downloadError = '内容过小';
-      debug.downloadedContent = imgBuf.toString('utf-8').slice(0, 300);
-      saveDebug(bookId, debug);
-      return undefined;
-    }
-
+    if (imgBuf.length < 1024) return undefined;
     const ext = imgUrl.match(/\.(jpg|jpeg|png|webp)/i)?.[1] ?? 'jpg';
     const filename = `${bookId}.${ext}`;
     fs.writeFileSync(path.join(COVERS_DIR, filename), imgBuf);
-
-    debug.result = `/covers/${filename}`;
-    saveDebug(bookId, debug);
-
     return `/covers/${filename}`;
-
-  } catch (e) {
-    debug.fatalError = String(e);
-    debug.errorStack = (e instanceof Error) ? e.stack : undefined;
-    saveDebug(bookId, debug);
+  } catch {
     return undefined;
   }
+}
+
+/** Pure: extract the douban rating number from a subject page's HTML. */
+export function parseDoubanRating(html: string): number | undefined {
+  const m = html.match(/rating_num"[^>]*>\s*([\d.]+)\s*</);
+  if (!m) return undefined;
+  const n = parseFloat(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Fetch + parse the douban rating from a suggest item's subject page. */
+export async function fetchRating(item: DoubanSuggest): Promise<number | undefined> {
+  try {
+    if (!item.url) return undefined;
+    const buf = await request(item.url, {
+      'Accept': 'text/html,application/xhtml+xml',
+      'Referer': 'https://book.douban.com/',
+    });
+    return parseDoubanRating(buf.toString('utf-8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Backwards-compatible wrapper used by the single-book cover-test endpoint. */
+export async function fetchAndSaveCover(title: string, bookId: string): Promise<string | undefined> {
+  const item = await doubanSuggest(title);
+  if (!item) return undefined;
+  return downloadCover(item, bookId);
 }
