@@ -212,12 +212,6 @@
               <div class="changelog-item changelog-item--plan">
                 <div class="changelog-main">
                   <span class="changelog-tag tag-plan">计划</span>
-                  <span class="changelog-text">书库扫描时对重复书籍进行检测与处理</span>
-                </div>
-              </div>
-              <div class="changelog-item changelog-item--plan">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-plan">计划</span>
                   <span class="changelog-text">修复瀑布流模式下书签定位不准确的问题</span>
                 </div>
               </div>
