@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError, resetAllFills } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
-import { fetchAndSaveCover } from '../../src/utils/cover';
+import { doubanSuggest, downloadCover, fetchRating } from '../../src/utils/cover';
 
 // ── mock out modules that have side-effects or need real infra ──────────────
 
@@ -19,9 +19,10 @@ jest.mock('../../src/db', () => ({
   },
 }));
 
-// No-op cover fetch – avoids real network calls.
 jest.mock('../../src/utils/cover', () => ({
-  fetchAndSaveCover: jest.fn().mockResolvedValue(undefined),
+  doubanSuggest: jest.fn().mockResolvedValue(undefined),
+  downloadCover: jest.fn().mockResolvedValue(undefined),
+  fetchRating: jest.fn().mockResolvedValue(undefined),
 }));
 
 // No-op scan-task progress – avoids needing scan_tasks table.
@@ -58,6 +59,7 @@ function makeIntegrationDb(): Database.Database {
       summary TEXT,
       category TEXT,
       cover_url TEXT,
+      rating REAL,
       file_path TEXT NOT NULL,
       file_format TEXT NOT NULL,
       status TEXT DEFAULT 'normal',
@@ -86,13 +88,13 @@ const ins = (d: Database.Database, o: Record<string, unknown>) =>
 /** Insert a book row into the integration DB (includes ai_fill_status). */
 function insBook(d: Database.Database, o: Record<string, unknown>): void {
   d.prepare(`INSERT INTO books
-    (id, title, author, summary, category, cover_url, file_path, file_format,
+    (id, title, author, summary, category, cover_url, rating, file_path, file_format,
      status, duplicate_of, ai_fill_version, ai_fill_status, manually_edited_fields)
     VALUES
-    (@id, @title, @author, @summary, @category, @cover_url, @file_path, @file_format,
+    (@id, @title, @author, @summary, @category, @cover_url, @rating, @file_path, @file_format,
      @status, @duplicate_of, @ai_fill_version, @ai_fill_status, @manually_edited_fields)`)
     .run({
-      author: null, summary: null, category: null, cover_url: null,
+      author: null, summary: null, category: null, cover_url: null, rating: null,
       status: 'normal', duplicate_of: null, ai_fill_version: null,
       ai_fill_status: null, manually_edited_fields: null,
       file_format: 'txt',
@@ -225,20 +227,18 @@ describe('batchFill two-pass', () => {
     expect(row?.summary).toBeNull();
   });
 
-  it('writes the fetched cover_url to the books row when a cover is found', async () => {
+  it('writes cover_url and rating fetched from douban during fill', async () => {
     insBook(_testDb!, { id: 'cv1', title: '有封面的书', author: '某作者', file_path: '/nonexistent/cv1.txt' });
-
     fillSpy.mockResolvedValueOnce({ author: '某作者', summary: '简介…' });
-    (fetchAndSaveCover as jest.Mock).mockResolvedValueOnce('/covers/cv1.jpg');
+    (doubanSuggest as jest.Mock).mockResolvedValueOnce({ url: 'https://book.douban.com/subject/1/', pic: 'x/spic/y.jpg' });
+    (downloadCover as jest.Mock).mockResolvedValueOnce('/covers/cv1.jpg');
+    (fetchRating as jest.Mock).mockResolvedValueOnce(8.5);
 
-    await batchFill({
-      books: [{ id: 'cv1', file_path: '/nonexistent/cv1.txt', file_format: 'txt', title: '有封面的书', author: '某作者' }],
-    });
+    await batchFill({ books: [{ id: 'cv1', file_path: '/nonexistent/cv1.txt', file_format: 'txt', title: '有封面的书', author: '某作者' }] });
 
-    const row = _testDb!.prepare('SELECT cover_url FROM books WHERE id = ?').get('cv1') as
-      | { cover_url: string | null }
-      | undefined;
-    expect(row?.cover_url).toBe('/covers/cv1.jpg');
+    const row = _testDb!.prepare('SELECT cover_url, rating FROM books WHERE id = ?').get('cv1') as { cover_url: string | null; rating: number | null };
+    expect(row.cover_url).toBe('/covers/cv1.jpg');
+    expect(row.rating).toBe(8.5);
   });
 
   it('Pass A empty → Pass B author match → filled (two calls, summary written)', async () => {

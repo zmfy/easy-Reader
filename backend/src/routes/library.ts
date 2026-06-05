@@ -18,7 +18,7 @@ import {
   finishScanTask,
 } from '../services/scan-task';
 import { runScanTask } from '../services/scan-walker';
-import { fetchAndSaveCover } from '../utils/cover';
+import { fetchAndSaveCover, doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
 import { markFieldsAsEdited, batchFill, selectFillCandidates, resetAllFills } from '../services/ai-batch-fill';
 import { selectDuplicateGroupBooks } from '../services/duplicate-view';
@@ -473,14 +473,20 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
       : isFinishedByFilename ? 1 : null;
     if (isFinished !== null) { updates.push('is_finished = ?'); values.push(isFinished); }
 
-    // 若书籍尚无封面，从豆瓣下载封面到本地
-    if (!book.cover_url) {
+    // 封面 + 评分:共用一次豆瓣 suggest
+    if (!book.cover_url || book.rating == null) {
       const coverTitle = (info.title as string | undefined) || cleanedTitle;
-      const coverUrl = await fetchAndSaveCover(coverTitle, req.params.id).catch((e) => {
-        console.error('[ai-fill] 封面获取失败:', e);
-        return undefined;
-      });
-      if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+      const item = await doubanSuggest(coverTitle).catch(() => undefined);
+      if (item) {
+        if (!book.cover_url) {
+          const coverUrl = await downloadCover(item, req.params.id).catch(() => undefined);
+          if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+        }
+        if (book.rating == null) {
+          const rating = await fetchRating(item).catch(() => undefined);
+          if (rating != null) { updates.push('rating = ?'); values.push(rating); }
+        }
+      }
     }
 
     if (updates.length > 0) {

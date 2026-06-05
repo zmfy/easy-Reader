@@ -6,7 +6,7 @@ import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { setScanProgress } from './scan-task';
 import { writeAudit } from './audit-log';
-import { fetchAndSaveCover } from '../utils/cover';
+import { doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
 import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
@@ -126,8 +126,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         return; // skip field writes; finally still stamps version (permanent failure)
       }
 
-      const current = db.prepare('SELECT title, author, summary, category, cover_url, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
-        | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; manually_edited_fields?: string }
+      const current = db.prepare('SELECT title, author, summary, category, cover_url, rating, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
+        | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; rating?: number | null; manually_edited_fields?: string }
         | undefined;
       if (!current) {
         result.failed.push({ book_id: b.id, file_path: b.file_path, error: 'book not found' });
@@ -176,24 +176,35 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         });
       }
 
-      // Cover fetch: only when no existing cover + we have a title to search with.
+      // Cover + rating from douban: one suggest request shared by both, best-effort.
       const titleForCover = ((info.title && info.title.trim()) || knownTitle || filledFields.title || current.title || '').trim();
-      if (!current.cover_url && titleForCover.length > 0) {
+      const needCover = !current.cover_url;
+      const needRating = current.rating == null;
+      if ((needCover || needRating) && titleForCover.length > 0) {
         try {
-          const coverUrl = await fetchAndSaveCover(titleForCover, b.id);
-          if (coverUrl) {
-            db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
-            result.covers_fetched++;
-            writeAudit({
-              user_id: userId,
-              action: 'ai_fetch_cover',
-              resource_id: b.id,
-              file_path: b.file_path,
-              details: { cover_url: coverUrl, title_used: titleForCover },
-            });
+          const item = await doubanSuggest(titleForCover);
+          if (item) {
+            if (needCover) {
+              const coverUrl = await downloadCover(item, b.id);
+              if (coverUrl) {
+                db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
+                result.covers_fetched++;
+                writeAudit({
+                  user_id: userId,
+                  action: 'ai_fetch_cover',
+                  resource_id: b.id,
+                  file_path: b.file_path,
+                  details: { cover_url: coverUrl, title_used: titleForCover },
+                });
+              }
+            }
+            if (needRating) {
+              const rating = await fetchRating(item);
+              if (rating != null) db.prepare('UPDATE books SET rating = ? WHERE id = ?').run(rating, b.id);
+            }
           }
         } catch {
-          // cover fetch is best-effort; don't fail the book
+          // best-effort; never fail the book on cover/rating
         }
       }
 

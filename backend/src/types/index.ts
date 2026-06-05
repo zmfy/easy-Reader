@@ -31,6 +31,7 @@ export interface Book {
   first_chapter_hash?: string;
   encoding_detected?: string;
   manually_edited_fields?: string; // JSON array string
+  rating?: number | null;
 }
 
 export interface ShelfItem {
