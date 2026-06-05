@@ -101,10 +101,10 @@ function insBook(d: Database.Database, o: Record<string, unknown>): void {
 }
 
 describe('selectFillCandidates', () => {
-  it('includes books missing author/summary and not yet filled at current version', () => {
+  it('includes books not yet filled at current version', () => {
     const d = db();
     ins(d, { id: 'a', title: 'A', file_path: '/a' });
-    ins(d, { id: 'b', title: 'B', author: '作者', summary: '简介', file_path: '/b' });
+    ins(d, { id: 'b', title: 'B', author: '作者', summary: '简介', file_path: '/b', ai_fill_version: AI_FILL_VERSION });
     ins(d, { id: 'c', title: 'C', file_path: '/c', ai_fill_version: AI_FILL_VERSION });
     const ids = selectFillCandidates(d, false).map(r => r.id);
     expect(ids).toEqual(['a']);
@@ -124,6 +124,20 @@ describe('selectFillCandidates', () => {
     ins(d, { id: 'd', title: 'D', file_path: '/d', ai_fill_version: AI_FILL_VERSION - 1 });
     const ids = selectFillCandidates(d, false).map(r => r.id);
     expect(ids).toContain('d');
+  });
+
+  it('version-driven: includes a fully-filled book whose ai_fill_version is NULL', () => {
+    const d = db();
+    ins(d, { id: 'f', title: 'F', author: '作者', summary: '简介', file_path: '/f' });
+    const ids = selectFillCandidates(d, false).map(r => r.id);
+    expect(ids).toContain('f');
+  });
+
+  it('version-driven: excludes a book stamped at the current version', () => {
+    const d = db();
+    ins(d, { id: 'g', title: 'G', file_path: '/g', ai_fill_version: AI_FILL_VERSION });
+    const ids = selectFillCandidates(d, false).map(r => r.id);
+    expect(ids).not.toContain('g');
   });
 });
 

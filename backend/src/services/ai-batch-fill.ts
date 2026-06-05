@@ -54,7 +54,6 @@ export function selectFillCandidates(db: Database.Database, force: boolean): Fil
   return db.prepare(
     `SELECT id, file_path, file_format, title, author FROM books
      WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')
-       AND ((author IS NULL OR author = '') OR (summary IS NULL OR summary = ''))
        AND (ai_fill_version IS NULL OR ai_fill_version < ?)`
   ).all(AI_FILL_VERSION) as FillCandidate[];
 }
