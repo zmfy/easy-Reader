@@ -21,6 +21,7 @@ import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
 import { markFieldsAsEdited, batchFill, selectFillCandidates, resetAllFills } from '../services/ai-batch-fill';
+import { selectDuplicateGroupBooks } from '../services/duplicate-view';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
@@ -50,6 +51,13 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
   const db = getDb();
+
+  if (statusFilter === 'duplicate_groups') {
+    const { rows, total } = selectDuplicateGroupBooks(db, pageSize, (page - 1) * pageSize);
+    paginatedResponse(res, rows as unknown as Book[], page, pageSize, total);
+    return;
+  }
+
   let whereClause = 'WHERE 1=1';
   const params: unknown[] = [];
 
