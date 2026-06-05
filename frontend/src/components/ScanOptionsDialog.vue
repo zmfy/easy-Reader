@@ -39,12 +39,10 @@
         <el-form-item label="扫描范围">
           <div class="scan-scope">
             <div class="scope-note">
-              普通扫描即会：导入新增书籍、移除磁盘上已删除的书、重新检测重复——
-              不重读已有文件，速度快。直接「开始扫描」即可。
+              普通扫描即会：导入新增书籍、移除磁盘上已删除的书、重新检测重复——不重读已有文件，速度快。直接「开始扫描」即可。
             </div>
-            <el-checkbox v-model="form.full_rescan">
-              重建指纹（重读全部已入库文件，较慢；仅在怀疑重复/乱码判定有误时才需要）
-            </el-checkbox>
+            <el-checkbox v-model="form.full_rescan">重建指纹</el-checkbox>
+            <div class="scope-note">重读全部已入库文件，较慢；仅在怀疑重复 / 乱码判定有误时才需要。</div>
           </div>
         </el-form-item>
       </el-form>

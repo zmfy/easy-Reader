@@ -19,7 +19,7 @@
           <span class="book-count">{{ pagination.total }} 本</span>
         </div>
         <div class="header-actions">
-          <el-popover placement="bottom-start" :width="340" trigger="click">
+          <el-popover placement="bottom-start" :width="460" trigger="click">
             <template #reference>
               <el-icon class="search-help" title="搜索帮助"><QuestionFilled /></el-icon>
             </template>
