@@ -28,6 +28,11 @@
               当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
               （{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
             </div>
+            <div class="reset-row">
+              <el-button size="small" @click="onResetFailed">重置「填充失败」记录</el-button>
+              <el-button size="small" type="warning" plain @click="onResetAll">重置全部填充记录</el-button>
+            </div>
+            <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍</div>
           </div>
         </el-form-item>
 
@@ -56,6 +61,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ScanStartOptions, CostEstimate } from '@/types'
 import { libraryApi } from '@/api/library'
 import CostWarningDialog from './CostWarningDialog.vue'
@@ -115,6 +121,26 @@ function emitConfirm(): void {
   emit('confirm', { ...form })
   visible.value = false
 }
+
+async function onResetFailed(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('将把所有「填充失败」的书重置为未尝试,下次带 AI 填充的扫描会自动重试。继续?', '重置填充失败', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+  } catch { return }
+  try {
+    const resp = await libraryApi.aiFillResetFailed()
+    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的失败记录`)
+  } catch { ElMessage.error('重置失败') }
+}
+
+async function onResetAll(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败)。下次带 AI 填充的扫描会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+  } catch { return }
+  try {
+    const resp = await libraryApi.aiFillResetAll()
+    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的填充记录`)
+  } catch { ElMessage.error('重置失败') }
+}
 </script>
 
 <style scoped>
@@ -128,4 +154,6 @@ function emitConfirm(): void {
   background: var(--el-color-info-light-9);
   border-radius: 4px;
 }
+.reset-row { display: flex; gap: 8px; margin-top: 10px; }
+.reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
 </style>
