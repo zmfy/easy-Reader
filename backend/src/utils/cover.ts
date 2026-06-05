@@ -92,7 +92,9 @@ export async function downloadCover(item: DoubanSuggest, bookId: string): Promis
 
 /** Pure: extract the douban rating number from a subject page's HTML. */
 export function parseDoubanRating(html: string): number | undefined {
-  const m = html.match(/rating_num"[^>]*>\s*([\d.]+)\s*</);
+  // Live markup is `class="ll rating_num " property="v:average"> 8.9 <` — note the
+  // space before the closing quote, so don't require a quote right after rating_num.
+  const m = html.match(/rating_num[^>]*>\s*([\d.]+)\s*</);
   if (!m) return undefined;
   const n = parseFloat(m[1]);
   return Number.isFinite(n) && n > 0 ? n : undefined;

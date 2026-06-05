@@ -5,6 +5,11 @@ describe('parseDoubanRating', () => {
     const html = '<div><strong class="ll rating_num" property="v:average"> 8.5 </strong></div>';
     expect(parseDoubanRating(html)).toBe(8.5);
   });
+  it('extracts rating from real douban markup (space in class attr)', () => {
+    // Live douban renders: <strong class="ll rating_num " property="v:average"> 8.9 </strong>
+    const html = '<span typeof="v:Rating">\n  <strong class="ll rating_num " property="v:average"> 8.9 </strong>';
+    expect(parseDoubanRating(html)).toBe(8.9);
+  });
   it('returns undefined when no rating present', () => {
     expect(parseDoubanRating('<div class="rating_num"></div>')).toBeUndefined();
     expect(parseDoubanRating('no rating here')).toBeUndefined();
