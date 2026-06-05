@@ -43,8 +43,9 @@ export function lookupKey(title: string): string {
  * ("《盗墓笔记》作者：南派三叔").
  *
  * When several library books share the same key, the best match is picked by
- * score: exact-title + same-author wins, then same-author, then an exact title,
- * with chapter count as a completeness tiebreaker.
+ * score: exact-title + same-author wins, then exact-title with an unknown
+ * library author, then same-author (non-exact, e.g. base→volume), then an
+ * exact title whose author conflicts, with chapter count as a tiebreaker.
  */
 export function matchTitlesToBooks(
   queries: TitleQuery[],
@@ -78,12 +79,18 @@ function pickBest(q: TitleQuery, candidates: LibraryBookForLookup[]): LibraryBoo
   let best = candidates[0];
   let bestScore = -Infinity;
   for (const b of candidates) {
+    const candAuthor = b.author?.trim();
     const exact = b.title.trim() === queryTitle;
-    const authorMatch = !!queryAuthor && !!b.author && b.author.trim() === queryAuthor;
+    const authorMatch = !!queryAuthor && !!candAuthor && candAuthor === queryAuthor;
+    // The candidate's author CONTRADICTS the query (both present, different) vs.
+    // merely being unknown. An exact title with an unknown author is trustworthy;
+    // an exact title whose author conflicts is not (likely a same-name other work).
+    const authorConflict = !!queryAuthor && !!candAuthor && candAuthor !== queryAuthor;
     let score = 0;
-    if (exact && (!queryAuthor || authorMatch)) score += 1000;
-    else if (authorMatch) score += 500;
-    else if (exact) score += 250;
+    if (exact && (!queryAuthor || authorMatch)) score += 1000;     // exact title + author agrees (or none asked)
+    else if (exact && !authorConflict) score += 800;               // exact title, library author unknown → trust title
+    else if (authorMatch) score += 500;                            // author agrees, title not exact (base→volume)
+    else if (exact) score += 250;                                  // exact title but author conflicts → weak
     // Completeness tiebreaker (capped so it never outranks a tier).
     score += Math.min(b.chapter_count ?? 0, 200) / 1000;
     if (score > bestScore) {

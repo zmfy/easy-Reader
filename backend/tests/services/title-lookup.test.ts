@@ -38,6 +38,19 @@ describe('matchTitlesToBooks', () => {
     expect(r[0].book_id).toBe('y');
   });
 
+  it('prefers an exact title (library author unknown) over an author-match sibling volume', () => {
+    // Real bug: on 女生寝室1, the AI suggested "女生寝室2" but guessed its author
+    // as 沈醉天 (copied from vol.1). lookupKey collapses 女生寝室1/2 to one key.
+    // The library's 女生寝室2 has no author, so the guessed author falsely matched
+    // 女生寝室1 (the current book) over the exact-title 女生寝室2.
+    const series: LibraryBookForLookup[] = [
+      { id: 'v1', title: '女生寝室1', author: '沈醉天', chapter_count: 100 },
+      { id: 'v2', title: '女生寝室2', author: null, chapter_count: 90 },
+    ];
+    const r = matchTitlesToBooks([{ title: '女生寝室2', author: '沈醉天' }], series);
+    expect(r[0].book_id).toBe('v2');
+  });
+
   it('prefers an exact title over a normalized volume match when no author given', () => {
     const lib3: LibraryBookForLookup[] = [
       { id: 'p', title: '盗墓笔记', author: '南派三叔', chapter_count: 5 },
