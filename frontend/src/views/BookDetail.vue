@@ -38,6 +38,11 @@
                   <a v-if="book.author" class="author-link" @click="router.push({ path: '/library', query: { search: book.author } })">{{ book.author }}</a>
                   <span v-else>未知作者</span>
                 </p>
+                <p v-if="book.rating" class="book-rating">
+                  <span class="rating-star">★</span>
+                  <span class="rating-score">{{ book.rating.toFixed(1) }}</span>
+                  <span class="rating-source">豆瓣</span>
+                </p>
               </div>
               <div v-else class="edit-fields">
                 <el-input v-model="editForm.title" placeholder="书名" />
@@ -63,30 +68,6 @@
                       AI 填充
                     </el-button>
                   </el-tooltip>
-                  <el-button
-                    size="small"
-                    :loading="coverTesting"
-                    @click="handleCoverTest"
-                  >
-                    抓封面
-                  </el-button>
-                  <el-button
-                    v-if="chapterOverrideCount === 0"
-                    size="small"
-                    :loading="normalizingChapters"
-                    @click="handleNormalizeChapters"
-                  >
-                    AI 统一章节
-                  </el-button>
-                  <el-button
-                    v-else
-                    size="small"
-                    type="warning"
-                    plain
-                    @click="handleClearNormalizedChapters"
-                  >
-                    恢复章节 ({{ chapterOverrideCount }})
-                  </el-button>
                 </template>
               </div>
               <el-alert
@@ -111,10 +92,6 @@
             </div>
 
             <div class="info-meta">
-              <div v-if="book.rating" class="meta-item">
-                <span class="meta-label">豆瓣评分</span>
-                <span class="meta-value">★ {{ book.rating.toFixed(1) }}</span>
-              </div>
               <div v-if="book.publish_date" class="meta-item">
                 <span class="meta-label">发布时间</span>
                 <span class="meta-value">{{ book.publish_date }}</span>
@@ -179,7 +156,7 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
@@ -198,10 +175,7 @@ const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
-const coverTesting = ref(false)
 const addingShelf = ref(false)
-const normalizingChapters = ref(false)
-const chapterOverrideCount = ref(0)
 
 const editForm = reactive({
   title: '',
@@ -232,14 +206,12 @@ async function fetchBook() {
   loading.value = true
   try {
     const id = route.params.bookId as string
-    const [bookResp, metaResp, chCountResp] = await Promise.all([
+    const [bookResp, metaResp] = await Promise.all([
       libraryApi.get(id),
       libraryApi.getAiMetadata(id).catch(() => null),
-      libraryApi.getNormalizedChapterCount(id).catch(() => null),
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
-    chapterOverrideCount.value = chCountResp?.data.data?.count ?? 0
 
     // Resolve "similar works" titles to in-library book ids so the UI can link
     similarLinks.value = new Map()
@@ -257,38 +229,6 @@ async function fetchBook() {
   } finally {
     loading.value = false
   }
-}
-
-async function handleNormalizeChapters(): Promise<void> {
-  if (!book.value) return
-  try {
-    await ElMessageBox.confirm(
-      'AI 将分批读取所有章节标题并统一格式（不会修改磁盘文件，可随时恢复）。每 40 章一次 AI 调用。',
-      'AI 统一章节标题',
-      { type: 'info' },
-    )
-  } catch { return }
-  normalizingChapters.value = true
-  try {
-    const resp = await libraryApi.normalizeChapters(book.value.id)
-    const r = resp.data.data!
-    ElMessage.success(`已统一 ${r.normalized}/${r.total} 个章节${r.failed_batches > 0 ? `（${r.failed_batches} 批 AI 失败）` : ''}`)
-    chapterOverrideCount.value = r.normalized
-  } catch (err: unknown) {
-    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '章节统一失败')
-  } finally {
-    normalizingChapters.value = false
-  }
-}
-
-async function handleClearNormalizedChapters(): Promise<void> {
-  if (!book.value) return
-  try {
-    await ElMessageBox.confirm('恢复原章节标题？AI 统一的结果将被清除。', '恢复确认', { type: 'warning' })
-  } catch { return }
-  const resp = await libraryApi.clearNormalizedChapters(book.value.id)
-  ElMessage.success(`已恢复 ${resp.data.data?.cleared ?? 0} 个章节`)
-  chapterOverrideCount.value = 0
 }
 
 async function refreshAiMeta(): Promise<void> {
@@ -335,25 +275,6 @@ async function handleAiFill() {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
     aiFilling.value = false
-  }
-}
-
-async function handleCoverTest() {
-  if (!book.value) return
-  coverTesting.value = true
-  try {
-    const resp = await libraryApi.coverTest(book.value.id)
-    const { coverUrl } = resp.data.data!
-    if (coverUrl) {
-      book.value = { ...book.value, cover_url: coverUrl }
-      ElMessage.success(`封面已抓取: ${coverUrl}`)
-    } else {
-      ElMessage.warning('未找到封面，请查看后端日志')
-    }
-  } catch (err: unknown) {
-    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '抓取失败')
-  } finally {
-    coverTesting.value = false
   }
 }
 
@@ -590,6 +511,16 @@ watch(() => route.params.bookId, () => { fetchBook() })
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
+
+.book-rating {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+}
+.book-rating .rating-star { color: #ffb400; font-size: 18px; }
+.book-rating .rating-score { color: #ffb400; font-size: 22px; font-weight: 700; }
+.book-rating .rating-source { font-size: 12px; color: var(--text-2); }
 
 .edit-fields {
   flex: 1;
