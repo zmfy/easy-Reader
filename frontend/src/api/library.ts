@@ -8,7 +8,7 @@ export interface LibraryQuery {
   category?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
-  status?: 'normal' | 'problems' | 'duplicate' | 'garbled' | 'all'
+  status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all'
   ai_fill?: 'filled' | 'failed' | 'none' | 'all'
 }
 
@@ -36,6 +36,9 @@ export const libraryApi = {
 
   aiFillResetFailed: () =>
     http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-failed'),
+
+  aiFillResetAll: () =>
+    http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-all'),
 
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),
@@ -78,6 +81,7 @@ export const libraryApi = {
     include_dirty?: boolean; series_grouped?: boolean;
     sortBy?: string; sortOrder?: 'asc' | 'desc';
     ai_fill?: 'all' | 'filled' | 'failed' | 'none';
+    status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all';
   } = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 
