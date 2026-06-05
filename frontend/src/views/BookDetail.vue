@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -372,6 +372,10 @@ async function handleAddToShelf() {
 }
 
 onMounted(fetchBook)
+// Re-fetch when navigating between book pages (e.g. clicking a "similar works"
+// link): the BookDetail component is reused on /book/:bookId param change, so
+// onMounted won't fire again — watch the param to reload the new book.
+watch(() => route.params.bookId, () => { fetchBook() })
 </script>
 
 <style scoped>
