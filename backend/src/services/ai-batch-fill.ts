@@ -4,7 +4,7 @@ import pLimit from 'p-limit';
 import Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
-import { setScanProgress } from './scan-task';
+import { setScanProgress, isCancelled } from './scan-task';
 import { writeAudit } from './audit-log';
 import { doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
 import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
@@ -94,6 +94,10 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
   }
 
   await Promise.all(input.books.map(b => limit(async () => {
+    // Bail before starting work if the scan/fill task was cancelled. pLimit means
+    // most books are still queued when cancel fires, so they skip immediately;
+    // only the ≤concurrency in-flight books finish.
+    if (input.taskId && isCancelled(input.taskId)) return;
     let transientFail = false;
     try {
       const rawText = readPreview(b.file_path, b.file_format);

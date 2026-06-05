@@ -84,6 +84,14 @@ describe('scan-task state machine', () => {
     expect(reloaded.status).toBe('cancelled');
   });
 
+  it('finishScanTask does not override a cancelled task', () => {
+    const task = createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
+    cancelScanTask(task.id);
+    finishScanTask(task.id, 'completed'); // late completion after cancel must not flip it
+    const reloaded = getScanTaskById(task.id)!;
+    expect(reloaded.status).toBe('cancelled');
+  });
+
   it('createScanTask throws if another task is running', () => {
     createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false });
     expect(() => createScanTask('u', { mode: 'auto', ai_fill: false, full_rescan: false })).toThrow(/already running/i);

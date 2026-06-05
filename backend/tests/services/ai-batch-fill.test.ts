@@ -3,6 +3,7 @@ import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill,
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
 import { doubanSuggest, downloadCover, fetchRating } from '../../src/utils/cover';
+import { isCancelled } from '../../src/services/scan-task';
 
 // ── mock out modules that have side-effects or need real infra ──────────────
 
@@ -26,8 +27,10 @@ jest.mock('../../src/utils/cover', () => ({
 }));
 
 // No-op scan-task progress – avoids needing scan_tasks table.
+// isCancelled defaults to false (not cancelled) so existing tests run fully.
 jest.mock('../../src/services/scan-task', () => ({
   setScanProgress: jest.fn(),
+  isCancelled: jest.fn().mockReturnValue(false),
 }));
 
 // No-op audit writes – avoids needing audit_log table.
@@ -267,6 +270,38 @@ describe('batchFill two-pass', () => {
 });
 
 // ── isRateLimitError unit tests ─────────────────────────────────────────────
+
+describe('batchFill cancellation', () => {
+  let fillSpy: jest.SpyInstance;
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+    (isCancelled as jest.Mock).mockReturnValue(false);
+  });
+  afterEach(() => {
+    fillSpy.mockRestore();
+    (isCancelled as jest.Mock).mockReturnValue(false);
+    if (_testDb) { _testDb.close(); _testDb = null; }
+  });
+
+  it('stops processing books once the task is cancelled (no AI calls, nothing filled)', async () => {
+    insBook(_testDb!, { id: 'c1', title: 'A', file_path: '/nonexistent/c1.txt' });
+    insBook(_testDb!, { id: 'c2', title: 'B', file_path: '/nonexistent/c2.txt' });
+    (isCancelled as jest.Mock).mockReturnValue(true);
+
+    const result = await batchFill({
+      taskId: 'task-1',
+      books: [
+        { id: 'c1', file_path: '/nonexistent/c1.txt', file_format: 'txt', title: 'A' },
+        { id: 'c2', file_path: '/nonexistent/c2.txt', file_format: 'txt', title: 'B' },
+      ],
+    });
+
+    expect(isCancelled).toHaveBeenCalledWith('task-1');
+    expect(fillSpy).not.toHaveBeenCalled();
+    expect(result.succeeded).toHaveLength(0);
+  });
+});
 
 describe('isRateLimitError', () => {
   it('returns true for message containing "429"', () => {

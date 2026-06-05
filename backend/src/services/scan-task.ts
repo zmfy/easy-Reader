@@ -63,8 +63,10 @@ export function setScanProgress(id: string, update: ProgressUpdate): void {
 }
 
 export function finishScanTask(id: string, status: 'completed' | 'failed', error?: string): void {
+  // Only finish a still-running task: a cancelled task is terminal and a late
+  // completion (after the user cancelled mid-fill) must not flip it back.
   db().prepare(
-    `UPDATE scan_tasks SET status = ?, finished_at = CURRENT_TIMESTAMP, error = ? WHERE id = ?`
+    `UPDATE scan_tasks SET status = ?, finished_at = CURRENT_TIMESTAMP, error = ? WHERE id = ? AND status = 'running'`
   ).run(status, error ?? null, id);
 }
 
