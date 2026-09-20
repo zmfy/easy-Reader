@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { isAiConfigured } from '../../src/ai/ai-manager';
+import { aiPlugins, isAiConfigured } from '../../src/ai/ai-manager';
 
 function makeDb(settings: Record<string, string> = {}): Database.Database {
   const d = new Database(':memory:');
@@ -24,5 +24,30 @@ describe('isAiConfigured', () => {
 
   it('true when the selected plugin has an apiKey', () => {
     expect(isAiConfigured(makeDb({ ai_plugin: 'deepseek', ai_deepseek_apiKey: 'sk-xxx' }))).toBe(true);
+  });
+});
+
+describe('aiPlugins registry', () => {
+  it('includes ollama', () => {
+    expect(aiPlugins.map(p => p.name)).toContain('ollama');
+  });
+
+  it('ollama declares no apiKey field', () => {
+    const ollama = aiPlugins.find(p => p.name === 'ollama')!;
+    expect(ollama.fields).toEqual(['baseUrl', 'model']);
+  });
+
+  it('every plugin exposes placeholders for its non-apiKey fields', () => {
+    for (const p of aiPlugins) {
+      for (const f of p.fields.filter(f => f !== 'apiKey')) {
+        expect(p.placeholders?.[f]).toBeTruthy();
+      }
+    }
+  });
+});
+
+describe('isAiConfigured with ollama', () => {
+  it('true once ollama is selected (no apiKey required)', () => {
+    expect(isAiConfigured(makeDb({ ai_plugin: 'ollama' }))).toBe(true);
   });
 });

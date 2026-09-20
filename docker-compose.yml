@@ -12,6 +12,9 @@ services:
     volumes:
       - ./books:/app/books
       - ./data:/app/data
+    # 让容器内可访问宿主机上的 Ollama（baseUrl 填 http://host.docker.internal:11434）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - NODE_ENV=production
       - PORT=3000

@@ -2,10 +2,12 @@ import Database from 'better-sqlite3';
 import { AiPlugin, Book } from '../types';
 import deepseekPlugin from './deepseek';
 import minmaxPlugin from './minmax';
+import ollamaPlugin from './ollama';
 
 export const aiPlugins: AiPlugin[] = [
   deepseekPlugin,
   minmaxPlugin,
+  ollamaPlugin,
 ];
 
 function getActivePlugin(db: Database.Database): { plugin: AiPlugin; config: Record<string, string> } | null {
