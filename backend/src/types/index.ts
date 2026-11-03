@@ -85,6 +85,7 @@ export interface PaginatedResponse<T> {
 export interface JwtPayload {
   userId: string;
   role: 'admin' | 'user';
+  type?: 'access' | 'refresh';
 }
 
 export interface AiPlugin {

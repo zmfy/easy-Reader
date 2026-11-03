@@ -22,7 +22,14 @@ getDb();
 // Serve downloaded book covers
 const coversDir = path.join(DATA_DIR, 'covers');
 if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
-app.use('/covers', express.static(coversDir));
+// 只对外提供图片，避免目录中的其他文件被公开访问
+app.use('/covers', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!/\.(jpe?g|png|webp|gif)$/i.test(req.path)) {
+    res.status(404).end();
+    return;
+  }
+  next();
+}, express.static(coversDir));
 
 // Security middleware
 app.use(helmet({ contentSecurityPolicy: false }));

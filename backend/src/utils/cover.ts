@@ -52,60 +52,26 @@ interface DoubanSuggest {
   year?: string;
 }
 
-function saveDebug(bookId: string, info: Record<string, unknown>) {
-  try {
-    fs.writeFileSync(path.join(COVERS_DIR, `${bookId}.json`), JSON.stringify(info, null, 2));
-  } catch (e) {
-    console.error('[cover] 写调试文件失败:', e);
-  }
-}
-
 export async function fetchAndSaveCover(title: string, bookId: string): Promise<string | undefined> {
-  const debug: Record<string, unknown> = {
-    title,
-    bookId,
-    coversDir: COVERS_DIR,
-    startedAt: new Date().toISOString(),
-  };
-
-  // 第一次写入，确认函数被调用且目录可写
-  saveDebug(bookId, debug);
-
   try {
     // Step 1: 豆瓣 suggest API
     const apiUrl = `https://book.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`;
-    debug.apiUrl = apiUrl;
-    saveDebug(bookId, debug);
-
     const buf = await request(apiUrl, {
       'Accept': 'application/json, text/javascript, */*',
       'Referer': 'https://book.douban.com/',
     });
 
-    const rawText = buf.toString('utf-8');
-    debug.rawResponse = rawText;
-    debug.rawLength = rawText.length;
-    saveDebug(bookId, debug);
-
     let suggestions: DoubanSuggest[] = [];
     try {
-      suggestions = JSON.parse(rawText);
+      suggestions = JSON.parse(buf.toString('utf-8'));
     } catch (e) {
-      debug.parseError = String(e);
-      saveDebug(bookId, debug);
+      console.warn(`[cover] 豆瓣响应解析失败 bookId=${bookId} title=${title}:`, String(e));
       return undefined;
     }
-
-    debug.suggestionCount = Array.isArray(suggestions) ? suggestions.length : 'not array';
-    debug.suggestions = suggestions;
-    saveDebug(bookId, debug);
 
     if (!Array.isArray(suggestions) || suggestions.length === 0) return undefined;
 
     const item = suggestions.find(s => s.pic && !s.pic.includes('book-default'));
-    debug.selectedItem = item ?? null;
-    saveDebug(bookId, debug);
-
     if (!item?.pic) return undefined;
 
     // Step 2: 换大图 URL
@@ -113,8 +79,6 @@ export async function fetchAndSaveCover(title: string, bookId: string): Promise<
       .replace('/spic/', '/lpic/')
       .replace('/view/subject/s/', '/view/subject/l/')
       .replace('/view/subject/m/', '/view/subject/l/');
-    debug.imgUrl = imgUrl;
-    saveDebug(bookId, debug);
 
     // Step 3: 下载图片
     const imgBuf = await request(imgUrl, {
@@ -122,13 +86,8 @@ export async function fetchAndSaveCover(title: string, bookId: string): Promise<
       'Referer': 'https://book.douban.com/',
     });
 
-    debug.downloadedBytes = imgBuf.length;
-    saveDebug(bookId, debug);
-
     if (imgBuf.length < 1024) {
-      debug.downloadError = '内容过小';
-      debug.downloadedContent = imgBuf.toString('utf-8').slice(0, 300);
-      saveDebug(bookId, debug);
+      console.warn(`[cover] 封面图片内容过小 bookId=${bookId} url=${imgUrl} bytes=${imgBuf.length}`);
       return undefined;
     }
 
@@ -136,15 +95,9 @@ export async function fetchAndSaveCover(title: string, bookId: string): Promise<
     const filename = `${bookId}.${ext}`;
     fs.writeFileSync(path.join(COVERS_DIR, filename), imgBuf);
 
-    debug.result = `/covers/${filename}`;
-    saveDebug(bookId, debug);
-
     return `/covers/${filename}`;
-
   } catch (e) {
-    debug.fatalError = String(e);
-    debug.errorStack = (e instanceof Error) ? e.stack : undefined;
-    saveDebug(bookId, debug);
+    console.error(`[cover] 封面抓取失败 bookId=${bookId} title=${title}:`, e);
     return undefined;
   }
 }

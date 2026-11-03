@@ -99,63 +99,36 @@
           <!-- Changelog / Feedback -->
           <div v-if="activeTab === 'feedback'" class="setting-section">
             <h2 class="section-title">更新说明</h2>
-            <p class="section-desc">以下为最近的版本更新内容。</p>
+            <p class="section-desc">最近 {{ recentChangelog.length }} 次更新，点击标题查看本次调整内容。</p>
             <div class="changelog-list">
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-epub">EPUB</span>
-                  <span class="changelog-text">漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）</span>
+              <div
+                v-for="release in recentChangelog"
+                :key="release.date + release.title"
+                class="changelog-release"
+                :class="{ 'is-open': openedReleases.has(release.date + release.title) }"
+              >
+                <button
+                  type="button"
+                  class="changelog-release-header"
+                  :aria-expanded="openedReleases.has(release.date + release.title)"
+                  @click="toggleRelease(release.date + release.title)"
+                >
+                  <span class="changelog-release-title">
+                    <span class="changelog-date">{{ release.date }}</span>：{{ release.title }}
+                  </span>
+                  <span class="changelog-release-meta">
+                    <span class="changelog-count">{{ release.items.length }} 项</span>
+                    <span class="changelog-arrow">▸</span>
+                  </span>
+                </button>
+                <div v-if="openedReleases.has(release.date + release.title)" class="changelog-release-body">
+                  <div v-for="(item, i) in release.items" :key="i" class="changelog-item">
+                    <div class="changelog-main">
+                      <span class="changelog-tag" :class="`tag-${item.tag}`">{{ changelogTagLabels[item.tag] }}</span>
+                      <span class="changelog-text">{{ item.text }}</span>
+                    </div>
+                  </div>
                 </div>
-                <span class="changelog-date">2026-06-04</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-epub">EPUB</span>
-                  <span class="changelog-text">支持 EPUB 内嵌图片显示，图片通过独立 API 端点从 EPUB 包中提取并返回浏览器</span>
-                </div>
-                <span class="changelog-date">2026-06-04</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-epub">EPUB</span>
-                  <span class="changelog-text">修复 EPUB 章节内链接点击后跳转错误（内部 href 现映射至正确章节索引）</span>
-                </div>
-                <span class="changelog-date">2026-06-04</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-epub">EPUB</span>
-                  <span class="changelog-text">修复 EPUB 章节内容无法加载的问题（TOC id 与 flow id 不匹配导致 File not found）</span>
-                </div>
-                <span class="changelog-date">2026-06-04</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-reader">阅读</span>
-                  <span class="changelog-text">瀑布流模式：章节内容较短时自动预加载后续章节，确保从首章即可流畅下翻</span>
-                </div>
-                <span class="changelog-date">2026-06-04</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-ui">界面</span>
-                  <span class="changelog-text">优化书库封面图片加载与样式展示</span>
-                </div>
-                <span class="changelog-date">2026-05-06</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-lib">书库</span>
-                  <span class="changelog-text">扫描导入时自动清理已删除文件的数据库记录</span>
-                </div>
-                <span class="changelog-date">2026-05-06</span>
-              </div>
-              <div class="changelog-item">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-auth">认证</span>
-                  <span class="changelog-text">重构登录 Token 处理，优化反馈功能</span>
-                </div>
-                <span class="changelog-date">2026-04-24</span>
               </div>
             </div>
 
@@ -171,12 +144,6 @@
                 <div class="changelog-main">
                   <span class="changelog-tag tag-plan">计划</span>
                   <span class="changelog-text">书库扫描时对重复书籍进行检测与处理</span>
-                </div>
-              </div>
-              <div class="changelog-item changelog-item--plan">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-plan">计划</span>
-                  <span class="changelog-text">修复瀑布流模式下书签定位不准确的问题</span>
                 </div>
               </div>
             </div>
@@ -581,6 +548,71 @@ const tabs = [
   { key: 'feedback', label: '更新说明', icon: Message },
 ]
 
+
+// ── 更新说明 ── 新的记录加在最前面，页面只显示最近 5 次
+type ChangelogTag = 'ui' | 'lib' | 'auth' | 'reader' | 'epub' | 'ai' | 'infra'
+interface ChangelogRelease {
+  date: string
+  title: string
+  items: Array<{ tag: ChangelogTag; text: string }>
+}
+
+const changelogTagLabels: Record<ChangelogTag, string> = {
+  ui: '界面', lib: '书库', auth: '安全', reader: '阅读', epub: 'EPUB', ai: 'AI', infra: '系统',
+}
+
+const changelog: ChangelogRelease[] = [
+  {
+    date: '2026-11-03',
+    title: '安全加固与瀑布流书签修复',
+    items: [
+      { tag: 'auth', text: '访问令牌与刷新令牌区分用途，刷新令牌不能再直接调用接口（升级后需重新登录一次）' },
+      { tag: 'auth', text: '用户被删除或角色变更后立即生效，无需等待令牌过期' },
+      { tag: 'auth', text: '系统设置接口仅管理员可访问，且不再返回各用户的个人阅读设置' },
+      { tag: 'infra', text: '修复"不能删除自己的账号"校验失效的问题' },
+      { tag: 'lib', text: '封面抓取不再生成调试文件，封面目录仅对外提供图片' },
+      { tag: 'reader', text: '瀑布流模式书签记录章节内位置，点击书签可准确定位并继续加载后续章节' },
+      { tag: 'ai', text: '补充注册通义千问、OpenAI、Claude、Ollama 插件，AI 插件增至 6 个' },
+    ],
+  },
+  {
+    date: '2026-06-04',
+    title: 'EPUB 阅读增强',
+    items: [
+      { tag: 'epub', text: '漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）' },
+      { tag: 'epub', text: '支持 EPUB 内嵌图片显示，图片通过独立 API 端点从 EPUB 包中提取并返回浏览器' },
+      { tag: 'epub', text: '修复 EPUB 章节内链接点击后跳转错误（内部 href 现映射至正确章节索引）' },
+      { tag: 'epub', text: '修复 EPUB 章节内容无法加载的问题（TOC id 与 flow id 不匹配导致 File not found）' },
+      { tag: 'reader', text: '瀑布流模式：章节内容较短时自动预加载后续章节，确保从首章即可流畅下翻' },
+    ],
+  },
+  {
+    date: '2026-05-06',
+    title: '书库与封面优化',
+    items: [
+      { tag: 'ui', text: '优化书库封面图片加载与样式展示' },
+      { tag: 'lib', text: '扫描导入时自动清理已删除文件的数据库记录' },
+    ],
+  },
+  {
+    date: '2026-04-24',
+    title: '登录认证重构',
+    items: [
+      { tag: 'auth', text: '重构登录 Token 处理，优化反馈功能' },
+    ],
+  },
+]
+
+const recentChangelog = changelog.slice(0, 5)
+// 默认展开最近一次
+const openedReleases = ref(new Set<string>(recentChangelog.length ? [recentChangelog[0].date + recentChangelog[0].title] : []))
+
+function toggleRelease(key: string) {
+  const next = new Set(openedReleases.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  openedReleases.value = next
+}
 
 function openFeedback() {
   window.open('https://easyreader.ucool.uk/bbs', '_blank')
@@ -1344,9 +1376,95 @@ onMounted(async () => {
   color: var(--text-1);
 }
 
+.changelog-release {
+  background: var(--bg-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.changelog-release.is-open {
+  border-color: var(--card-border);
+}
+
+.changelog-release-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.changelog-release-header:hover .changelog-arrow,
+.changelog-release-header:focus-visible .changelog-arrow {
+  color: var(--accent);
+}
+
+.changelog-release-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.changelog-release-title .changelog-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.changelog-release-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.changelog-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.changelog-arrow {
+  color: var(--text-2);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.changelog-release.is-open .changelog-arrow {
+  transform: rotate(90deg);
+}
+
+.changelog-release-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px 12px;
+}
+
+.changelog-release-body .changelog-item {
+  padding: 8px 0 0;
+  background: none;
+  border-top: 1px solid var(--card-border);
+  border-radius: 0;
+}
+
+.changelog-release-body .changelog-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
 .changelog-item--plan {
   opacity: 0.75;
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--card-border);
   background: transparent;
 }
 
@@ -1372,6 +1490,9 @@ onMounted(async () => {
   font-weight: 600;
   flex-shrink: 0;
   margin-top: 1px;
+  min-width: 48px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .tag-ui     { background: #3b1f6b; color: #c4b5fd; }

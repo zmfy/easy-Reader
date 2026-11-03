@@ -473,8 +473,18 @@ async function jumpToChapter(index: number) {
   }
 }
 
+// 瀑布流模式下容器里同时有多个章节，书签保存相对当前章节顶部的偏移
+function getWaterfallChapterTop(index: number): number {
+  const el = contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${index}"]`)
+  return el ? el.offsetTop : 0
+}
+
 async function handleAddBookmark() {
-  await reader.addBookmark(contentRef.value?.scrollTop || 0)
+  const scrollTop = contentRef.value?.scrollTop || 0
+  const offset = readerStore.settings.pageMode === 'waterfall'
+    ? getWaterfallChapterTop(reader.currentChapterIndex.value)
+    : 0
+  await reader.addBookmark(Math.max(0, scrollTop - offset))
 }
 
 async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
@@ -484,7 +494,11 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
     waterfallChapters.value = []
     await loadWaterfallChapter(chapterIndex)
     await nextTick()
-    if (contentRef.value) contentRef.value.scrollTop = 0
+    await document.fonts.ready
+    if (contentRef.value) {
+      contentRef.value.scrollTop = getWaterfallChapterTop(chapterIndex) + scrollTop
+    }
+    await fillWaterfallIfNeeded()
     return
   }
   // 不同章节才重新加载；同章节只需滚动，跳过会导致 scrollTop 归零的 loading 切换

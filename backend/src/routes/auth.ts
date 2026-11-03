@@ -127,7 +127,18 @@ router.post('/refresh', (req: Request, res: Response) => {
   }
   try {
     const payload = jwt.verify(refreshToken, JWT_SECRET) as import('../types').JwtPayload;
-    const tokens = generateTokens(payload.userId, payload.role);
+    if (payload.type !== 'refresh') {
+      errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '刷新令牌无效');
+      return;
+    }
+    // 以数据库中的当前角色签发，已删除用户不能续期
+    const user = getDb().prepare('SELECT id, role FROM users WHERE id = ?').get(payload.userId) as
+      { id: string; role: 'admin' | 'user' } | undefined;
+    if (!user) {
+      errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '用户不存在或已被删除');
+      return;
+    }
+    const tokens = generateTokens(user.id, user.role);
     successResponse(res, tokens);
   } catch {
     errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '刷新令牌无效');

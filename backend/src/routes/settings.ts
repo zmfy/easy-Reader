@@ -20,9 +20,10 @@ router.get('/public', (req: Request, res: Response) => {
 });
 
 // GET /api/settings
-router.get('/', authMiddleware, (req: Request, res: Response) => {
+router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  const rows = db.prepare('SELECT key, value FROM settings').all() as Array<{ key: string; value: string }>;
+  // reader_prefs_* 是各用户的个人阅读设置，不属于系统设置
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\'").all() as Array<{ key: string; value: string }>;
   const settings: Record<string, string> = {};
   for (const row of rows) {
     if (row.key === 'smtp_pass') {
@@ -211,8 +212,7 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
 router.delete('/users/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
   // Prevent self-deletion
-  const self = (req as Request & { user?: User }).user;
-  if (self && String(self.id) === String(req.params.id)) {
+  if (req.user!.userId === req.params.id) {
     errorResponse(res, 400, 'BUSINESS_CONFLICT', '不能删除自己的账号'); return;
   }
   const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
