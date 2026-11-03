@@ -61,3 +61,10 @@
 - [x] #6 改密码/登出后旧令牌失效：users.token_version，令牌携带版本号
 - [x] 依赖：仅做兼容升级（npm audit fix，不含破坏性大版本）
 - [x] 验证：单测 + tsc + 开发服务实测
+
+# 二次审查 · 小而明显的问题
+
+- [x] 时间显示差 8 小时 / Safari NaN → frontend utils/time.ts（SQLite UTC 字符串按 UTC 解析），替换 8 处显示；新增首个前端单测
+- [x] 扫描不导入 UMD → scan-walker SUPPORTED_FORMATS 补 umd（历史无有意排除记录），新增测试
+- [x] Docker 健康检查 → 更正：合并后 docker-compose 已改用 node fetch，实测退出码 0，无需修改（此前判断基于合并前旧配置）
+- [x] 安全审查补充：findReadableBook 返回校验后的真实路径，后续读取不再跟随原路径

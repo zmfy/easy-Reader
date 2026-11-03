@@ -19,11 +19,13 @@ const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 function findReadableBook(bookId: string, res: Response): Book | null {
   const book = getDb().prepare('SELECT * FROM books WHERE id = ?').get(bookId) as Book | undefined;
   if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return null; }
-  if (!resolveRealPathInsideRoot(BOOKS_DIR, book.file_path)) {
+  const realPath = resolveRealPathInsideRoot(BOOKS_DIR, book.file_path);
+  if (!realPath) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在');
     return null;
   }
-  return book;
+  // 后续所有打开都用校验过的真实路径，避免校验后再跟随（被替换的）符号链接
+  return { ...book, file_path: realPath };
 }
 const window = new JSDOM('').window;
 // @ts-ignore

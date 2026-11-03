@@ -26,7 +26,9 @@
             <code class="id-short">{{ (row.book_id_b ?? row.series_id)?.slice(0,8) ?? '-' }}</code>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="180" />
+        <el-table-column prop="created_at" label="创建时间" width="180">
+          <template #default="{ row }">{{ formatServerTime(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
             <el-button size="small" type="danger" link @click="onDelete(row.id)">删除</el-button>
@@ -39,6 +41,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'

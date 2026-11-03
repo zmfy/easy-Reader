@@ -82,6 +82,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { parseServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -95,12 +96,13 @@ const loading = ref(false)
 const recentItems = computed(() =>
   items.value
     .filter(i => i.last_read_at)
-    .sort((a, b) => new Date(b.last_read_at!).getTime() - new Date(a.last_read_at!).getTime())
+    .sort((a, b) => (parseServerTime(b.last_read_at)?.getTime() ?? 0) - (parseServerTime(a.last_read_at)?.getTime() ?? 0))
     .slice(0, 3)
 )
 
 function formatDate(date: string) {
-  const d = new Date(date)
+  const d = parseServerTime(date)
+  if (!d) return date
   const now = new Date()
   const diff = (now.getTime() - d.getTime()) / 1000
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`

@@ -8,7 +8,9 @@
       </div>
 
       <el-table v-loading="loading" :data="logs" empty-text="暂无日志">
-        <el-table-column prop="created_at" label="时间" width="180" />
+        <el-table-column prop="created_at" label="时间" width="180">
+          <template #default="{ row }">{{ formatServerTime(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column prop="action" label="操作" width="180">
           <template #default="{ row }">
             <el-tag :type="actionTagType(row.action)">{{ actionLabel(row.action) }}</el-tag>
@@ -52,6 +54,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { auditLogApi } from '@/api/audit-log'
 import type { AuditLog } from '@/types'

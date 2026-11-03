@@ -47,3 +47,13 @@ describe('findOrphanBookIds', () => {
     expect(findOrphanBookIds(rows, { files: [], unreadableDirs: ['/books/locked'] })).toEqual(['b']);
   });
 });
+
+describe('collectFiles supported formats', () => {
+  it('includes every format the reader can open (txt / epub / pdf / umd)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-formats-'));
+    for (const f of ['a.txt', 'b.EPUB', 'c.pdf', 'd.umd', 'e.docx']) fs.writeFileSync(path.join(root, f), 'x');
+    const names = collectFiles(root).files.map(f => path.basename(f)).sort();
+    fs.rmSync(root, { recursive: true, force: true });
+    expect(names).toEqual(['a.txt', 'b.EPUB', 'c.pdf', 'd.umd']);
+  });
+});

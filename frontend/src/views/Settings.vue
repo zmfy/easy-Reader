@@ -231,7 +231,7 @@
               </el-table-column>
               <el-table-column prop="created_at" label="注册时间">
                 <template #default="{ row }">
-                  {{ new Date(row.created_at).toLocaleDateString('zh-CN') }}
+                  {{ formatServerTime(row.created_at, 'date') }}
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="260">
@@ -419,6 +419,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import { Setting, User, MagicStick, Cpu, Message, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -603,6 +604,8 @@ const changelog: ChangelogRelease[] = [
       { tag: 'auth', text: '扫描审核只能在扫描结果范围内调整，阅读接口只读取书库目录内的文件，防止书库外文件被当作书籍读出' },
       { tag: 'auth', text: '管理员重置用户密码后，该用户此前登录的所有设备立即失效' },
       { tag: 'infra', text: '依赖安全更新：修复 DOMPurify、Express、Vue、Axios 等已知漏洞（均为兼容升级）' },
+      { tag: 'ui', text: '修复书架「最近阅读」、书签、用户列表、审计日志等处时间显示相差 8 小时（Safari 下显示 NaN）的问题' },
+      { tag: 'lib', text: '扫描导入支持 UMD 格式（此前阅读器支持但扫描时会被忽略）' },
       { tag: 'auth', text: '邀请码改用安全随机数生成；阅读设置保存时校验格式与大小' },
       { tag: 'ui', text: 'Element Plus 改为按需引入，首屏 JS 由约 1.2MB 降至约 160KB，页面打开更快' },
       { tag: 'reader', text: '瀑布流模式滚动处理节流，并最多保留 8 章内容，长时间连续阅读不再越来越卡' },
@@ -820,7 +823,7 @@ async function openInviteDialog() {
   try {
     const resp = await settingsApi.createInvite()
     inviteCode.value = resp.data.data?.code || ''
-    inviteExpiry.value = new Date(resp.data.data?.expiresAt || '').toLocaleDateString('zh-CN')
+    inviteExpiry.value = formatServerTime(resp.data.data?.expiresAt, 'date')
     inviteEmail.value = ''
     inviteDialogVisible.value = true
   } finally {

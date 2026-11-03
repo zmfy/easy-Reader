@@ -221,7 +221,7 @@
             <div class="bookmark-info" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
               <div class="bookmark-chapter">{{ reader.chapters.value[bm.chapter_index]?.title || `第 ${bm.chapter_index + 1} 章` }}</div>
               <div v-if="bm.note" class="bookmark-note">{{ bm.note }}</div>
-              <div class="bookmark-time">{{ new Date(bm.created_at).toLocaleString() }}</div>
+              <div class="bookmark-time">{{ formatServerTime(bm.created_at) }}</div>
             </div>
             <el-button :icon="Delete" circle size="small" text @click="reader.deleteBookmark(bm.id)" />
           </div>
@@ -235,6 +235,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Star, Setting, List, Loading, Delete } from '@element-plus/icons-vue'
 const Bookmark = Star

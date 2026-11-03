@@ -32,7 +32,7 @@
         class="audit-alert"
       >
         <template #title>
-          应用结果 · {{ batch?.applied_at }} by {{ batch?.applied_by }}
+          应用结果 · {{ formatServerTime(batch?.applied_at) }} by {{ batch?.applied_by }}
         </template>
         <div class="audit-summary">
           新增 {{ appliedSummary.inserted }} ·
@@ -173,6 +173,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'

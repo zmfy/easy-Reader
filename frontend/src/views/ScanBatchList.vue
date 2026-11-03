@@ -26,7 +26,9 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" />
+        <el-table-column prop="created_at" label="创建时间" width="160">
+          <template #default="{ row }">{{ formatServerTime(row.created_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="goReview(row.id)">
@@ -44,6 +46,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { formatServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'

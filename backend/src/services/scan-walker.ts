@@ -22,7 +22,7 @@ import { buildBatchFromScan, ScanResult } from './batch-builder';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { deleteBookRelations } from './relation-cleanup';
 
-const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
+const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
 export async function runScanTask(taskId: string, options: ScanOptions): Promise<void> {
