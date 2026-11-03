@@ -165,8 +165,14 @@ router.get('/:bookId/progress', authMiddleware, (req: Request, res: Response) =>
   const db = getDb();
   const row = db.prepare('SELECT * FROM reading_progress WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId) as ReadingProgress | undefined;
   successResponse(res, row
-    ? { chapterIndex: row.chapter_index, chapterTitle: row.chapter_title || '', scrollTop: row.scroll_top }
-    : { chapterIndex: 0, chapterTitle: '', scrollTop: 0 }
+    ? {
+      chapterIndex: row.chapter_index,
+      chapterTitle: row.chapter_title || '',
+      scrollTop: row.scroll_top,
+      paragraphIndex: row.paragraph_index ?? 0,
+      paragraphOffset: row.paragraph_offset ?? 0,
+    }
+    : { chapterIndex: 0, chapterTitle: '', scrollTop: 0, paragraphIndex: 0, paragraphOffset: 0 }
   );
 });
 
@@ -176,6 +182,8 @@ router.post('/:bookId/progress', authMiddleware, (req: Request, res: Response) =
     chapterIndex: z.number().min(0).transform(v => Math.floor(v)),
     chapterTitle: z.string().max(100).optional().default(''),
     scrollTop: z.number().min(0).transform(v => Math.floor(v)),
+    paragraphIndex: z.number().int().min(0).max(1_000_000).optional().default(0),
+    paragraphOffset: z.number().min(0).max(1).optional().default(0),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
@@ -184,12 +192,12 @@ router.post('/:bookId/progress', authMiddleware, (req: Request, res: Response) =
   const existing = db.prepare('SELECT id FROM reading_progress WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId);
 
   if (existing) {
-    db.prepare('UPDATE reading_progress SET chapter_index = ?, chapter_title = ?, scroll_top = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?').run(
-      parsed.data.chapterIndex, parsed.data.chapterTitle, parsed.data.scrollTop, req.user!.userId, req.params.bookId
+    db.prepare('UPDATE reading_progress SET chapter_index = ?, chapter_title = ?, scroll_top = ?, paragraph_index = ?, paragraph_offset = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND book_id = ?').run(
+      parsed.data.chapterIndex, parsed.data.chapterTitle, parsed.data.scrollTop, parsed.data.paragraphIndex, parsed.data.paragraphOffset, req.user!.userId, req.params.bookId
     );
   } else {
-    db.prepare('INSERT INTO reading_progress (id, user_id, book_id, chapter_index, chapter_title, scroll_top) VALUES (?, ?, ?, ?, ?, ?)').run(
-      uuidv4(), req.user!.userId, req.params.bookId, parsed.data.chapterIndex, parsed.data.chapterTitle, parsed.data.scrollTop
+    db.prepare('INSERT INTO reading_progress (id, user_id, book_id, chapter_index, chapter_title, scroll_top, paragraph_index, paragraph_offset) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      uuidv4(), req.user!.userId, req.params.bookId, parsed.data.chapterIndex, parsed.data.chapterTitle, parsed.data.scrollTop, parsed.data.paragraphIndex, parsed.data.paragraphOffset
     );
   }
 

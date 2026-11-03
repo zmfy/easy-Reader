@@ -241,7 +241,7 @@ const Bookmark = Star
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
-import type { ReaderTheme } from '@/types'
+import type { ReaderTheme, ReadingAnchor } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -389,6 +389,99 @@ watchEffect(() => {
 let saveTimer: ReturnType<typeof setTimeout>
 let scrollRaf = 0
 
+// ── 章节模式：章内阅读位置 ──────────────────────────────────
+// 以「屏幕顶部所在段落的序号 + 该段落已读过的比例」记录位置，与字号、页面宽度、
+// 设备无关，也不受网页字体晚加载导致的重排影响（像素 scrollTop 做不到这点）
+const ANCHOR_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, img, figure, table'
+const SAVE_DELAY_MS = 1000
+const RESTORE_WINDOW_MS = 3000
+let restoringPosition = false
+let stopRestore: (() => void) | null = null
+
+function getAnchorBlocks(): HTMLElement[] {
+  const content = contentRef.value?.querySelector<HTMLElement>('.chapter-content')
+  if (!content) return []
+  const blocks = Array.from(content.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR))
+  return blocks.length > 0 ? blocks : [content]
+}
+
+function getCurrentAnchor(): ReadingAnchor {
+  const container = contentRef.value
+  const blocks = getAnchorBlocks()
+  if (!container || blocks.length === 0) return { paragraphIndex: 0, paragraphOffset: 0 }
+  const viewTop = container.getBoundingClientRect().top
+  for (let i = 0; i < blocks.length; i++) {
+    const rect = blocks[i].getBoundingClientRect()
+    if (rect.bottom > viewTop) {
+      const offset = rect.height > 0 ? (viewTop - rect.top) / rect.height : 0
+      return { paragraphIndex: i, paragraphOffset: Math.min(1, Math.max(0, offset)) }
+    }
+  }
+  return { paragraphIndex: blocks.length - 1, paragraphOffset: 1 }
+}
+
+function scrollToAnchor(anchor: ReadingAnchor) {
+  const container = contentRef.value
+  const blocks = getAnchorBlocks()
+  if (!container || blocks.length === 0) return
+  const block = blocks[Math.min(anchor.paragraphIndex, blocks.length - 1)]
+  const rect = block.getBoundingClientRect()
+  container.scrollTop += rect.top + rect.height * anchor.paragraphOffset - container.getBoundingClientRect().top
+}
+
+async function restoreChapterPosition(anchor: ReadingAnchor) {
+  stopRestore?.()
+  const container = contentRef.value
+  if (!container) return
+  container.scrollTop = 0
+  if (anchor.paragraphIndex <= 0 && anchor.paragraphOffset <= 0) return
+
+  // 恢复期间忽略滚动事件，避免把恢复过程中的中间位置保存下来
+  restoringPosition = true
+  const observer = new ResizeObserver(() => scrollToAnchor(anchor))
+  const userEvents = ['wheel', 'touchstart', 'mousedown', 'keydown'] as const
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stop = () => {
+    observer.disconnect()
+    clearTimeout(timer)
+    userEvents.forEach(e => window.removeEventListener(e, stop))
+    restoringPosition = false
+    if (stopRestore === stop) stopRestore = null
+  }
+  stopRestore = stop
+  // 用户一旦主动操作就停止自动定位
+  userEvents.forEach(e => window.addEventListener(e, stop, { passive: true }))
+
+  await nextTick()
+  await document.fonts.ready  // 网页字体加载完成后再定位，否则重排会使位置偏移
+  if (stopRestore !== stop) return
+  scrollToAnchor(anchor)
+  // 图片等内容晚加载会改变布局：一段时间内随正文尺寸变化重新定位
+  const content = contentRef.value?.querySelector('.chapter-content')
+  if (content) observer.observe(content)
+  timer = setTimeout(stop, RESTORE_WINDOW_MS)
+}
+
+function saveChapterPosition(onHide = false) {
+  if (!contentRef.value || reader.loading.value || restoringPosition) return
+  const anchor = getCurrentAnchor()
+  if (onHide) reader.saveProgressOnHide(contentRef.value.scrollTop, anchor)
+  else reader.saveProgress(contentRef.value.scrollTop, anchor)
+}
+
+// 切换章节前调用：取消尚未执行的保存与正在进行的位置恢复
+function resetChapterPositionTracking() {
+  clearTimeout(saveTimer)
+  stopRestore?.()
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState !== 'hidden') return
+  if (isPdf.value || readerStore.settings.pageMode !== 'scroll') return
+  clearTimeout(saveTimer)
+  saveChapterPosition(true)
+}
+
 function handleScroll() {
   if (!contentRef.value) return
 
@@ -400,11 +493,13 @@ function handleScroll() {
       if (contentRef.value) handleWaterfallScroll(contentRef.value.scrollTop)
     })
   } else {
-    // Debounce-save chapter index only (scrollTop always 0 — restore to beginning)
+    if (restoringPosition || reader.loading.value) return
+    // 延迟保存，并绑定滚动时所在的章节：期间若已切换章节则放弃，避免把旧位置记到新章节上
+    const chapterAtScroll = reader.currentChapterIndex.value
     clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
-      reader.saveProgress(0)
-    }, 2000)
+      if (chapterAtScroll === reader.currentChapterIndex.value) saveChapterPosition()
+    }, SAVE_DELAY_MS)
   }
 }
 
@@ -474,12 +569,14 @@ function handleContentClick(e: MouseEvent) {
 
 // ── Chapter navigation (scroll mode) ────────────────────────
 async function goToPrevChapter() {
+  resetChapterPositionTracking()
   await reader.prevChapter()
   await nextTick()
   if (contentRef.value) contentRef.value.scrollTop = 0
 }
 
 async function goToNextChapter() {
+  resetChapterPositionTracking()
   await reader.nextChapter()
   await nextTick()
   if (contentRef.value) contentRef.value.scrollTop = 0
@@ -487,6 +584,7 @@ async function goToNextChapter() {
 
 async function jumpToChapter(index: number) {
   chapterListVisible.value = false
+  resetChapterPositionTracking()
   if (readerStore.settings.pageMode === 'waterfall') {
     // In waterfall, reset to the selected chapter
     reader.currentChapterIndex.value = index
@@ -562,6 +660,7 @@ function saveSettings() {
 }
 
 async function setPageMode(mode: 'scroll' | 'waterfall') {
+  resetChapterPositionTracking()
   readerStore.updateSettings({ pageMode: mode })
   if (mode === 'waterfall') {
     await initWaterfall()
@@ -581,6 +680,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
@@ -596,18 +696,21 @@ onMounted(async () => {
     await initWaterfall()
   } else {
     await reader.loadChapter(reader.progress.value.chapterIndex)
-    await nextTick()
-    if (contentRef.value) contentRef.value.scrollTop = 0
-    requestAnimationFrame(() => {
-      if (contentRef.value) contentRef.value.scrollTop = 0
+    await restoreChapterPosition({
+      paragraphIndex: reader.progress.value.paragraphIndex ?? 0,
+      paragraphOffset: reader.progress.value.paragraphOffset ?? 0,
     })
   }
 })
 
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
-  if (!isPdf.value && !reader.loading.value) {
-    reader.saveProgress(0)
+  // 位置尚未恢复完成就离开时不保存，避免用 0 覆盖原有进度
+  const wasRestoring = restoringPosition
+  stopRestore?.()
+  if (!isPdf.value && !reader.loading.value && !wasRestoring) {
+    if (readerStore.settings.pageMode === 'scroll') saveChapterPosition()
+    else reader.saveProgress(0)
   }
 })
 
@@ -615,6 +718,7 @@ onUnmounted(() => {
   cancelAnimationFrame(scrollRaf)
   clearTimeout(toolbarTimer)
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
 })
 </script>

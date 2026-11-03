@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { readerApi } from '@/api/reader'
-import type { Chapter, Bookmark, ReadingProgress } from '@/types'
+import type { Chapter, Bookmark, ReadingProgress, ReadingAnchor } from '@/types'
 import { ElMessage } from 'element-plus'
 
 export function useReader(bookId: string) {
@@ -40,9 +40,14 @@ export function useReader(bookId: string) {
     currentChapterIndex.value = progress.value.chapterIndex
   }
 
-  async function saveProgress(scrollTop: number) {
+  async function saveProgress(scrollTop: number, anchor: ReadingAnchor = { paragraphIndex: 0, paragraphOffset: 0 }) {
     const title = currentChapter.value?.title || ''
-    await readerApi.saveProgress(bookId, currentChapterIndex.value, title, scrollTop)
+    await readerApi.saveProgress(bookId, currentChapterIndex.value, title, scrollTop, anchor)
+  }
+
+  function saveProgressOnHide(scrollTop: number, anchor: ReadingAnchor) {
+    const title = currentChapter.value?.title || ''
+    readerApi.saveProgressOnHide(bookId, currentChapterIndex.value, title, scrollTop, anchor)
   }
 
   async function loadBookmarks() {
@@ -84,7 +89,7 @@ export function useReader(bookId: string) {
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
     loading, currentChapter, bookFormat, pdfUsePlugin,
-    loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress,
+    loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
   }
 }

@@ -108,6 +108,14 @@ function initSchema(): void {
   } catch {
     /* column exists */
   }
+  // Chapter-local reading anchor: block index + fraction within that block
+  // (independent of font size / page width, unlike scroll_top pixels)
+  for (const stmt of [
+    'ALTER TABLE reading_progress ADD COLUMN paragraph_index INTEGER DEFAULT 0',
+    'ALTER TABLE reading_progress ADD COLUMN paragraph_offset REAL DEFAULT 0',
+  ]) {
+    try { database.exec(stmt); } catch { /* column exists */ }
+  }
 
   // === Plan 1 schema: scan_tasks ===
   database.exec(`

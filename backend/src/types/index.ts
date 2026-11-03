@@ -49,6 +49,8 @@ export interface ReadingProgress {
   chapter_index: number;
   chapter_title?: string;
   scroll_top: number;
+  paragraph_index?: number | null;
+  paragraph_offset?: number | null;
   updated_at: string;
 }
 

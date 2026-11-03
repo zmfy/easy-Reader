@@ -54,7 +54,15 @@ export interface ReadingProgress {
   chapterIndex: number
   chapterTitle?: string
   scrollTop: number
+  paragraphIndex?: number
+  paragraphOffset?: number
   updated_at?: string
+}
+
+/** 章内阅读位置：屏幕顶部所在段落的序号 + 该段落已读过的比例（0–1） */
+export interface ReadingAnchor {
+  paragraphIndex: number
+  paragraphOffset: number
 }
 
 export interface Bookmark {

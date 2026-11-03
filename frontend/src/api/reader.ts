@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, Chapter, ReadingProgress, Bookmark } from '@/types'
+import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark } from '@/types'
 
 export const readerApi = {
   getChapters: (bookId: string) =>
@@ -14,8 +14,19 @@ export const readerApi = {
   getProgress: (bookId: string) =>
     http.get<ApiResponse<ReadingProgress>>(`/reader/${bookId}/progress`),
 
-  saveProgress: (bookId: string, chapterIndex: number, chapterTitle: string, scrollTop: number) =>
-    http.post<ApiResponse<ReadingProgress>>(`/reader/${bookId}/progress`, { chapterIndex, chapterTitle, scrollTop }),
+  saveProgress: (bookId: string, chapterIndex: number, chapterTitle: string, scrollTop: number, anchor?: ReadingAnchor) =>
+    http.post<ApiResponse<ReadingProgress>>(`/reader/${bookId}/progress`, { chapterIndex, chapterTitle, scrollTop, ...anchor }),
+
+  // 页面切到后台/关闭时使用：keepalive 保证页面卸载后请求仍会发出（axios 请求可能被中断）
+  saveProgressOnHide: (bookId: string, chapterIndex: number, chapterTitle: string, scrollTop: number, anchor: ReadingAnchor) => {
+    const token = localStorage.getItem('accessToken')
+    return fetch(`/api/reader/${bookId}/progress`, {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ chapterIndex, chapterTitle, scrollTop, ...anchor }),
+    }).catch(() => undefined)
+  },
 
   getBookmarks: (bookId: string) =>
     http.get<ApiResponse<Bookmark[]>>(`/reader/${bookId}/bookmarks`),
