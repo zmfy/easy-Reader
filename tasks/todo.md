@@ -92,3 +92,11 @@
 - [x] 进度、书签写入前校验书籍存在
 - [x] 手机端布局：书库搜索栏不溢出；阅读器窄屏加宽正文
 - [x] 验证：测试 + tsc + Chrome 手机视口实测
+
+# 后端依赖大版本升级
+
+- [x] uuid：仅用 v4 → 改用 Node 内置 crypto.randomUUID，移除 uuid / @types/uuid（13 个文件，调用点不变）
+- [x] zod 3 → 4：z.record 补 key 类型（2 处）、ZodError.errors → issues（1 处）；核对 default / pipe / catch 等 v4 语义变化不受影响
+- [x] nodemailer 6 → 10：逐个核对 7/8/9/10 的 BREAKING（SES、错误码改名、远程内容 TLS 校验、Node 20+）均不涉及；@types/nodemailer → 8
+- [x] 验证：28 suites / 203 tests、生产构建、18 项接口校验实测、本地调试 SMTP 实际收发邀请邮件并核对转义
+- [ ] 剩余：adm-zip / epub2 暂无修复版本

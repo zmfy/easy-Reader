@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { applyBatch } from '../../src/services/batch-applier';
 import { _setDbForTesting } from '../../src/services/manual-override';
 

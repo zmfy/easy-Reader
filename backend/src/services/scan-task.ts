@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { ScanTask, ScanOptions } from '../types';

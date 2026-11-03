@@ -61,7 +61,7 @@ router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
 
 // PUT /api/settings
 router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
-  const schema = z.record(z.string().max(200));
+  const schema = z.record(z.string(), z.string().max(200));
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
 
@@ -114,7 +114,7 @@ router.get('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
 
 // PUT /api/settings/reader-prefs
 // 只接受扁平的简单值对象，限制字段数与总大小，防止任意大数据写入 settings 表
-const readerPrefsSchema = z.record(z.union([z.string().max(200), z.number(), z.boolean()]))
+const readerPrefsSchema = z.record(z.string(), z.union([z.string().max(200), z.number(), z.boolean()]))
   .refine(v => Object.keys(v).length <= 30, '字段过多');
 const READER_PREFS_MAX_BYTES = 4 * 1024;
 
@@ -237,7 +237,7 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
-    errorResponse(res, 422, 'VALIDATION_ERROR', parsed.error.errors[0]?.message || '密码格式不符合要求');
+    errorResponse(res, 422, 'VALIDATION_ERROR', parsed.error.issues[0]?.message || '密码格式不符合要求');
     return;
   }
 

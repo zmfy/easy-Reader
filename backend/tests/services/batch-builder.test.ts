@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { buildBatchFromScan, ScanResult } from '../../src/services/batch-builder';
 
 let db: Database.Database;

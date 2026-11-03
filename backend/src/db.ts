@@ -272,7 +272,7 @@ function initSchema(): void {
   const adminExists = database.prepare('SELECT id FROM users WHERE role = ?').get('admin');
   if (!adminExists) {
     const bcrypt = require('bcryptjs');
-    const { v4: uuidv4 } = require('uuid');
+    const { randomUUID: uuidv4 } = require('crypto');
     const hash = bcrypt.hashSync('admin123', 10);
     database.prepare('INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)').run(
       uuidv4(), 'admin', hash, 'admin'
