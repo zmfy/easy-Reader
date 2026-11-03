@@ -35,7 +35,8 @@ async function computeTxtFingerprint(filePath: string, fileSize: number): Promis
 
   let firstContent = '';
   if (chapters.length > 0) {
-    const html = await parser.getChapterContent(0);
+    // 不含第一个标题之前的前言，保证指纹与此前版本一致
+    const html = await parser.getChapterContentForFingerprint(0);
     // Strip <p> tags, then restore escaped characters so the hash is over plain text
     firstContent = unescapeHtml(html.replace(/<[^>]+>/g, '')).trim();
   }

@@ -73,6 +73,12 @@ export class TxtParser implements ReaderPlugin {
    * instead of the file on disk, so the rest of the parser stays UTF-8-only.
    */
   private memBuffer: Buffer | null = null;
+  /**
+   * End byte of visible text before the first chapter header (book title,
+   * intro, preface), or 0 if there is none. Shown at the top of chapter 0 when
+   * reading; chapter boundaries and fingerprint input are left unchanged.
+   */
+  private leadingTextEnd = 0;
 
   async load(filePath: string): Promise<void> {
     this.filePath = filePath;
@@ -142,6 +148,8 @@ export class TxtParser implements ReaderPlugin {
         }
 
         this.chapters = chapters;
+        const firstStart = chapters[0]?.startByte ?? 0;
+        this.leadingTextEnd = firstStart > 0 && this.hasVisibleText(0, firstStart) ? firstStart : 0;
         resolve();
       };
 
@@ -203,25 +211,47 @@ export class TxtParser implements ReaderPlugin {
     if (this.chapters.length === 0) return '';
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
+    // 第 0 章从文件开头读起，带上第一个标题之前的书名 / 简介 / 前言
+    const start = index === 0 && this.leadingTextEnd > 0 ? 0 : chapter.startByte;
+    return this.renderRange(start, chapter.endByte);
+  }
 
-    const byteLength = chapter.endByte - chapter.startByte;
+  /**
+   * Chapter content starting at its header, WITHOUT the leading text merged
+   * into chapter 0. Used for fingerprints so they stay identical to those
+   * computed before leading text was shown (no forced full rescan).
+   */
+  async getChapterContentForFingerprint(index: number): Promise<string> {
+    if (this.chapters.length === 0) return '';
+    const chapter = this.chapters[index];
+    if (!chapter) throw new Error(`章节 ${index} 不存在`);
+    return this.renderRange(chapter.startByte, chapter.endByte);
+  }
+
+  private readRange(start: number, end: number): string {
+    const byteLength = end - start;
     if (byteLength <= 0) return '';
-
     const buffer = Buffer.alloc(byteLength);
     if (this.memBuffer) {
-      this.memBuffer.copy(buffer, 0, chapter.startByte, chapter.endByte);
+      this.memBuffer.copy(buffer, 0, start, end);
     } else {
       const fd = fs.openSync(this.filePath, 'r');
       try {
-        fs.readSync(fd, buffer, 0, byteLength, chapter.startByte);
+        fs.readSync(fd, buffer, 0, byteLength, start);
       } finally {
         fs.closeSync(fd);
       }
     }
+    return iconv.decode(buffer, this.encoding);
+  }
 
-    const text = iconv.decode(buffer, this.encoding);
-    const paragraphs = text.split(/\r?\n+/).filter((p: string) => p.trim());
+  private renderRange(start: number, end: number): string {
+    const paragraphs = this.readRange(start, end).split(/\r?\n+/).filter((p: string) => p.trim());
     return paragraphs.map((p: string) => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
+  }
+
+  private hasVisibleText(start: number, end: number): boolean {
+    return /\S/.test(this.readRange(start, Math.min(end, start + 64 * 1024)));
   }
 
   async getTotalProgress(): Promise<number> {
