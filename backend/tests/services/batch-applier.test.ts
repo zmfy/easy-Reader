@@ -204,3 +204,51 @@ describe('applyBatch duplicate_of consistency', () => {
     expect(b).toEqual({ status: 'duplicate', duplicate_of: 'A' });
   });
 });
+
+describe('applyBatch remembers "not duplicate" decisions', () => {
+  const group = {
+    canonical_file_path: '/a',
+    members: [
+      { file_path: '/a', fingerprint: 'f', decision_type: 'hard' },
+      { file_path: '/b', fingerprint: 'f', decision_type: 'hard' },
+      { file_path: '/c', fingerprint: 'f', decision_type: 'hard' },
+    ],
+  };
+  const seed = () => {
+    for (const id of ['A', 'B', 'C']) {
+      db.prepare("INSERT INTO books (id, title, file_path, file_format, status) VALUES (?, ?, ?, 'txt', 'normal')").run(id, id, '/' + id.toLowerCase());
+    }
+  };
+  const pairs = () => (db.prepare("SELECT book_id_a a, book_id_b b FROM manual_overrides WHERE type = 'not_duplicate'").all() as Array<{ a: string; b: string }>)
+    .map(r => [r.a, r.b].sort().join('|')).sort();
+
+  it('records every member pair when the whole group is rejected', () => {
+    seed();
+    const batchId = makeBatch([{ type: 'duplicate_group', payload: group }]);
+    db.prepare("UPDATE scan_batch_items SET admin_decision = 'reject' WHERE batch_id = ?").run(batchId);
+    applyBatch(batchId, 'admin1', db);
+    expect(pairs()).toEqual(['A|B', 'A|C', 'B|C']);
+    expect(db.prepare("SELECT COUNT(*) c FROM books WHERE status = 'normal'").get()).toEqual({ c: 3 });
+  });
+
+  it('records a rejected member against every other member', () => {
+    seed();
+    const batchId = makeBatch([{ type: 'duplicate_group', payload: {
+      canonical_file_path: '/a',
+      members: group.members.slice(0, 2),
+      rejected_members: [{ file_path: '/c', fingerprint: 'f' }],
+    } }]);
+    applyBatch(batchId, 'admin1', db);
+    expect(pairs()).toEqual(['A|C', 'B|C']);
+  });
+
+  it('does not create duplicate override rows when the same decision is applied again', () => {
+    seed();
+    for (let i = 0; i < 2; i++) {
+      const batchId = makeBatch([{ type: 'duplicate_group', payload: group }]);
+      db.prepare("UPDATE scan_batch_items SET admin_decision = 'reject' WHERE batch_id = ?").run(batchId);
+      applyBatch(batchId, 'admin1', db);
+    }
+    expect(pairs()).toEqual(['A|B', 'A|C', 'B|C']);
+  });
+});

@@ -186,3 +186,41 @@ function mergeOverlappingClusters(clusters: ScannedBook[][]): ScannedBook[][] {
     .map(m => Array.from(m.values()))
     .filter(g => g.length >= 2);
 }
+
+/**
+ * Remove members an admin has declared "not a duplicate" (manual_overrides
+ * not_duplicate pairs). A member is dropped when it is declared not-duplicate
+ * with every other remaining member; groups left with fewer than 2 members
+ * disappear. Members without a book id (new files) are never dropped.
+ * Without this, a group the admin rejected ("非重复，加入书库") is regenerated
+ * on every scan from the unchanged fingerprints, so review mode never empties.
+ *
+ * @param notDuplicatePairs set of "idA|idB" (both orders present)
+ */
+export function applyNotDuplicateOverrides(
+  groups: ScannedBook[][],
+  idByPath: Map<string, string>,
+  notDuplicatePairs: Set<string>,
+): ScannedBook[][] {
+  if (notDuplicatePairs.size === 0) return groups;
+  const notDup = (a: ScannedBook, b: ScannedBook): boolean => {
+    const ia = idByPath.get(a.file_path);
+    const ib = idByPath.get(b.file_path);
+    return !!ia && !!ib && notDuplicatePairs.has(`${ia}|${ib}`);
+  };
+  const out: ScannedBook[][] = [];
+  for (const group of groups) {
+    const members = [...group];
+    let changed = true;
+    while (changed && members.length >= 2) {
+      changed = false;
+      const idx = members.findIndex(m => members.every(o => o === m || notDup(m, o)));
+      if (idx >= 0) {
+        members.splice(idx, 1);
+        changed = true;
+      }
+    }
+    if (members.length >= 2) out.push(members);
+  }
+  return out;
+}

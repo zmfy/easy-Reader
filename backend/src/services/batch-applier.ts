@@ -7,7 +7,7 @@ import {
   DuplicateGroupPayload,
   SeriesGroupPayload,
 } from '../types';
-import { createOverride } from './manual-override';
+import { createOverride, isNotDuplicate } from './manual-override';
 
 export interface ApplyResult {
   inserted: number;
@@ -112,6 +112,15 @@ export function applyBatch(
     return id;
   }
 
+  const idForPath = (filePath: string): string | undefined =>
+    (db.prepare('SELECT id FROM books WHERE file_path = ?').get(filePath) as { id: string } | undefined)?.id;
+
+  // 记住管理员「不是重复」的判定（去重扫描据此过滤），已存在则不重复写入
+  function rememberNotDuplicate(a: string, b: string): void {
+    if (a === b || isNotDuplicate(a, b)) return;
+    createOverride({ type: 'not_duplicate', book_id_a: a, book_id_b: b, created_by: appliedBy });
+  }
+
   const tx = db.transaction(() => {
     // Phase 1: 'new'
     for (const it of items) {
@@ -128,7 +137,20 @@ export function applyBatch(
     // Phase 2: duplicate_group
     for (const it of items) {
       if (it.type !== 'duplicate_group') continue;
-      if (it.admin_decision === 'reject') continue;
+      if (it.admin_decision === 'reject') {
+        // 「非重复，加入书库」：记录组内两两「不是重复」。否则指纹不变，下次扫描会原样
+        // 重新生成这个组，审核模式永远有待审核批次（并阻塞后续扫描）
+        try {
+          const payload = JSON.parse(it.admin_payload ?? it.payload) as DuplicateGroupPayload;
+          const ids = payload.members.map(m => idForPath(m.file_path)).filter((id): id is string => !!id);
+          for (let i = 0; i < ids.length; i++) {
+            for (let j = i + 1; j < ids.length; j++) rememberNotDuplicate(ids[i], ids[j]);
+          }
+        } catch (e) {
+          result.errors.push({ item_id: it.id, message: (e as Error).message });
+        }
+        continue;
+      }
       try {
         const payload = JSON.parse(it.admin_payload ?? it.payload) as DuplicateGroupPayload & {
           rejected_members?: Array<{ file_path: string; fingerprint?: string }>;
@@ -154,6 +176,7 @@ export function applyBatch(
         const canonicalId = (db.prepare('SELECT id FROM books WHERE file_path = ?').get(canonical.file_path) as { id: string }).id;
         db.prepare("UPDATE books SET duplicate_of = NULL, status = 'normal' WHERE id = ?").run(canonicalId);
 
+        const keptMemberIds: string[] = [canonicalId];
         for (const m of payload.members) {
           if (m.file_path === canonical.file_path) continue;
           const memRow = db.prepare('SELECT id FROM books WHERE file_path = ?').get(m.file_path) as
@@ -172,6 +195,7 @@ export function applyBatch(
             result.inserted++;
           }
           db.prepare("UPDATE books SET status = 'duplicate', duplicate_of = ? WHERE id = ?").run(canonicalId, memId);
+          keptMemberIds.push(memId);
           result.duplicates_linked++;
         }
 
@@ -194,12 +218,8 @@ export function applyBatch(
               result.inserted++;
             }
             db.prepare("UPDATE books SET status = 'normal', duplicate_of = NULL WHERE id = ?").run(rmId);
-            createOverride({
-              type: 'not_duplicate',
-              book_id_a: canonicalId,
-              book_id_b: rmId,
-              created_by: appliedBy,
-            });
+            // 与组内每个保留成员都记录，不只是当前正本：之后正本选择变化时规则仍然有效
+            for (const keptId of keptMemberIds) rememberNotDuplicate(keptId, rmId);
           }
         }
       } catch (e) {

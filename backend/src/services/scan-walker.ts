@@ -18,7 +18,8 @@ import {
   DuplicateGroupPayload,
   SeriesGroupPayload,
 } from '../types';
-import { buildCandidateGroups, ScannedBook } from './dedup-grouper';
+import { buildCandidateGroups, applyNotDuplicateOverrides, ScannedBook } from './dedup-grouper';
+import { listOverrides } from './manual-override';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { deleteBookRelations } from './relation-cleanup';
@@ -72,6 +73,12 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version, status: r.status });
     }
 
+    // 已标记为乱码的文件（全量重扫时 prefetched 为空，因此单独查询）
+    const knownGarbledPaths = new Set(
+      (getDb().prepare("SELECT file_path FROM books WHERE status = 'garbled'").all() as Array<{ file_path: string }>)
+        .map(r => r.file_path),
+    );
+
     // Prepare once outside the loop — recompiling SQL on every migration-cohort
     // row would be wasteful for large libraries.
     const backfillMtimeStmt = getDb().prepare(
@@ -108,7 +115,9 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       }
       const result = await processFile(fullPath, options, st);
       if (result.scanned) scanned.push(result.scanned);
-      if (result.garbled) garbled.push(result.garbled);
+      // 已标记为乱码的书仍会重新检测（检测改进后可被「救回」为新书），但仍是乱码时
+      // 不再重复生成审核项，否则审核模式每次扫描都会产生待审核批次
+      if (result.garbled && !knownGarbledPaths.has(fullPath)) garbled.push(result.garbled);
       if (result.encoding_fixed) encodingFixed.push(result.encoding_fixed);
       processed++;
       if (processed % 5 === 0 || processed === allFiles.length) {
@@ -164,7 +173,20 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         })),
     ];
 
-    const { hard_groups, title_author_groups } = buildCandidateGroups(dedupInput);
+    const candidateGroups = buildCandidateGroups(dedupInput);
+
+    // 过滤管理员已判定「不是重复」的成员（manual_overrides），否则被拒绝的组每次扫描都会重现
+    const idByPath = new Map(
+      (db.prepare('SELECT id, file_path FROM books').all() as Array<{ id: string; file_path: string }>)
+        .map(r => [r.file_path, r.id] as [string, string]),
+    );
+    const notDuplicatePairs = new Set(
+      listOverrides('not_duplicate').flatMap(o =>
+        o.book_id_a && o.book_id_b ? [`${o.book_id_a}|${o.book_id_b}`, `${o.book_id_b}|${o.book_id_a}`] : [],
+      ),
+    );
+    const hard_groups = applyNotDuplicateOverrides(candidateGroups.hard_groups, idByPath, notDuplicatePairs);
+    const title_author_groups = applyNotDuplicateOverrides(candidateGroups.title_author_groups, idByPath, notDuplicatePairs);
 
     // AI dedup removed from scan (deterministic fingerprint dedup only).
     const aiDupGroups: DuplicateGroupPayload[] = [];

@@ -136,3 +136,28 @@ describe('buildCandidateGroups.title_author_groups', () => {
     expect(r.title_author_groups.length).toBe(0);
   });
 });
+
+import { applyNotDuplicateOverrides } from '../../src/services/dedup-grouper';
+
+describe('applyNotDuplicateOverrides', () => {
+  const b = (p: string) => ({ file_path: p, title: p, first_chapter_preview: '' });
+  const idByPath = new Map([['/a', 'A'], ['/b', 'B'], ['/c', 'C']]);
+  const pairs = (...ps: Array<[string, string]>) => new Set(ps.flatMap(([x, y]) => [`${x}|${y}`, `${y}|${x}`]));
+
+  it('drops a group whose members were all declared not-duplicate', () => {
+    const groups = [[b('/a'), b('/b'), b('/c')]];
+    expect(applyNotDuplicateOverrides(groups, idByPath, pairs(['A', 'B'], ['A', 'C'], ['B', 'C']))).toEqual([]);
+  });
+
+  it('removes only the member declared not-duplicate with everyone else', () => {
+    const groups = [[b('/a'), b('/b'), b('/c')]];
+    const out = applyNotDuplicateOverrides(groups, idByPath, pairs(['C', 'A'], ['C', 'B']));
+    expect(out.map(g => g.map(m => m.file_path))).toEqual([['/a', '/b']]);
+  });
+
+  it('keeps new files (no book id yet) and groups without overrides', () => {
+    const groups = [[b('/a'), b('/new.txt')], [b('/b'), b('/c')]];
+    const out = applyNotDuplicateOverrides(groups, idByPath, pairs(['A', 'B']));
+    expect(out.map(g => g.map(m => m.file_path))).toEqual([['/a', '/new.txt'], ['/b', '/c']]);
+  });
+});
