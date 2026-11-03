@@ -68,3 +68,11 @@
 - [x] 扫描不导入 UMD → scan-walker SUPPORTED_FORMATS 补 umd（历史无有意排除记录），新增测试
 - [x] Docker 健康检查 → 更正：合并后 docker-compose 已改用 node fetch，实测退出码 0，无需修改（此前判断基于合并前旧配置）
 - [x] 安全审查补充：findReadableBook 返回校验后的真实路径，后续读取不再跟随原路径
+
+# 二次审查 · 前端竞态与体验
+
+- [x] 章节模式慢网快速切章：useReader.loadChapter 请求序号，过期结果丢弃，调用方据返回值跳过保存/滚动
+- [x] 瀑布流后台加载时跳章：waterfallGeneration + resetWaterfall，过期请求丢弃并释放加载锁
+- [x] 刷新失败误踢登录：isAuthRejection 仅 401 / 无 refresh token 时退出；临时故障保留会话，定时续期 60s 后重试；新增 4 个单测
+- [x] 书库切换分类回第 1 页；fetchBooks 请求序号防乱序
+- [x] 验证：vitest 7 passed、vue-tsc；Chrome 中拦截 XHR 人为延迟旧请求，三处竞态均显示正确章节

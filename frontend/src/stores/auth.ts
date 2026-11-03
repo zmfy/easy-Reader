@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/api/auth'
+import { isAuthRejection } from '@/api/http'
 import type { User } from '@/types'
 
 // 从 JWT payload 解码过期时间（毫秒），无需额外依赖
@@ -30,10 +31,18 @@ export const useAuthStore = defineStore('auth', () => {
     // 在剩余有效期的 80% 时主动刷新（2h token → 约 96 分钟后刷新）
     const delay = remaining * 0.8
     if (delay < 60_000) return  // 剩余不足 1 分钟，不再安排（等 401 兜底）
-    refreshTimer = setTimeout(async () => {
-      refreshTimer = null
-      await tryRefresh()
-    }, delay)
+    refreshTimer = setTimeout(refreshOnTimer, delay)
+  }
+
+  const REFRESH_RETRY_MS = 60_000
+
+  async function refreshOnTimer() {
+    refreshTimer = null
+    const ok = await tryRefresh()
+    // 临时故障（断网 / 服务异常）时会话仍保留：稍后重试
+    if (!ok && localStorage.getItem('refreshToken')) {
+      refreshTimer = setTimeout(refreshOnTimer, REFRESH_RETRY_MS)
+    }
   }
 
   function storeTokens(data: { accessToken: string; refreshToken: string }) {
@@ -81,8 +90,9 @@ export const useAuthStore = defineStore('auth', () => {
       const data = resp.data.data!
       storeTokens(data)  // 刷新成功后同样重置定时器
       return true
-    } catch {
-      clearTokens()
+    } catch (err) {
+      // 只有令牌被服务端拒绝才清除会话；断网、5xx、429 时保留，避免被误踢回登录页
+      if (isAuthRejection(err)) clearTokens()
       return false
     }
   }

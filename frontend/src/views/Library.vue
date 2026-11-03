@@ -47,7 +47,7 @@
             style="width: 340px"
             @input="debouncedSearch"
           />
-          <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="fetchBooks">
+          <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="onCategoryChange">
             <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
           </el-select>
           <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
@@ -190,16 +190,27 @@ function resolveListParams(): ListParams {
   return { ...base, search: raw || undefined }
 }
 
+// 请求序号：搜索 / 切换条件较快时，只采用最后一次请求的结果，避免慢响应覆盖新结果
+let fetchSeq = 0
+
 async function fetchBooks() {
+  const seq = ++fetchSeq
   loading.value = true
   syncQuery()
   try {
     const booksResp = await libraryApi.listAdmin(resolveListParams())
+    if (seq !== fetchSeq) return
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
   } finally {
-    loading.value = false
+    if (seq === fetchSeq) loading.value = false
   }
+}
+
+// 切换分类后结果集变化，回到第 1 页（否则可能停在不存在的页码上显示为空）
+function onCategoryChange() {
+  pagination.page = 1
+  fetchBooks()
 }
 
 function onBookClick(book: Book): void {

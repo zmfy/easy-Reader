@@ -328,19 +328,31 @@ async function trimWaterfallTop() {
   container.scrollTop += after - before
 }
 
+// 瀑布流「代数」：每次重置（初始化 / 跳章 / 跳书签）递增，进行中的旧请求返回后据此丢弃，
+// 避免后台预加载的旧章节被插进刚清空的列表、导致跳到错误章节
+let waterfallGeneration = 0
+
+function resetWaterfall() {
+  waterfallGeneration++
+  waterfallChapters.value = []
+  waterfallLoading.value = false  // 释放旧请求持有的加载锁，让新的加载立即开始
+}
+
 async function loadWaterfallChapter(index: number) {
   if (waterfallLoading.value) return
   if (index >= reader.chapters.value.length) return
+  const generation = waterfallGeneration
   waterfallLoading.value = true
   try {
     const content = await reader.fetchChapterContent(index)
+    if (generation !== waterfallGeneration) return
     waterfallChapters.value.push({
       index,
       title: reader.chapters.value[index]?.title || `第 ${index + 1} 章`,
       content,
     })
   } finally {
-    waterfallLoading.value = false
+    if (generation === waterfallGeneration) waterfallLoading.value = false
   }
 }
 
@@ -362,7 +374,7 @@ async function fillWaterfallIfNeeded() {
 }
 
 async function initWaterfall() {
-  waterfallChapters.value = []
+  resetWaterfall()
   const startIndex = reader.currentChapterIndex.value
   await loadWaterfallChapter(startIndex)
   await nextTick()
@@ -589,13 +601,14 @@ async function jumpToChapter(index: number) {
   if (readerStore.settings.pageMode === 'waterfall') {
     // In waterfall, reset to the selected chapter
     reader.currentChapterIndex.value = index
-    waterfallChapters.value = []
+    resetWaterfall()
     await loadWaterfallChapter(index)
     await nextTick()
     if (contentRef.value) contentRef.value.scrollTop = 0
     await fillWaterfallIfNeeded()
   } else {
-    await reader.loadChapter(index)
+    // 被更新的切章请求取代时，不保存进度也不调整滚动
+    if (!await reader.loadChapter(index)) return
     await reader.saveProgress(0)
     await nextTick()
     if (contentRef.value) contentRef.value.scrollTop = 0
@@ -620,7 +633,7 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
   bookmarkDrawerVisible.value = false
   if (readerStore.settings.pageMode === 'waterfall') {
     reader.currentChapterIndex.value = chapterIndex
-    waterfallChapters.value = []
+    resetWaterfall()
     await loadWaterfallChapter(chapterIndex)
     await nextTick()
     await document.fonts.ready
@@ -632,7 +645,7 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
   }
   // 不同章节才重新加载；同章节只需滚动，跳过会导致 scrollTop 归零的 loading 切换
   if (chapterIndex !== reader.currentChapterIndex.value) {
-    await reader.loadChapter(chapterIndex)
+    if (!await reader.loadChapter(chapterIndex)) return
   }
   await nextTick()
   // 等待网络字体渲染完成，否则字体换行导致布局偏移后 scrollTop 失效
@@ -696,7 +709,8 @@ onMounted(async () => {
   if (readerStore.settings.pageMode === 'waterfall') {
     await initWaterfall()
   } else {
-    await reader.loadChapter(reader.progress.value.chapterIndex)
+    // 打开时用户若已切到别的章节，不再恢复旧进度位置
+    if (!await reader.loadChapter(reader.progress.value.chapterIndex)) return
     await restoreChapterPosition({
       paragraphIndex: reader.progress.value.paragraphIndex ?? 0,
       paragraphOffset: reader.progress.value.paragraphOffset ?? 0,

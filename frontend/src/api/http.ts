@@ -39,6 +39,15 @@ async function doRefresh(): Promise<string> {
   return data.accessToken
 }
 
+/**
+ * 刷新失败是否因为令牌本身无效（应退出登录）。
+ * 断网、服务端 5xx、限流 429 等临时错误返回 false：保留会话，稍后可重试。
+ */
+export function isAuthRejection(err: unknown): boolean {
+  if (err instanceof Error && (err.message === 'no refresh token' || err.message === 'refresh failed')) return true
+  return axios.isAxiosError(err) && err.response?.status === 401
+}
+
 function redirectToLogin(): void {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('refreshToken')
@@ -64,8 +73,9 @@ http.interceptors.response.use(
         const newToken = await refreshPromise
         config.headers.Authorization = `Bearer ${newToken}`
         return http(config)
-      } catch {
-        redirectToLogin()
+      } catch (refreshErr) {
+        // 仅在刷新令牌确实无效时退出；临时故障只让本次请求失败
+        if (isAuthRejection(refreshErr)) redirectToLogin()
       }
     } else if (is401) {
       redirectToLogin()

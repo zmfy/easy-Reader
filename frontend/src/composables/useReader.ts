@@ -23,14 +23,21 @@ export function useReader(bookId: string) {
     pdfUsePlugin.value = !!data?.pdfUsePlugin
   }
 
-  async function loadChapter(index: number) {
+  // 章节请求序号：慢网下连续切章时，只采用最后一次请求的结果，避免旧响应覆盖新章节
+  let chapterRequestSeq = 0
+
+  /** 返回 true 表示结果已生效；false 表示期间又发起了新的切章请求，本次结果被丢弃 */
+  async function loadChapter(index: number): Promise<boolean> {
+    const seq = ++chapterRequestSeq
     loading.value = true
     try {
       const resp = await readerApi.getChapterContent(bookId, index)
+      if (seq !== chapterRequestSeq) return false
       currentContent.value = resp.data.data?.content || ''
       currentChapterIndex.value = index
+      return true
     } finally {
-      loading.value = false
+      if (seq === chapterRequestSeq) loading.value = false
     }
   }
 
@@ -74,14 +81,14 @@ export function useReader(bookId: string) {
 
   async function prevChapter() {
     if (currentChapterIndex.value > 0) {
-      await loadChapter(currentChapterIndex.value - 1)
+      if (!await loadChapter(currentChapterIndex.value - 1)) return
       await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
     }
   }
 
   async function nextChapter() {
     if (currentChapterIndex.value < chapters.value.length - 1) {
-      await loadChapter(currentChapterIndex.value + 1)
+      if (!await loadChapter(currentChapterIndex.value + 1)) return
       await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
     }
   }
