@@ -232,7 +232,8 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
   if (!user) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
 
   const hash = bcrypt.hashSync(parsed.data.password, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  // 递增令牌版本：该用户此前签发的所有令牌立即失效（被盗号后重置密码可踢下线）
+  db.prepare('UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?').run(hash, req.params.id);
   successResponse(res, null, '密码已修改');
 });
 

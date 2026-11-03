@@ -53,3 +53,11 @@
 - [x] 子目录读取失败导致误删书籍及用户数据 → collectFiles 返回 unreadableDirs，findOrphanBookIds 跳过其下书籍
 - [x] 扫描审核「修改后再接受」清空修改 → PATCH 未带 payload 时 COALESCE 保留 admin_payload
 - [x] 验证：新增 6 个测试（25 suites / 185 tests）、tsc、API 实测、Chrome 实测问题书籍页
+
+# 二次审查 · 高优先级第二批
+
+- [x] #4 编码修复：原子写入（临时文件 + rename），改写后用新的 size/mtime 入库
+- [x] #5 任意文件登记/读取：批次入库与 /raw 读取校验路径位于 BOOKS_DIR 内
+- [x] #6 改密码/登出后旧令牌失效：users.token_version，令牌携带版本号
+- [x] 依赖：仅做兼容升级（npm audit fix，不含破坏性大版本）
+- [x] 验证：单测 + tsc + 开发服务实测

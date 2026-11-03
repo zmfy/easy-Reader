@@ -382,6 +382,8 @@ async function processFile(
   const title = path.basename(fullPath, path.extname(fullPath));
 
   const wasEncodingFixed = status === 'encoding_fixed';
+  // 编码修复会改写文件：必须用改写后的 size/mtime 入库，否则下次扫描会判定文件已变化而重复处理
+  const finalStat = wasEncodingFixed ? fs.statSync(fullPath) : st;
   const result: ScannedBookEx = {
     file_path: fullPath,
     title,
@@ -391,8 +393,8 @@ async function processFile(
     chapter_count: fp.chapter_count,
     first_chapter_preview: '',
     file_format: ext,
-    file_size: st.size,
-    file_mtime: st.mtimeMs,
+    file_size: finalStat.size,
+    file_mtime: finalStat.mtimeMs,
     encoding_detected: encoding,
     status: wasEncodingFixed ? 'encoding_fixed' : 'normal',
   };

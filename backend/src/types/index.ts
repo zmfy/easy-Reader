@@ -3,6 +3,7 @@ export interface User {
   username: string;
   password_hash: string;
   role: 'admin' | 'user';
+  token_version?: number;
   created_at: string;
 }
 
@@ -99,6 +100,8 @@ export interface JwtPayload {
   userId: string;
   role: 'admin' | 'user';
   type?: 'access' | 'refresh';
+  /** users.token_version at issue time; bumping it revokes all earlier tokens */
+  tv?: number;
 }
 
 export interface AiPlugin {

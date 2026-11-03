@@ -108,6 +108,8 @@ function initSchema(): void {
   } catch {
     /* column exists */
   }
+  // Revocation counter: incremented on password change, invalidating every token issued before
+  try { database.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch { /* column exists */ }
   // Chapter-local reading anchor: block index + fraction within that block
   // (independent of font size / page width, unlike scroll_top pixels)
   for (const stmt of [

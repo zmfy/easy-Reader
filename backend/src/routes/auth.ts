@@ -1,12 +1,10 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { getDb } from '../db';
-import { authMiddleware, generateTokens } from '../middleware/auth';
+import { authMiddleware, generateTokens, verifyRefreshToken } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
-import { JWT_SECRET } from '../secret';
 import { User } from '../types';
 
 const router = Router();
@@ -39,7 +37,7 @@ router.post('/login', (req: Request, res: Response) => {
     return;
   }
 
-  const tokens = generateTokens(user.id, user.role);
+  const tokens = generateTokens(user.id, user.role, user.token_version ?? 0);
   successResponse(res, {
     user: { id: user.id, username: user.username, role: user.role },
     ...tokens,
@@ -125,24 +123,13 @@ router.post('/refresh', (req: Request, res: Response) => {
     errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '未提供刷新令牌');
     return;
   }
-  try {
-    const payload = jwt.verify(refreshToken, JWT_SECRET) as import('../types').JwtPayload;
-    if (payload.type !== 'refresh') {
-      errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '刷新令牌无效');
-      return;
-    }
-    // 以数据库中的当前角色签发，已删除用户不能续期
-    const user = getDb().prepare('SELECT id, role FROM users WHERE id = ?').get(payload.userId) as
-      { id: string; role: 'admin' | 'user' } | undefined;
-    if (!user) {
-      errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '用户不存在或已被删除');
-      return;
-    }
-    const tokens = generateTokens(user.id, user.role);
-    successResponse(res, tokens);
-  } catch {
-    errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '刷新令牌无效');
+  // 以数据库中的当前角色与令牌版本签发：已删除用户或已改密码（令牌已吊销）都不能续期
+  const user = verifyRefreshToken(refreshToken);
+  if (!user) {
+    errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '刷新令牌无效或已失效');
+    return;
   }
+  successResponse(res, generateTokens(user.id, user.role, user.token_version));
 });
 
 export default router;

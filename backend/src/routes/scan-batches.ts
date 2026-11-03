@@ -13,14 +13,20 @@ const router = Router();
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 const PREVIEW_BYTES = 2048;
 
-// 收集 payload 中出现的所有文件路径（file_path / canonical_file_path / members[].file_path）
+// 收集 payload 中出现的所有文件路径（file_path / canonical_file_path / members[].file_path，
+// 以及系列卡片以字符串数组提交的 rejected_members）
 function collectPayloadPaths(value: unknown, out: Set<string>): void {
   if (Array.isArray(value)) {
     for (const v of value) collectPayloadPaths(v, out);
   } else if (value && typeof value === 'object') {
     for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
       if ((key === 'file_path' || key === 'canonical_file_path') && typeof v === 'string') out.add(v);
-      else collectPayloadPaths(v, out);
+      else if (key === 'rejected_members' && Array.isArray(v)) {
+        for (const r of v) {
+          if (typeof r === 'string') out.add(r);
+          else collectPayloadPaths(r, out);
+        }
+      } else collectPayloadPaths(v, out);
     }
   }
 }
@@ -53,9 +59,22 @@ router.patch('/:batchId/items/:itemId', authMiddleware, adminMiddleware, (req: R
   const parsed = itemPatchSchema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
-  const item = db.prepare('SELECT id FROM scan_batch_items WHERE id = ? AND batch_id = ?')
-    .get(req.params.itemId, req.params.batchId);
+  const item = db.prepare('SELECT id, payload FROM scan_batch_items WHERE id = ? AND batch_id = ?')
+    .get(req.params.itemId, req.params.batchId) as { id: string; payload: string } | undefined;
   if (!item) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '审核项不存在'); return; }
+
+  // 管理员只能在扫描结果的范围内调整（换正本、剔除、改名、排序），不能引入新的文件路径：
+  // 否则可把书库外的任意文件登记为书籍
+  if (parsed.data.payload !== undefined) {
+    const originalPaths = new Set<string>();
+    try { collectPayloadPaths(JSON.parse(item.payload), originalPaths); } catch { /* 损坏的原始 payload：不允许任何路径 */ }
+    const proposedPaths = new Set<string>();
+    collectPayloadPaths(parsed.data.payload, proposedPaths);
+    if ([...proposedPaths].some(p => !originalPaths.has(p))) {
+      errorResponse(res, 422, 'VALIDATION_ERROR', '修改内容包含不属于该审核项的文件路径');
+      return;
+    }
+  }
   // 未携带 payload 时（如修改后再点「接受」）保留管理员已有的修改，只更新决定
   db.prepare(
     `UPDATE scan_batch_items SET admin_decision = ?, admin_payload = COALESCE(?, admin_payload), reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ? WHERE id = ?`

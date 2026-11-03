@@ -7,10 +7,24 @@ import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { getReaderPlugin } from '../plugins/plugin-manager';
+import { resolveRealPathInsideRoot } from '../utils/path-safe';
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 
 const router = Router();
+const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
+
+// 读取书籍文件前，校验其真实路径（解析符号链接后）位于书库目录内，
+// 防止登记在库的路径指向书库外的文件（如数据库、密钥）而被读出
+function findReadableBook(bookId: string, res: Response): Book | null {
+  const book = getDb().prepare('SELECT * FROM books WHERE id = ?').get(bookId) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return null; }
+  if (!resolveRealPathInsideRoot(BOOKS_DIR, book.file_path)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在');
+    return null;
+  }
+  return book;
+}
 const window = new JSDOM('').window;
 // @ts-ignore
 const purify = DOMPurify(window);
@@ -42,8 +56,8 @@ function rewriteEpubAssetUrls(content: string, bookId: string, chapterHref: stri
 // GET /api/reader/:bookId/chapters
 router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
-  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
 
   // 原生 PDF 模式由浏览器直接渲染原文件，无需 pdf-parse 全量解析
   const isPdf = book.file_format.toLowerCase() === 'pdf';
@@ -83,9 +97,8 @@ const ALLOWED_ASSET_MIME = new Set([
 // BookId is a UUID (unguessable), content is non-sensitive book images — acceptable for a personal NAS reader.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
-  const db = getDb();
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
-  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
 
   const assetPath = (req.params as any)[0] as string;
   if (!assetPath) { errorResponse(res, 400, 'VALIDATION_ERROR', '资源路径不能为空'); return; }
@@ -117,9 +130,8 @@ router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
 
 // GET /api/reader/:bookId/raw — stream the original file (for PDF native rendering)
 router.get('/:bookId/raw', authMiddleware, (req: Request, res: Response) => {
-  const db = getDb();
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
-  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
   if (!fs.existsSync(book.file_path)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在'); return; }
 
   const mimeMap: Record<string, string> = {
@@ -137,9 +149,8 @@ router.get('/:bookId/raw', authMiddleware, (req: Request, res: Response) => {
 
 // GET /api/reader/:bookId/chapter/:index
 router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: Response) => {
-  const db = getDb();
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
-  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
 
   const index = parseInt(req.params.index, 10);
   if (isNaN(index) || index < 0) { errorResponse(res, 422, 'VALIDATION_ERROR', '无效章节索引'); return; }

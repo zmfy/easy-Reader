@@ -27,16 +27,44 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     return;
   }
 
-  // 以数据库为准：用户被删除或角色变更后立即生效
-  const user = getDb().prepare('SELECT id, role FROM users WHERE id = ?').get(payload.userId) as
-    { id: string; role: 'admin' | 'user' } | undefined;
+  // 以数据库为准：用户被删除、角色变更或密码修改后立即生效
+  const user = findTokenUser(payload);
   if (!user) {
-    errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '用户不存在或已被删除');
+    errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '令牌无效或已失效');
     return;
   }
 
   req.user = { userId: user.id, role: user.role, type: 'access' };
   next();
+}
+
+interface TokenUser {
+  id: string;
+  role: 'admin' | 'user';
+  token_version: number;
+}
+
+/** The user a token belongs to, or null if the user is gone or the token was revoked (version bumped). */
+function findTokenUser(payload: JwtPayload): TokenUser | null {
+  const user = getDb().prepare('SELECT id, role, token_version FROM users WHERE id = ?').get(payload.userId) as
+    { id: string; role: 'admin' | 'user'; token_version: number | null } | undefined;
+  if (!user) return null;
+  const currentVersion = user.token_version ?? 0;
+  // Tokens issued before versioning carry no tv: treat as version 0
+  if ((payload.tv ?? 0) !== currentVersion) return null;
+  return { id: user.id, role: user.role, token_version: currentVersion };
+}
+
+/** Verify a refresh token against current DB state; returns the user to re-issue tokens for, or null. */
+export function verifyRefreshToken(token: string): TokenUser | null {
+  let payload: JwtPayload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
+  } catch {
+    return null;
+  }
+  if (payload.type !== 'refresh') return null;
+  return findTokenUser(payload);
 }
 
 export function adminMiddleware(req: Request, res: Response, next: NextFunction): void {
@@ -47,9 +75,9 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
   next();
 }
 
-export function generateTokens(userId: string, role: 'admin' | 'user'): { accessToken: string; refreshToken: string } {
-  const accessPayload: JwtPayload = { userId, role, type: 'access' };
-  const refreshPayload: JwtPayload = { userId, role, type: 'refresh' };
+export function generateTokens(userId: string, role: 'admin' | 'user', tokenVersion = 0): { accessToken: string; refreshToken: string } {
+  const accessPayload: JwtPayload = { userId, role, type: 'access', tv: tokenVersion };
+  const refreshPayload: JwtPayload = { userId, role, type: 'refresh', tv: tokenVersion };
   const accessToken = jwt.sign(accessPayload, JWT_SECRET, { expiresIn: '2h' });
   const refreshToken = jwt.sign(refreshPayload, JWT_SECRET, { expiresIn: '30d' });
   return { accessToken, refreshToken };

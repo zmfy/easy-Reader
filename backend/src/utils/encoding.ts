@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import iconv from 'iconv-lite';
 
 export type EncodingStatus = 'normal' | 'encoding_fixed' | 'garbled' | 'uncertain';
@@ -17,6 +18,45 @@ const CONFIDENT_RATIO = 0.95;     // 高于此 = 一定是正常文本
 const SUSPICIOUS_RATIO = 0.7;     // 介于此与 CONFIDENT 之间 = 灰色区，需要 AI 复核
 // 低于 SUSPICIOUS_RATIO = 确定乱码（不必请 AI）
 
+async function readSample(filePath: string): Promise<Buffer> {
+  const fd = await fs.promises.open(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(SAMPLE_BYTES);
+    const { bytesRead } = await fd.read(buf, 0, SAMPLE_BYTES, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fd.close();
+  }
+}
+
+/**
+ * Replace a user's book file with a UTF-8 transcoding of it, atomically:
+ * write a temp file next to it, fsync, then rename over the original. A crash
+ * mid-write leaves the original untouched instead of truncated. Mode and
+ * (when permitted) owner are carried over, so a NAS file doesn't silently
+ * become root-owned just because the container runs as root.
+ */
+async function rewriteAsUtf8(filePath: string, encoding: string): Promise<void> {
+  const original = await fs.promises.stat(filePath);
+  const text = iconv.decode(await fs.promises.readFile(filePath), encoding);
+  const tmpPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    const fd = await fs.promises.open(tmpPath, 'wx', original.mode & 0o777);
+    try {
+      await fd.writeFile(text, 'utf-8');
+      await fd.sync();
+    } finally {
+      await fd.close();
+    }
+    await fs.promises.chmod(tmpPath, original.mode & 0o777);
+    await fs.promises.chown(tmpPath, original.uid, original.gid).catch(() => { /* not permitted as non-root */ });
+    await fs.promises.rename(tmpPath, filePath);
+  } catch (err) {
+    await fs.promises.unlink(tmpPath).catch(() => { /* temp file may not exist */ });
+    throw err;
+  }
+}
+
 /**
  * Detect file encoding. If non-UTF-8 but recognizable, overwrite as UTF-8.
  * Three-tier classification:
@@ -25,22 +65,21 @@ const SUSPICIOUS_RATIO = 0.7;     // 介于此与 CONFIDENT 之间 = 灰色区�
  *   ratio < 0.7            → confident garbled (no AI needed)
  */
 export async function detectAndFixEncoding(filePath: string): Promise<EncodingResult> {
-  const fullBuf = await fs.promises.readFile(filePath);
-  const sample = fullBuf.length > SAMPLE_BYTES ? fullBuf.subarray(0, SAMPLE_BYTES) : fullBuf;
+  // Only the first 64KB is needed to classify; the whole file is read only when it must be rewritten
+  const sample = await readSample(filePath);
 
   // Level 0: UTF-16 BOM is unambiguous. The byte-ratio path below would
   // misjudge UTF-16 (its interleaved 0x00 bytes drag every 8-bit decode into
   // the gray zone → "uncertain"), so detect it here and transcode to UTF-8,
   // matching parser-txt's encoding handling. iconv strips the BOM on decode.
   const bomEnc =
-    fullBuf.length >= 2 && fullBuf[0] === 0xff && fullBuf[1] === 0xfe
+    sample.length >= 2 && sample[0] === 0xff && sample[1] === 0xfe
       ? 'utf-16le'
-      : fullBuf.length >= 2 && fullBuf[0] === 0xfe && fullBuf[1] === 0xff
+      : sample.length >= 2 && sample[0] === 0xfe && sample[1] === 0xff
         ? 'utf-16be'
         : null;
   if (bomEnc) {
-    const fullText = iconv.decode(fullBuf, bomEnc);
-    await fs.promises.writeFile(filePath, fullText, 'utf-8');
+    await rewriteAsUtf8(filePath, bomEnc);
     return { status: 'encoding_fixed', encoding: bomEnc };
   }
 
@@ -61,8 +100,7 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
     const r = printableRatio(text);
     if (r >= CONFIDENT_RATIO) {
       // confident — fix immediately
-      const fullText = iconv.decode(fullBuf, enc);
-      await fs.promises.writeFile(filePath, fullText, 'utf-8');
+      await rewriteAsUtf8(filePath, enc);
       return { status: 'encoding_fixed', encoding: enc };
     }
     if (r > bestRatio) {
