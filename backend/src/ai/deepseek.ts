@@ -1,4 +1,5 @@
 import { AiPlugin, Book } from '../types';
+import { buildFillPrompt } from './fill-prompt';
 
 const deepseekPlugin: AiPlugin = {
   name: 'deepseek',
@@ -9,18 +10,11 @@ const deepseekPlugin: AiPlugin = {
     baseUrl: 'https://api.deepseek.com/v1',
   },
 
-  async fillBookInfo(rawText: string, config: Record<string, string>): Promise<Partial<Book>> {
+  async fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {
     const baseUrl = config.baseUrl || 'https://api.deepseek.com/v1';
     const model = config.model || 'deepseek-chat';
 
-
-    const prompt = `你是一个熟悉中文网络小说的助手。请根据书名从你的知识库中查找该小说的准确信息，优先使用你已知的信息，不要从下方文本中分析。
-
-${rawText}
-
-只返回如下JSON格式，不含其他任何文字：
-{"title":"正确书名","author":"作者名","summary":"100字左右的故事简介","category":"分类（玄幻/修真/都市/历史/科幻/悬疑/言情/武侠等）","is_finished":true,"platform":"首发连载平台（如起点中文网）","start_date":"开始连载年月（如2007年12月）","end_date":"完本年月（已完结时填写，如2023年8月）"}
-is_finished为true表示已完结，false表示连载中。如果不确定某字段，省略该字段，不要猜测。`;
+    const prompt = buildFillPrompt(rawText, config, hint);
 
     const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -74,6 +68,29 @@ is_finished为true表示已完结，false表示连载中。如果不确定某字
 
     const data = await resp.json() as Record<string, unknown>;
     return ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content?.trim() || '综合';
+  },
+
+  async chat(prompt: string, config: Record<string, string>): Promise<string> {
+    const baseUrl = config.baseUrl || 'https://api.deepseek.com/v1';
+    const model = config.model || 'deepseek-chat';
+
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`DeepSeek API error: ${resp.status}`);
+
+    const data = await resp.json() as Record<string, unknown>;
+    return ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content || '';
   },
 };
 

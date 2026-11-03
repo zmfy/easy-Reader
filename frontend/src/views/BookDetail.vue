@@ -38,6 +38,11 @@
                   <a v-if="book.author" class="author-link" @click="router.push({ path: '/library', query: { search: book.author } })">{{ book.author }}</a>
                   <span v-else>未知作者</span>
                 </p>
+                <p v-if="book.rating" class="book-rating">
+                  <span class="rating-star">★</span>
+                  <span class="rating-score">{{ book.rating.toFixed(1) }}</span>
+                  <span class="rating-source">豆瓣</span>
+                </p>
               </div>
               <div v-else class="edit-fields">
                 <el-input v-model="editForm.title" placeholder="书名" />
@@ -50,23 +55,34 @@
                     <el-button size="small" type="primary" @click="saveEdit" :loading="saving">保存</el-button>
                     <el-button size="small" @click="cancelEdit">取消</el-button>
                   </template>
-                  <el-button
-                    size="small"
-                    :loading="aiFilling"
-                    @click="handleAiFill"
+                  <el-tooltip
+                    placement="top"
+                    :content="aiConfigured ? 'AI 不会覆盖 admin 修改过的字段。想让 AI 重写，请先清空对应字段再保存。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
                   >
-                    <el-icon><MagicStick /></el-icon>
-                    AI 填充
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :loading="coverTesting"
-                    @click="handleCoverTest"
-                  >
-                    抓封面
-                  </el-button>
+                    <el-button
+                      size="small"
+                      :loading="aiFilling"
+                      :disabled="!aiConfigured"
+                      @click="handleAiFill"
+                    >
+                      <el-icon><MagicStick /></el-icon>
+                      AI 填充
+                    </el-button>
+                  </el-tooltip>
                 </template>
               </div>
+              <el-alert
+                v-if="authStore.isAdmin && editedFieldsList.length > 0"
+                type="info"
+                show-icon
+                :closable="false"
+                class="ai-protect-alert"
+              >
+                <template #title>已手动编辑的字段：{{ editedFieldsList.join('、') }}</template>
+                <template #default>
+                  这些字段已被锁定，AI 填充不会覆盖。如需重写，请清空字段并保存后再点 AI 填充。
+                </template>
+              </el-alert>
             </div>
 
             <div class="info-tags">
@@ -104,6 +120,32 @@
                 placeholder="故事简介"
               />
             </div>
+
+            <div v-if="aiMeta && aiMeta.recommended_tags.length > 0" class="ai-meta-section">
+              <div class="summary-label">推荐标签</div>
+              <div class="tag-list">
+                <el-tag v-for="tag in aiMeta.recommended_tags" :key="tag" size="small">{{ tag }}</el-tag>
+              </div>
+            </div>
+
+            <div v-if="aiMeta && aiMeta.similar_works.length > 0" class="ai-meta-section">
+              <div class="summary-label">类似作品</div>
+              <ul class="similar-list">
+                <li v-for="w in aiMeta.similar_works" :key="w.title">
+                  <router-link
+                    v-if="similarLinks.get(w.title)"
+                    :to="`/book/${similarLinks.get(w.title)}`"
+                    class="similar-link"
+                  >
+                    <strong>《{{ w.title }}》</strong>
+                    <el-tag size="small" type="success" class="in-library-tag">本库已有</el-tag>
+                  </router-link>
+                  <strong v-else>《{{ w.title }}》</strong>
+                  <span v-if="w.author" class="similar-author">— {{ w.author }}</span>
+                  <span v-if="w.reason" class="similar-reason">：{{ w.reason }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -112,26 +154,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
+import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
-import type { Book } from '@/types'
+import type { Book, BookAiMetadata } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
 const book = ref<Book | null>(null)
+const aiMeta = ref<BookAiMetadata | null>(null)
+// Map: similar-work title → in-library book id (if found)
+const similarLinks = ref<Map<string, string>>(new Map())
 const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
-const coverTesting = ref(false)
+const aiConfigured = ref(true)
 const addingShelf = ref(false)
 
 const editForm = reactive({
@@ -139,6 +185,18 @@ const editForm = reactive({
   author: '',
   summary: '',
   category: '',
+})
+
+// Display friendly labels of fields admin manually edited (AI fill won't overwrite them).
+const FIELD_LABELS: Record<string, string> = { title: '标题', author: '作者', summary: '简介', category: '分类' }
+const editedFieldsList = computed<string[]>(() => {
+  const raw = book.value?.manually_edited_fields
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.map(f => FIELD_LABELS[f as string] ?? String(f))
+  } catch { return [] }
 })
 
 function formatSize(bytes: number) {
@@ -150,11 +208,46 @@ function formatSize(bytes: number) {
 async function fetchBook() {
   loading.value = true
   try {
-    const resp = await libraryApi.get(route.params.bookId as string)
-    book.value = resp.data.data || null
+    const id = route.params.bookId as string
+    const [bookResp, metaResp] = await Promise.all([
+      libraryApi.get(id),
+      libraryApi.getAiMetadata(id).catch(() => null),
+    ])
+    book.value = bookResp.data.data || null
+    aiMeta.value = metaResp?.data.data ?? null
+
+    // Gate the AI-fill button on whether AI is configured (admin-only feature).
+    if (authStore.isAdmin) {
+      try {
+        const s = await settingsApi.getAiStatus()
+        aiConfigured.value = !!s.data.data?.configured
+      } catch { aiConfigured.value = false }
+    }
+
+    // Resolve "similar works" titles to in-library book ids so the UI can link
+    similarLinks.value = new Map()
+    const sims = aiMeta.value?.similar_works ?? []
+    if (sims.length > 0) {
+      try {
+        const lookupResp = await libraryApi.lookupByTitles(
+          sims.map(s => ({ title: s.title, author: s.author })),
+        )
+        for (const r of (lookupResp.data.data ?? [])) {
+          if (r.book_id) similarLinks.value.set(r.title, r.book_id)
+        }
+      } catch { /* lookup best-effort */ }
+    }
   } finally {
     loading.value = false
   }
+}
+
+async function refreshAiMeta(): Promise<void> {
+  if (!book.value) return
+  try {
+    const resp = await libraryApi.getAiMetadata(book.value.id)
+    aiMeta.value = resp.data.data ?? null
+  } catch { /* ignore */ }
 }
 
 function startEdit() {
@@ -187,30 +280,12 @@ async function handleAiFill() {
   try {
     const resp = await libraryApi.aiFill(route.params.bookId as string)
     book.value = resp.data.data || null
+    await refreshAiMeta()
     ElMessage.success('AI 填充成功')
   } catch (err: unknown) {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
     aiFilling.value = false
-  }
-}
-
-async function handleCoverTest() {
-  if (!book.value) return
-  coverTesting.value = true
-  try {
-    const resp = await libraryApi.coverTest(book.value.id)
-    const { coverUrl } = resp.data.data!
-    if (coverUrl) {
-      book.value = { ...book.value, cover_url: coverUrl }
-      ElMessage.success(`封面已抓取: ${coverUrl}`)
-    } else {
-      ElMessage.warning('未找到封面，请查看后端日志')
-    }
-  } catch (err: unknown) {
-    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '抓取失败')
-  } finally {
-    coverTesting.value = false
   }
 }
 
@@ -233,6 +308,10 @@ async function handleAddToShelf() {
 }
 
 onMounted(fetchBook)
+// Re-fetch when navigating between book pages (e.g. clicking a "similar works"
+// link): the BookDetail component is reused on /book/:bookId param change, so
+// onMounted won't fire again — watch the param to reload the new book.
+watch(() => route.params.bookId, () => { fetchBook() })
 </script>
 
 <style scoped>
@@ -444,6 +523,16 @@ onMounted(fetchBook)
   border-bottom-color: var(--accent);
 }
 
+.book-rating {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+}
+.book-rating .rating-star { color: #ffb400; font-size: 18px; }
+.book-rating .rating-score { color: #ffb400; font-size: 22px; font-weight: 700; }
+.book-rating .rating-source { font-size: 12px; color: var(--text-2); }
+
 .edit-fields {
   flex: 1;
   display: flex;
@@ -514,4 +603,45 @@ onMounted(fetchBook)
 .loading-state {
   padding: 40px;
 }
+
+.ai-protect-alert {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.ai-meta-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(124, 92, 255, 0.1);
+}
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.similar-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0 0;
+}
+.similar-list li {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.similar-author {
+  color: var(--text-2);
+  margin-left: 4px;
+}
+.similar-reason {
+  color: var(--text-2);
+}
+.similar-link {
+  color: var(--accent, var(--el-color-primary));
+  text-decoration: none;
+}
+.similar-link:hover { text-decoration: underline; }
+.in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>

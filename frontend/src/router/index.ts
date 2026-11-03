@@ -50,6 +50,42 @@ const router = createRouter({
       component: () => import('@/views/Settings.vue'),
       meta: { requiresAuth: true, roles: ['admin'] },
     },
+    {
+      path: '/library/scan-batches',
+      name: 'scan-batches',
+      component: () => import('@/views/ScanBatchList.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/scan-batches/:id',
+      name: 'scan-batch-review',
+      component: () => import('@/views/ScanBatchReview.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/problems',
+      name: 'problem-books',
+      component: () => import('@/views/ProblemBooks.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/series/:id',
+      name: 'series-detail',
+      component: () => import('@/views/SeriesDetail.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/library/manual-overrides',
+      name: 'manual-overrides',
+      component: () => import('@/views/ManualOverridesAdmin.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
+    {
+      path: '/library/audit-log',
+      name: 'audit-log',
+      component: () => import('@/views/AuditLogView.vue'),
+      meta: { requiresAuth: true, roles: ['admin'] },
+    },
   ],
 })
 

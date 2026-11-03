@@ -140,12 +140,6 @@
                   <span class="changelog-text">封面抓取改为用户可选，手动触发</span>
                 </div>
               </div>
-              <div class="changelog-item changelog-item--plan">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-plan">计划</span>
-                  <span class="changelog-text">书库扫描时对重复书籍进行检测与处理</span>
-                </div>
-              </div>
             </div>
             <div style="margin-top: 24px;">
               <el-button type="primary" @click="openFeedback">
@@ -193,6 +187,27 @@
                   :show-password="field === 'apiKey'"
                 />
               </div>
+            </div>
+            <div class="form-field" style="margin-top: 16px">
+              <label>书籍简介长度（字）</label>
+              <el-select v-model="aiSummaryLength" style="width: 100%">
+                <el-option label="50 字（极简）" :value="50" />
+                <el-option label="100 字（默认）" :value="100" />
+                <el-option label="200 字" :value="200" />
+                <el-option label="300 字" :value="300" />
+                <el-option label="500 字" :value="500" />
+              </el-select>
+              <div class="field-hint">影响 AI 填充 + 批量填充时生成的简介字数</div>
+            </div>
+            <div class="form-field" style="margin-top: 16px">
+              <label>AI 填充并发数</label>
+              <el-select v-model="aiFillConcurrency" style="width: 100%">
+                <el-option label="1（最稳，限流套餐推荐）" :value="1" />
+                <el-option label="2（默认）" :value="2" />
+                <el-option label="3" :value="3" />
+                <el-option label="5（最快，易触发限流）" :value="5" />
+              </el-select>
+              <div class="field-hint">同时向 AI 发起请求的书籍数量，MiniMax 个人版建议设为 1 或 2</div>
             </div>
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
           </div>
@@ -472,6 +487,8 @@ const users = ref<Array<{ id: string; username: string; role: string; created_at
 const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string> }>>([])
 const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
+const aiSummaryLength = ref<number>(100)
+const aiFillConcurrency = ref<number>(2)
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
@@ -550,7 +567,7 @@ const tabs = [
 
 
 // ── 更新说明 ── 新的记录加在最前面，页面只显示最近 5 次
-type ChangelogTag = 'ui' | 'lib' | 'auth' | 'reader' | 'epub' | 'ai' | 'infra'
+type ChangelogTag = 'ui' | 'lib' | 'auth' | 'reader' | 'epub' | 'txt' | 'ai' | 'infra'
 interface ChangelogRelease {
   date: string
   title: string
@@ -558,7 +575,7 @@ interface ChangelogRelease {
 }
 
 const changelogTagLabels: Record<ChangelogTag, string> = {
-  ui: '界面', lib: '书库', auth: '安全', reader: '阅读', epub: 'EPUB', ai: 'AI', infra: '系统',
+  ui: '界面', lib: '书库', auth: '安全', reader: '阅读', epub: 'EPUB', txt: 'TXT', ai: 'AI', infra: '系统',
 }
 
 const changelog: ChangelogRelease[] = [
@@ -570,15 +587,27 @@ const changelog: ChangelogRelease[] = [
       { tag: 'auth', text: '用户被删除或角色变更后立即生效，无需等待令牌过期' },
       { tag: 'auth', text: '系统设置接口仅管理员可访问，且不再返回各用户的个人阅读设置' },
       { tag: 'infra', text: '修复"不能删除自己的账号"校验失效的问题' },
+      { tag: 'auth', text: '修复扫描批次预览接口可读取书库目录外任意文件的问题，并改为只读取文件开头' },
       { tag: 'lib', text: '封面抓取不再生成调试文件，封面目录仅对外提供图片' },
       { tag: 'reader', text: '瀑布流模式书签记录章节内位置，点击书签可准确定位并继续加载后续章节' },
-      { tag: 'ai', text: '补充注册通义千问、OpenAI、Claude、Ollama 插件，AI 插件增至 6 个' },
+    ],
+  },
+  {
+    date: '2026-06-05',
+    title: '扫描导入重做与 AI 批量填充',
+    items: [
+      { tag: 'lib', text: '扫描导入重做：可选「暂存审核 / 自动写入」，自动识别重复书籍并分组、自动清理磁盘上已删除的书、从文件名提取作者；普通扫描即为快速增量同步，无需重建指纹' },
+      { tag: 'ai', text: '新增 AI 批量填充书籍信息（作者、简介、分类、推荐标签、封面），支持失败重试与「重置全部填充」重跑；AI 填充并入扫描流程' },
+      { tag: 'ai', text: '新增豆瓣评分：AI 填充时自动抓取，书库封面角标与书籍详情页显示评分，并支持按评分排序' },
+      { tag: 'lib', text: '搜索框支持关键词筛选：输入「重复」查看重复书籍、「ai填充」查看已填充、「填充失败」查看失败；搜索框旁新增「?」用法说明' },
+      { tag: 'ui', text: '书籍详情页新增推荐标签与「类似作品」（本库已有的可直接跳转），并修复类似作品链接跳转到错误书籍的问题' },
     ],
   },
   {
     date: '2026-06-04',
-    title: 'EPUB 阅读增强',
+    title: 'EPUB 与 TXT 阅读增强',
     items: [
+      { tag: 'txt', text: '修复 UTF-16 编码的 TXT 小说打开后乱码的问题，并将编码自动识别的采样范围扩大至 64KB，提升 GBK/中文文件的识别准确度' },
       { tag: 'epub', text: '漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）' },
       { tag: 'epub', text: '支持 EPUB 内嵌图片显示，图片通过独立 API 端点从 EPUB 包中提取并返回浏览器' },
       { tag: 'epub', text: '修复 EPUB 章节内链接点击后跳转错误（内部 href 现映射至正确章节索引）' },
@@ -703,6 +732,14 @@ async function loadSettings() {
     selectedAiPlugin.value = plugin
     populateAiForm(plugin)
   }
+  const summaryLenStored = parseInt(data['ai_summary_length'] ?? '')
+  if (Number.isFinite(summaryLenStored) && summaryLenStored >= 30 && summaryLenStored <= 1000) {
+    aiSummaryLength.value = summaryLenStored
+  }
+  const fillConcStored = parseInt(data['ai_fill_concurrency'] ?? '')
+  if (Number.isFinite(fillConcStored) && fillConcStored >= 1 && fillConcStored <= 10) {
+    aiFillConcurrency.value = fillConcStored
+  }
 }
 
 async function loadPlugins() {
@@ -735,6 +772,8 @@ async function saveSettings(tab: string) {
       }
     } else if (tab === 'ai' && currentAiPlugin.value) {
       payload['ai_plugin'] = selectedAiPlugin.value
+      payload['ai_summary_length'] = String(aiSummaryLength.value)
+      payload['ai_fill_concurrency'] = String(aiFillConcurrency.value)
       for (const field of currentAiPlugin.value.fields) {
         if (aiForm[field]) {
           payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field]
@@ -1500,6 +1539,7 @@ onMounted(async () => {
 .tag-auth   { background: #1e2e50; color: #93c5fd; }
 .tag-reader { background: #2d2010; color: #fcd34d; }
 .tag-epub   { background: #1a2e3b; color: #67e8f9; }
+.tag-txt    { background: #3a2410; color: #fdba74; }
 .tag-ai     { background: #2d1020; color: #f9a8d4; }
 .tag-infra  { background: #1f2937; color: #9ca3af; }
 .tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }

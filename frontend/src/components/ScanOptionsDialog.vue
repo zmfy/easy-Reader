@@ -1,0 +1,189 @@
+<template>
+  <div>
+    <el-dialog
+      v-model="visible"
+      title="扫描选项"
+      width="540px"
+      @close="onClose"
+    >
+      <el-form label-width="120px">
+        <el-form-item label="处理模式">
+          <el-radio-group v-model="form.mode">
+            <el-radio value="review">暂存审核（推荐）</el-radio>
+            <el-radio value="auto">自动写入</el-radio>
+          </el-radio-group>
+          <div class="mode-hint">
+            <span v-if="form.mode === 'review'">扫描结果先入暂存批次，admin 审核后再应用</span>
+            <span v-else>结果直接落库，无审核环节</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="AI 功能">
+          <div class="ai-toggles">
+            <div v-if="!aiConfigured" class="ai-disabled-hint">
+              未配置 AI 插件，AI 功能已禁用。请先在「AI 插件设置」中配置后使用。
+            </div>
+            <el-checkbox v-model="form.ai_fill" :disabled="!aiConfigured">
+              AI 批量填充
+              <span v-if="estimate && aiConfigured" class="toggle-meta">（预估 {{ estimate.fill }} 次）</span>
+            </el-checkbox>
+            <div v-if="estimate && aiConfigured" class="estimate-summary">
+              当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
+              （{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
+            </div>
+            <div class="reset-row">
+              <el-button size="small" :disabled="!aiConfigured" @click="onResetFailed">重置「填充失败」记录</el-button>
+              <el-button size="small" type="warning" plain :disabled="!aiConfigured" @click="onResetAll">重置全部填充记录</el-button>
+            </div>
+            <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍</div>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="扫描范围">
+          <div class="scan-scope">
+            <div class="scope-note">
+              普通扫描即会：导入新增书籍、移除磁盘上已删除的书、重新检测重复——不重读已有文件，速度快。直接「开始扫描」即可。
+            </div>
+            <el-checkbox v-model="form.full_rescan">重建指纹</el-checkbox>
+            <div class="scope-note">重读全部已入库文件，较慢；仅在怀疑重复 / 乱码判定有误时才需要。</div>
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="visible = false">取消</el-button>
+        <el-button type="primary" @click="onStartScan">开始扫描</el-button>
+      </template>
+    </el-dialog>
+
+    <CostWarningDialog
+      v-if="estimate"
+      v-model="showCostWarning"
+      :estimate="estimate"
+      @confirm="onCostConfirmed"
+      @cancel="showCostWarning = false"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, watch, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { ScanStartOptions, CostEstimate } from '@/types'
+import { libraryApi } from '@/api/library'
+import { settingsApi } from '@/api/settings'
+import CostWarningDialog from './CostWarningDialog.vue'
+
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{
+  'update:modelValue': [boolean]
+  confirm: [ScanStartOptions]
+}>()
+
+const visible = ref(props.modelValue)
+watch(() => props.modelValue, v => { visible.value = v })
+watch(visible, v => emit('update:modelValue', v))
+
+const form = reactive<ScanStartOptions>({
+  mode: 'review',
+  ai_fill: false,
+  full_rescan: false,
+})
+
+const estimate = ref<CostEstimate | null>(null)
+const showCostWarning = ref(false)
+const aiConfigured = ref(true)
+
+async function refreshAiStatus(): Promise<void> {
+  try {
+    const resp = await settingsApi.getAiStatus()
+    aiConfigured.value = !!resp.data.data?.configured
+  } catch {
+    aiConfigured.value = false
+  }
+  if (!aiConfigured.value) form.ai_fill = false
+}
+
+async function refreshEstimate(): Promise<void> {
+  try {
+    const resp = await libraryApi.estimate({ ai_fill: form.ai_fill, full_rescan: form.full_rescan })
+    estimate.value = resp.data.data ?? null
+  } catch {
+    estimate.value = null
+  }
+}
+
+watch([() => form.ai_fill, () => form.full_rescan], () => { void refreshEstimate() })
+watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate() } })
+
+const tierLabel = computed(() => {
+  const labels: Record<string, string> = { free: '免费', low: '低费用', high: '⚠️ 高费用', unknown: '未知' }
+  return labels[estimate.value?.tier ?? 'unknown'] ?? ''
+})
+
+function onClose(): void { visible.value = false }
+
+function onStartScan(): void {
+  if (form.ai_fill && estimate.value?.tier === 'high') {
+    showCostWarning.value = true
+    return
+  }
+  emitConfirm()
+}
+
+function onCostConfirmed(): void {
+  showCostWarning.value = false
+  emitConfirm()
+}
+
+function emitConfirm(): void {
+  emit('confirm', { ...form })
+  visible.value = false
+}
+
+async function onResetFailed(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('将把所有「填充失败」的书重置为未尝试,下次带 AI 填充的扫描会自动重试。继续?', '重置填充失败', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+  } catch { return }
+  try {
+    const resp = await libraryApi.aiFillResetFailed()
+    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的失败记录`)
+  } catch { ElMessage.error('重置失败') }
+}
+
+async function onResetAll(): Promise<void> {
+  try {
+    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败)。下次带 AI 填充的扫描会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+  } catch { return }
+  try {
+    const resp = await libraryApi.aiFillResetAll()
+    ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的填充记录`)
+  } catch { ElMessage.error('重置失败') }
+}
+</script>
+
+<style scoped>
+.mode-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
+.ai-toggles { display: flex; flex-direction: column; gap: 4px; }
+.toggle-meta { font-size: 12px; color: var(--text-2); margin-left: 4px; }
+.estimate-summary {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: var(--el-color-info-light-9);
+  border-radius: 4px;
+}
+.reset-row { display: flex; gap: 8px; margin-top: 10px; }
+.reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.ai-disabled-hint {
+  font-size: 12px;
+  color: var(--warning, #e6a23c);
+  background: rgba(230, 162, 60, 0.1);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+.scan-scope { display: flex; flex-direction: column; gap: 8px; }
+.scope-note { font-size: 12px; color: var(--text-2); line-height: 1.6; }
+</style>

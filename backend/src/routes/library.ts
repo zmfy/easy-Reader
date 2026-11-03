@@ -6,28 +6,88 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, paginatedResponse, errorResponse } from '../utils/response';
-import { Book } from '../types';
-import { aiManager } from '../ai/ai-manager';
-import { fetchAndSaveCover } from '../utils/cover';
+import { Book, ScanOptions } from '../types';
+import { aiManager, isAiConfigured } from '../ai/ai-manager';
+import {
+  createScanTask,
+  getActiveScanTask,
+  getScanTaskById,
+  cancelScanTask,
+  hasRunningTask,
+  setScanProgress,
+  finishScanTask,
+} from '../services/scan-task';
+import { runScanTask } from '../services/scan-walker';
+import { fetchAndSaveCover, doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
+import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
+import { markFieldsAsEdited, batchFill, selectFillCandidates, resetAllFills } from '../services/ai-batch-fill';
+import { selectDuplicateGroupBooks } from '../services/duplicate-view';
+import { estimateFromCurrentDb } from '../services/cost-estimator';
+import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
+import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
 
 const router = Router();
 
-const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category'];
+const ALLOWED_SORT_FIELDS = ['title', 'author', 'imported_at', 'file_size', 'category', 'rating'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
 // GET /api/library
+// status query: defaults to "normal-only" (hides duplicate + garbled).
+//   ?status=problems → only books with status in ('duplicate','garbled')
+//   ?status=garbled  → only garbled
+//   ?status=duplicate → only duplicates
+//   ?status=all      → no status filter (admin debug)
 router.get('/', authMiddleware, (req: Request, res: Response) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 20));
   const search = (req.query.search as string) || '';
   const category = (req.query.category as string) || '';
+  const statusFilter = (req.query.status as string) || 'normal';
+  const includeDirty = req.query.include_dirty === '1' || req.query.include_dirty === 'true';
+  const seriesGrouped = req.query.series_grouped === '1' || req.query.series_grouped === 'true';
+  const aiFill = (req.query.ai_fill as string) || 'all';
   const sortBy = ALLOWED_SORT_FIELDS.includes(req.query.sortBy as string) ? (req.query.sortBy as string) : 'imported_at';
   const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
   const db = getDb();
+
+  if (statusFilter === 'duplicate_groups') {
+    const { rows, total } = selectDuplicateGroupBooks(db, pageSize, (page - 1) * pageSize);
+    paginatedResponse(res, rows as unknown as Book[], page, pageSize, total);
+    return;
+  }
+
   let whereClause = 'WHERE 1=1';
   const params: unknown[] = [];
+
+  // status filter: problems/garbled/duplicate are explicit (ProblemBooks view).
+  // include_dirty=true is an alias for status=all (show dirty books in mainline list).
+  if (statusFilter === 'problems') {
+    whereClause += " AND status IN ('duplicate','garbled')";
+  } else if (statusFilter === 'garbled') {
+    whereClause += " AND status = 'garbled'";
+  } else if (statusFilter === 'duplicate') {
+    whereClause += " AND status = 'duplicate'";
+  } else if (statusFilter === 'all' || includeDirty) {
+    // no status filter
+  } else {
+    // default: normal-only library view — hide duplicate + garbled
+    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled'))";
+  }
+
+  // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)
+  if (seriesGrouped) {
+    whereClause += " AND (series_id IS NULL OR series_id = '')";
+  }
+
+  if (aiFill === 'filled') {
+    whereClause += " AND ai_fill_status = 'filled'";
+  } else if (aiFill === 'failed') {
+    whereClause += " AND ai_fill_status = 'failed'";
+  } else if (aiFill === 'none') {
+    whereClause += " AND ai_fill_status IS NULL";
+  }
 
   if (search) {
     whereClause += ' AND (title LIKE ? OR author LIKE ?)';
@@ -45,66 +105,154 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   paginatedResponse(res, books, page, pageSize, total);
 });
 
+const scanOptionsSchema = z.object({
+  mode: z.enum(['auto', 'review']).default('review'),
+  ai_fill: z.boolean().default(false),
+  full_rescan: z.boolean().default(false),
+});
+
+const estimateSchema = z.object({
+  ai_fill: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  full_rescan: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  force: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+});
+
+// GET /api/library/scan/estimate — pre-scan cost estimation
+router.get('/scan/estimate', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = estimateSchema.safeParse(req.query);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const result = estimateFromCurrentDb({
+    ai_fill: !!parsed.data.ai_fill,
+    full_rescan: !!parsed.data.full_rescan,
+    force: !!parsed.data.force,
+  });
+  successResponse(res, result);
+});
+
 // POST /api/library/scan
-router.post('/scan', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
-  const taskId = uuidv4();
+router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (hasRunningTask()) {
+    const active = getActiveScanTask()!;
+    res.status(409).json({
+      success: false,
+      code: 'TASK_RUNNING',
+      message: '已有扫描任务在运行',
+      data: { activeTaskId: active.id },
+    });
+    return;
+  }
 
-  // Run scan asynchronously
-  setImmediate(async () => {
-    try {
-      const db = getDb();
+  // Reject if any pending batch exists (force admin to handle prior results first)
+  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' LIMIT 1").get() as
+    | { id: string }
+    | undefined;
+  if (pendingBatch) {
+    res.status(409).json({
+      success: false,
+      code: 'PENDING_BATCH',
+      message: '请先处理待审核批次',
+      data: { pendingBatchId: pendingBatch.id },
+    });
+    return;
+  }
 
-      if (!fs.existsSync(BOOKS_DIR)) {
-        return;
-      }
+  const parsed = scanOptionsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
+    return;
+  }
+  const options: ScanOptions = parsed.data;
 
-      // 清理：删除文件已不存在的数据库记录
-      const allBooks = db.prepare('SELECT id, file_path FROM books').all() as { id: string; file_path: string }[];
-      const deleteStmt = db.prepare('DELETE FROM books WHERE id = ?');
-      let removedCount = 0;
-      for (const book of allBooks) {
-        if (!fs.existsSync(book.file_path)) {
-          deleteStmt.run(book.id);
-          removedCount++;
-        }
-      }
-      if (removedCount > 0) {
-        console.log(`[scan] 清理了 ${removedCount} 条文件已不存在的记录`);
-      }
+  const task = createScanTask(req.user!.userId, options);
 
-      // 新增：扫描目录，导入尚未入库的文件
-      let addedCount = 0;
-      function scanDir(dir: string): void {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
-          if (entry.isDirectory()) {
-            scanDir(fullPath);
-          } else if (entry.isFile()) {
-            const ext = path.extname(entry.name).slice(1).toLowerCase();
-            if (SUPPORTED_FORMATS.includes(ext)) {
-              const existing = db.prepare('SELECT id FROM books WHERE file_path = ?').get(fullPath);
-              if (!existing) {
-                const stat = fs.statSync(fullPath);
-                const title = path.basename(entry.name, path.extname(entry.name));
-                db.prepare(
-                  'INSERT INTO books (id, title, file_path, file_format, file_size) VALUES (?, ?, ?, ?, ?)'
-                ).run(uuidv4(), title, fullPath, ext, stat.size);
-                addedCount++;
-              }
-            }
-          }
-        }
-      }
-
-      scanDir(BOOKS_DIR);
-      console.log(`[scan] 完成：新增 ${addedCount} 本，移除 ${removedCount} 条`);
-    } catch (err) {
-      console.error('Scan error:', err);
-    }
+  // Fire and forget
+  setImmediate(() => {
+    void runScanTask(task.id, options);
   });
 
-  successResponse(res, { taskId, status: 'scanning' }, '扫描任务已启动');
+  successResponse(res, { taskId: task.id, status: task.status }, '扫描任务已启动');
+});
+
+const aiFillBatchSchema = z.object({ force: z.boolean().default(false) });
+
+// POST /api/library/ai-fill-batch — admin-triggered batch AI fill over the library
+router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (!isAiConfigured(getDb())) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', '未配置 AI 插件，请先在「AI 插件设置」中配置'); return; }
+  const parsed = aiFillBatchSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const { force } = parsed.data;
+
+  let task;
+  try {
+    // Reuse scan-task machinery so the existing progress bar works.
+    task = createScanTask(req.user!.userId, { mode: 'review', ai_fill: true, full_rescan: false });
+  } catch {
+    const active = getActiveScanTask()!;
+    res.status(409).json({ success: false, code: 'TASK_RUNNING', message: '已有扫描/填充任务在运行', data: { activeTaskId: active.id } });
+    return;
+  }
+
+  const taskId = task.id;
+
+  // Fire and forget.
+  setImmediate(() => {
+    void (async () => {
+      try {
+        const db = getDb();
+        setScanProgress(taskId, { stage: 'ai_fill' });
+        const toFill = selectFillCandidates(db, force);
+        if (toFill.length > 0) {
+          await batchFill({ taskId, user_id: req.user!.userId, books: toFill });
+        }
+        finishScanTask(taskId, 'completed');
+      } catch (e) {
+        finishScanTask(taskId, 'failed', (e as Error).message);
+      }
+    })();
+  });
+
+  successResponse(res, { taskId, status: 'running' }, '批量填充任务已启动');
+});
+
+// POST /api/library/ai-fill-reset-failed — admin: requeue books whose AI fill failed
+router.post('/ai-fill-reset-failed', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const r = getDb().prepare(
+    "UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL WHERE ai_fill_status = 'failed'"
+  ).run();
+  successResponse(res, { reset: r.changes }, '已重置填充失败记录');
+});
+
+// POST /api/library/ai-fill-reset-all — admin: clear ALL fill stamps (re-fill everything next scan)
+router.post('/ai-fill-reset-all', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const reset = resetAllFills(getDb());
+  successResponse(res, { reset });
+});
+
+// GET /api/library/scan/tasks/active
+router.get('/scan/tasks/active', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const active = getActiveScanTask();
+  successResponse(res, active);
+});
+
+// GET /api/library/scan/tasks/:id
+router.get('/scan/tasks/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const task = getScanTaskById(req.params.id);
+  if (!task) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '任务不存在');
+    return;
+  }
+  successResponse(res, task);
+});
+
+// POST /api/library/scan/tasks/:id/cancel
+router.post('/scan/tasks/:id/cancel', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const task = getScanTaskById(req.params.id);
+  if (!task) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '任务不存在');
+    return;
+  }
+  cancelScanTask(req.params.id);
+  successResponse(res, null, '任务取消请求已发出');
 });
 
 // GET /api/library/:id
@@ -159,6 +307,16 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   if (data.finish_date !== undefined) { updates.push('finish_date = ?'); values.push(data.finish_date); }
   if (data.is_finished !== undefined) { updates.push('is_finished = ?'); values.push(data.is_finished ? 1 : 0); }
 
+  // Track which fields admin manually edited so AI batch fill won't overwrite
+  const editedFields: Array<'title' | 'author' | 'summary' | 'category'> = [];
+  if (data.title !== undefined) editedFields.push('title');
+  if (data.author !== undefined) editedFields.push('author');
+  if (data.summary !== undefined) editedFields.push('summary');
+  if (data.category !== undefined) editedFields.push('category');
+  if (editedFields.length > 0) {
+    markFieldsAsEdited(req.params.id, editedFields);
+  }
+
   if (updates.length > 0) {
     values.push(req.params.id);
     db.prepare(`UPDATE books SET ${updates.join(', ')} WHERE id = ?`).run(...values);
@@ -168,16 +326,60 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   successResponse(res, updated, '更新成功');
 });
 
-// DELETE /api/library/:id
+const deleteQuerySchema = z.object({
+  cascade_duplicates: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  confirm_shelf_impact: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+});
+
+// DELETE /api/library/:id?cascade_duplicates=true&confirm_shelf_impact=true
+//   - Validates path is inside BOOKS_DIR (path traversal protection)
+//   - If book is a canonical with duplicates pointing to it → 409 unless cascade_duplicates=true
+//   - If any of the books are on any user's shelf → 409 unless confirm_shelf_impact=true
+//   - Deletes disk file(s) + DB rows in a transaction; writes audit_log entry
 router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = deleteQuerySchema.safeParse(req.query);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const { cascade_duplicates, confirm_shelf_impact } = parsed.data;
+
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
-  if (!book) {
-    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  const dups = getDuplicatesOf(req.params.id);
+  if (dups.length > 0 && !cascade_duplicates) {
+    res.status(409).json({
+      success: false,
+      code: 'HAS_DUPLICATES',
+      message: '该书有重复关联，请确认是否级联删除',
+      data: { duplicate_count: dups.length, requires: 'cascade_duplicates' },
+    });
     return;
   }
-  db.prepare('DELETE FROM books WHERE id = ?').run(req.params.id);
-  successResponse(res, null, '已从书库移除');
+
+  const allIds = [req.params.id, ...dups.map(d => d.id)];
+  const affectedUsers = countAffectedUsers(allIds);
+  if (affectedUsers > 0 && !confirm_shelf_impact) {
+    res.status(409).json({
+      success: false,
+      code: 'AFFECTS_SHELF',
+      message: `该书已被 ${affectedUsers} 个用户加入书架`,
+      data: { affected_users: affectedUsers, requires: 'confirm_shelf_impact' },
+    });
+    return;
+  }
+
+  try {
+    const result = deleteBookCascade({
+      file_path: book.file_path,
+      book_id: req.params.id,
+      cascade_duplicate_ids: dups.map(d => d.id),
+      cascade_duplicate_paths: dups.map(d => d.file_path),
+      user_id: req.user!.userId,
+    });
+    successResponse(res, result, '已删除');
+  } catch (err) {
+    errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
+  }
 });
 
 function cleanBookTitle(raw: string): string {
@@ -215,6 +417,7 @@ router.post('/:id/cover-test', authMiddleware, adminMiddleware, async (req: Requ
 // POST /api/library/:id/ai-fill
 router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', '未配置 AI 插件，请先在「AI 插件设置」中配置'); return; }
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
   if (!book) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
@@ -272,14 +475,20 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
       : isFinishedByFilename ? 1 : null;
     if (isFinished !== null) { updates.push('is_finished = ?'); values.push(isFinished); }
 
-    // 若书籍尚无封面，从豆瓣下载封面到本地
-    if (!book.cover_url) {
+    // 封面 + 评分:共用一次豆瓣 suggest
+    if (!book.cover_url || book.rating == null) {
       const coverTitle = (info.title as string | undefined) || cleanedTitle;
-      const coverUrl = await fetchAndSaveCover(coverTitle, req.params.id).catch((e) => {
-        console.error('[ai-fill] 封面获取失败:', e);
-        return undefined;
-      });
-      if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+      const item = await doubanSuggest(coverTitle).catch(() => undefined);
+      if (item) {
+        if (!book.cover_url) {
+          const coverUrl = await downloadCover(item, req.params.id).catch(() => undefined);
+          if (coverUrl) { updates.push('cover_url = ?'); values.push(coverUrl); }
+        }
+        if (book.rating == null) {
+          const rating = await fetchRating(item).catch(() => undefined);
+          if (rating != null) { updates.push('rating = ?'); values.push(rating); }
+        }
+      }
     }
 
     if (updates.length > 0) {
@@ -287,11 +496,82 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
       db.prepare(`UPDATE books SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     }
 
+    // Persist AI metadata if AI returned any recommended_tags / similar_works
+    const meta = extractMetadataFromAiResponse(infoRaw);
+    if (meta.tags.length > 0 || meta.similar.length > 0) {
+      const pluginName = (db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined)?.value;
+      saveMetadata({
+        book_id: req.params.id,
+        recommended_tags: meta.tags,
+        similar_works: meta.similar,
+        generated_by: pluginName,
+      });
+    }
+
     const updated = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book;
     successResponse(res, updated, 'AI 信息填充成功');
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', 'AI 填充失败: ' + (err instanceof Error ? err.message : '未知错误'));
   }
+});
+
+// GET /api/library/:id/ai-metadata — recommended tags + similar works
+router.get('/:id/ai-metadata', authMiddleware, (req: Request, res: Response) => {
+  const meta = getMetadata(req.params.id);
+  successResponse(res, meta);
+});
+
+// POST /api/library/lookup-by-titles — bulk title→bookId resolution
+// Body: { titles: [{title, author?}] }  → returns same array with book_id added
+// where found in the library. Matching is normalized (volume/episode suffixes,
+// brackets, width, case stripped) so an AI-suggested base title like "盗墓笔记"
+// links to an in-library numbered volume. See matchTitlesToBooks for ranking.
+const lookupSchema = z.object({
+  titles: z.array(z.object({ title: z.string().min(1), author: z.string().optional() })).max(50),
+});
+router.post('/lookup-by-titles', authMiddleware, (req: Request, res: Response) => {
+  const parsed = lookupSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  const books = db.prepare(
+    `SELECT id, title, author, chapter_count FROM books
+     WHERE status IN ('normal','encoding_fixed')
+       AND (duplicate_of IS NULL OR duplicate_of = '')`
+  ).all() as LibraryBookForLookup[];
+  const result = matchTitlesToBooks(parsed.data.titles, books);
+  successResponse(res, result);
+});
+
+// POST /api/library/:id/normalize-chapters — AI-unify chapter titles
+router.post('/:id/normalize-chapters', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const db = getDb();
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+
+  try {
+    const { getReaderPlugin } = await import('../plugins/plugin-manager');
+    const plugin = await getReaderPlugin(book);
+    const chapters = await plugin.getChapters();
+    const titles = chapters.map(c => c.title);
+    const { normalizeChaptersForBook } = await import('../services/chapter-normalize');
+    const result = await normalizeChaptersForBook(req.params.id, titles);
+    successResponse(res, result, `已统一 ${result.normalized}/${result.total} 个章节标题`);
+  } catch (err) {
+    errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
+  }
+});
+
+// DELETE /api/library/:id/normalize-chapters — restore original titles
+router.delete('/:id/normalize-chapters', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const { clearOverrides } = await import('../services/chapter-normalize');
+  const cleared = clearOverrides(req.params.id);
+  successResponse(res, { cleared }, `已恢复 ${cleared} 个章节的原标题`);
+});
+
+// GET /api/library/:id/normalize-chapters — current override count
+router.get('/:id/normalize-chapters', authMiddleware, async (req: Request, res: Response) => {
+  const { getOverrideCount } = await import('../services/chapter-normalize');
+  successResponse(res, { count: getOverrideCount(req.params.id) });
 });
 
 export default router;

@@ -42,3 +42,4 @@ frontend/src/App.vue
 frontend/src/api/settings.ts
 frontend/src/assets/styles/main.css
 frontend/src/views/Settings.vue
+backend/tmp/novel-reader.db

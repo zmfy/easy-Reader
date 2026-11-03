@@ -20,6 +20,17 @@ export interface Book {
   is_finished: number
   file_size?: number
   imported_at: string
+  // 扫描增强字段（Plan 1/2）
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed'
+  ai_fill_status?: 'filled' | 'failed' | null
+  rating?: number | null
+  duplicate_of?: string | null
+  series_id?: string | null
+  chapter_count?: number
+  fingerprint?: string
+  first_chapter_hash?: string
+  encoding_detected?: string
+  manually_edited_fields?: string
 }
 
 export interface ShelfItem {
@@ -93,4 +104,155 @@ export interface ReaderSettings {
   backgroundColor: string
   fontColor: string
   pageMode: 'scroll' | 'waterfall'
+}
+
+export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill'
+
+export interface ScanTask {
+  id: string
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
+  stage: ScanStage | null
+  total_files: number
+  processed_files: number
+  options: string
+  started_by: string
+  started_at: string
+  finished_at?: string | null
+  error?: string | null
+}
+
+export type ScanBatchStatus = 'pending' | 'applied' | 'discarded'
+export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed'
+
+export interface ScanBatch {
+  id: string
+  task_id: string
+  status: ScanBatchStatus
+  summary_counts: string
+  created_at: string
+  applied_at?: string | null
+  applied_by?: string | null
+  apply_summary?: string | null
+}
+
+export interface ScanBatchItem {
+  id: string
+  batch_id: string
+  type: ScanBatchItemType
+  payload: string
+  admin_decision?: 'accept' | 'reject' | 'modified' | null
+  admin_payload?: string | null
+  reviewed_at?: string | null
+  reviewed_by?: string | null
+}
+
+export interface ScanStartOptions {
+  mode: 'auto' | 'review'
+  ai_fill: boolean
+  full_rescan: boolean
+}
+
+export interface NewBookPayload {
+  file_path: string
+  title: string
+  file_format: string
+  file_size: number
+  chapter_count?: number
+  fingerprint?: string
+  first_chapter_hash?: string
+  encoding_detected?: string
+  status?: 'normal' | 'encoding_fixed'
+}
+
+export interface DuplicateGroupPayload {
+  canonical_file_path: string
+  members: Array<{
+    file_path: string
+    fingerprint: string
+    decision_type: 'hard' | 'ai'
+    ai_confidence?: number
+  }>
+  rejected_members?: Array<{ file_path: string; fingerprint?: string }>
+}
+
+export interface SeriesGroupPayload {
+  series_name: string
+  author?: string
+  members: Array<{ file_path: string; sequence: number }>
+  source: 'regex' | 'ai'
+  confidence?: 'high' | 'medium' | 'low'
+  rejected_members?: string[]
+}
+
+export interface GarbledPayload {
+  file_path: string
+  reason: string
+}
+
+export interface EncodingFixedPayload {
+  file_path: string
+  from_encoding: string
+  to_encoding: 'utf-8'
+}
+
+export interface Series {
+  id: string
+  name: string
+  summary?: string
+  cover_url?: string
+  author?: string
+  created_at: string
+  member_count?: number
+}
+
+export interface SeriesDetail {
+  series: Series
+  members: Book[]
+}
+
+export type AuditAction =
+  | 'delete_book_file'
+  | 'delete_book_record'
+  | 'apply_batch'
+  | 'discard_batch'
+  | 'create_manual_override'
+  | 'delete_manual_override'
+  | 'ai_fill_book'
+  | 'ai_fetch_cover'
+
+export interface AuditLog {
+  id: string
+  user_id: string
+  action: AuditAction
+  resource_id?: string | null
+  file_path?: string | null
+  details?: string | null
+  created_at: string
+}
+
+export interface BookAiMetadata {
+  book_id: string
+  recommended_tags: string[]
+  similar_works: Array<{ title: string; author?: string; reason?: string }>
+  generated_by?: string | null
+  generated_at: string
+}
+
+export interface CostEstimate {
+  fill: number
+  total: number
+  active_plugin: string | null
+  tier: 'free' | 'low' | 'high' | 'unknown'
+}
+
+export type ManualOverrideType = 'not_duplicate' | 'not_in_series' | 'forced_duplicate' | 'forced_series_member'
+
+export interface ManualOverride {
+  id: string
+  type: ManualOverrideType
+  book_id_a: string | null
+  book_id_b: string | null
+  series_id: string | null
+  created_by: string
+  created_at: string
 }

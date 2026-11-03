@@ -8,6 +8,8 @@ export interface LibraryQuery {
   category?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
+  status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all'
+  ai_fill?: 'filled' | 'failed' | 'none' | 'all'
 }
 
 export interface UpdateBookPayload {
@@ -26,8 +28,17 @@ export const libraryApi = {
   list: (params: LibraryQuery = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 
-  scan: () =>
-    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan'),
+  scan: (payload: import('@/types').ScanStartOptions) =>
+    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/scan', payload),
+
+  aiFillBatch: (force = false) =>
+    http.post<ApiResponse<{ taskId: string; status: string }>>('/library/ai-fill-batch', { force }),
+
+  aiFillResetFailed: () =>
+    http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-failed'),
+
+  aiFillResetAll: () =>
+    http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-all'),
 
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),
@@ -35,12 +46,62 @@ export const libraryApi = {
   update: (id: string, payload: UpdateBookPayload) =>
     http.put<ApiResponse<Book>>(`/library/${id}`, payload),
 
-  remove: (id: string) =>
-    http.delete<ApiResponse<null>>(`/library/${id}`),
+  remove: (id: string, withFile = false) =>
+    http.delete<ApiResponse<{ fileDeleted: boolean; fileError: string | null } | null>>(
+      `/library/${id}`,
+      { params: withFile ? { with_file: true } : {} },
+    ),
 
   aiFill: (id: string) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),
 
+  getAiMetadata: (id: string) =>
+    http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
+
+  normalizeChapters: (id: string) =>
+    http.post<ApiResponse<{ total: number; normalized: number; failed_batches: number }>>(`/library/${id}/normalize-chapters`),
+
+  clearNormalizedChapters: (id: string) =>
+    http.delete<ApiResponse<{ cleared: number }>>(`/library/${id}/normalize-chapters`),
+
+  getNormalizedChapterCount: (id: string) =>
+    http.get<ApiResponse<{ count: number }>>(`/library/${id}/normalize-chapters`),
+
+  lookupByTitles: (titles: Array<{ title: string; author?: string }>) =>
+    http.post<ApiResponse<Array<{ title: string; author?: string; book_id: string | null }>>>(
+      '/library/lookup-by-titles',
+      { titles },
+    ),
+
   coverTest: (id: string) =>
     http.post<ApiResponse<{ coverUrl: string | undefined; bookTitle: string }>>(`/library/${id}/cover-test`),
+
+  listAdmin: (params: {
+    page?: number; pageSize?: number; search?: string; category?: string;
+    include_dirty?: boolean; series_grouped?: boolean;
+    sortBy?: string; sortOrder?: 'asc' | 'desc';
+    ai_fill?: 'all' | 'filled' | 'failed' | 'none';
+    status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all';
+  } = {}) =>
+    http.get<PaginatedResponse<Book>>('/library', { params }),
+
+  estimate: (params: { ai_fill?: boolean; full_rescan?: boolean; force?: boolean }) =>
+    http.get<ApiResponse<import('@/types').CostEstimate>>('/library/scan/estimate', { params }),
+
+  removeWithOptions: (id: string, opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}) =>
+    http.delete<ApiResponse<{ files_deleted: number; records_deleted: number; shelf_entries_affected: number; warnings: string[] }>>(
+      `/library/${id}`,
+      { params: opts },
+    ),
+
+  manualOverrides: {
+    list: (type?: import('@/types').ManualOverrideType) =>
+      http.get<ApiResponse<import('@/types').ManualOverride[]>>('/library/manual-overrides', { params: { type } }),
+    create: (payload: { type: import('@/types').ManualOverrideType; book_id_a: string | null; book_id_b?: string | null; series_id?: string | null }) =>
+      http.post<ApiResponse<import('@/types').ManualOverride>>('/library/manual-overrides', payload),
+    remove: (id: string) =>
+      http.delete<ApiResponse<null>>(`/library/manual-overrides/${id}`),
+    removeAll: () =>
+      http.delete<ApiResponse<{ deleted: number }>>('/library/manual-overrides/all'),
+  },
 }
