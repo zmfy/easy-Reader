@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { detectAndFixEncoding } from '../utils/encoding';
 import { computeFingerprint } from '../utils/fingerprint';
@@ -50,12 +51,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         file_path: string;
       }[];
       const orphanIds = findOrphanBookIds(rows, walk);
-      const del = db.prepare('DELETE FROM books WHERE id = ?');
-      db.transaction(() => {
-        // 同时清理书架、进度、书签等关联数据，避免留下孤儿记录
-        deleteBookRelations(db, orphanIds);
-        for (const id of orphanIds) del.run(id);
-      })();
+      removeOrphanBooks(db, orphanIds);
       const removed = orphanIds.length;
       if (removed > 0) console.log(`[scan ${taskId}] cleaned ${removed} orphan record(s)`);
     }
@@ -322,6 +318,30 @@ export function collectFiles(root: string): WalkResult {
     }
   }
   return { files: out, unreadableDirs };
+}
+
+/**
+ * Delete books whose files are gone, together with their per-book data.
+ * Duplicates that pointed at a removed book are promoted back to normal books;
+ * otherwise they'd stay hidden forever (lists hide duplicates and the dedup
+ * candidate query skips rows with duplicate_of). The next scan regroups them.
+ */
+export function removeOrphanBooks(db: Database.Database, orphanIds: string[]): void {
+  if (orphanIds.length === 0) return;
+  const orphanSet = new Set(orphanIds);
+  // 分批执行：整库路径变化（如更换挂载目录）时 orphan 可能上万，避免超出 SQLite 参数上限
+  const CHUNK = 500;
+  db.transaction(() => {
+    for (let i = 0; i < orphanIds.length; i += CHUNK) {
+      const chunk = orphanIds.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '?').join(',');
+      deleteBookRelations(db, chunk);
+      const dependants = db.prepare(`SELECT id FROM books WHERE duplicate_of IN (${placeholders})`).all(...chunk) as { id: string }[];
+      const promote = db.prepare("UPDATE books SET status = 'normal', duplicate_of = NULL WHERE id = ?");
+      for (const d of dependants) if (!orphanSet.has(d.id)) promote.run(d.id);
+      db.prepare(`DELETE FROM books WHERE id IN (${placeholders})`).run(...chunk);
+    }
+  })();
 }
 
 /**

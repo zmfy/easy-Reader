@@ -68,8 +68,11 @@ export function applyBatch(
       | { id: string }
       | undefined;
     if (existing) {
+      // 重新导入时状态回到 normal / encoding_fixed，同时清掉旧的 duplicate_of：
+      // 仍是重复的书会在随后的 duplicate_group 阶段被重新标记；不清的话，状态正常却指向原书，
+      // 删除原书并级联时会把这本书的文件一起删掉
       db.prepare(
-        `UPDATE books SET title = ?, author = COALESCE(NULLIF(author, ''), ?), fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
+        `UPDATE books SET title = ?, author = COALESCE(NULLIF(author, ''), ?), fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
       ).run(
         payload.title,
         payload.author ?? null,

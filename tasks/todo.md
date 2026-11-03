@@ -76,3 +76,11 @@
 - [x] 刷新失败误踢登录：isAuthRejection 仅 401 / 无 refresh token 时退出；临时故障保留会话，定时续期 60s 后重试；新增 4 个单测
 - [x] 书库切换分类回第 1 页；fetchBooks 请求序号防乱序
 - [x] 验证：vitest 7 passed、vue-tsc；Chrome 中拦截 XHR 人为延迟旧请求，三处竞态均显示正确章节
+
+# 二次审查 · 中优先级（数据一致性）与小项
+
+- [x] 重复书内容变化后残留 duplicate_of → upsertBookByPath 同时清空 duplicate_of（重复组阶段在其后会重新标记）
+- [x] 原书文件删除后重复书永久隐藏 → removeOrphanBooks 提升指向被删书的重复书为普通书；分批 500 防 SQLite 参数上限（测 4 万条）
+- [x] AI 统一章节标题先删后调 → 先收集再单事务写入，只替换成功批次的范围；INSERT OR REPLACE 防并发主键冲突
+- [x] books.file_path 索引；邀请邮件 HTML 转义 + 链接仅 http(s)；API Key 掩码判断统一
+- [x] 验证：28 suites / 203 tests、tsc、查询计划走索引、接口实测

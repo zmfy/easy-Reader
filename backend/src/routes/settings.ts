@@ -12,6 +12,17 @@ import crypto from 'crypto';
 
 const router = Router();
 
+// 需要掩码的密钥类设置：GET 返回掩码、PUT 遇到掩码值时跳过，两处共用同一判断
+function isApiKeySetting(key: string): boolean {
+  const k = key.toLowerCase();
+  return k.includes('apikey') || k.includes('api_key');
+}
+
+// 邮件 HTML 中的文本与属性值转义
+function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const INVITE_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 // 8 位大写字母数字邀请码，使用密码学安全随机数
@@ -39,7 +50,7 @@ router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
   for (const row of rows) {
     if (row.key === 'smtp_pass') {
       settings[row.key] = row.value ? '****' : '';
-    } else if (row.key.toLowerCase().includes('apikey') || row.key.toLowerCase().includes('api_key')) {
+    } else if (isApiKeySetting(row.key)) {
       settings[row.key] = row.value.length > 8 ? row.value.slice(0, 4) + '****' + row.value.slice(-4) : '****';
     } else {
       settings[row.key] = row.value;
@@ -61,7 +72,7 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
     // Don't overwrite smtp_pass with masked placeholder
     if (key === 'smtp_pass' && (value === '****' || value === '')) continue;
     // Don't overwrite API keys with masked values (e.g. "sk-12****5678")
-    if (key.toLowerCase().includes('apikey') && value.includes('****')) continue;
+    if (isApiKeySetting(key) && value.includes('****')) continue;
     upsert.run(key, value);
   }
   successResponse(res, null, '设置已更新');
@@ -143,7 +154,7 @@ router.post('/users/invite/send-email', authMiddleware, adminMiddleware, async (
   const schema = z.object({
     email: z.string().email(),
     code: z.string(),
-    inviteUrl: z.string(),
+    inviteUrl: z.string().url().refine(u => /^https?:\/\//i.test(u), '邀请链接必须是 http(s) 地址'),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
@@ -170,6 +181,9 @@ router.post('/users/invite/send-email', authMiddleware, adminMiddleware, async (
     });
 
     const siteName = cfg.site_name || '夜航书房';
+    const safeSiteName = escapeHtmlAttr(siteName);
+    const safeUrl = escapeHtmlAttr(parsed.data.inviteUrl);
+    const safeCode = escapeHtmlAttr(parsed.data.code);
 
     await transporter.sendMail({
       from: cfg.smtp_from || cfg.smtp_user,
@@ -178,16 +192,16 @@ router.post('/users/invite/send-email', authMiddleware, adminMiddleware, async (
       html: `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">
           <h2 style="color:#1a1a2e;">您好！</h2>
-          <p>您收到了一份来自 <strong>${siteName}</strong> 的邀请，点击下方按钮完成注册：</p>
+          <p>您收到了一份来自 <strong>${safeSiteName}</strong> 的邀请，点击下方按钮完成注册：</p>
           <p style="margin:24px 0;">
-            <a href="${parsed.data.inviteUrl}"
+            <a href="${safeUrl}"
                style="background:#7c5cff;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-size:15px;">
               立即注册
             </a>
           </p>
           <p style="color:#666;font-size:13px;">或复制以下链接到浏览器：</p>
-          <p style="color:#444;word-break:break-all;font-size:13px;">${parsed.data.inviteUrl}</p>
-          <p style="margin-top:16px;">邀请码：<strong style="letter-spacing:2px;">${parsed.data.code}</strong></p>
+          <p style="color:#444;word-break:break-all;font-size:13px;">${safeUrl}</p>
+          <p style="margin-top:16px;">邀请码：<strong style="letter-spacing:2px;">${safeCode}</strong></p>
           <p style="color:#999;font-size:12px;margin-top:24px;">此邀请码 7 天内有效，仅限一人使用。</p>
         </div>
       `,

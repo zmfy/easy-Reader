@@ -158,6 +158,7 @@ function initSchema(): void {
   backfillFingerprintVersion(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_books_fingerprint ON books(fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_books_file_path ON books(file_path);
     CREATE INDEX IF NOT EXISTS idx_books_duplicate_of ON books(duplicate_of);
     CREATE INDEX IF NOT EXISTS idx_books_series_id ON books(series_id);
     CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);

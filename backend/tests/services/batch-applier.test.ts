@@ -175,3 +175,32 @@ describe('applyBatch', () => {
     expect(ov).toBeTruthy();
   });
 });
+
+describe('applyBatch duplicate_of consistency', () => {
+  it('clears a stale duplicate_of when a former duplicate is re-imported as a normal book', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, status) VALUES ('A', 'A', '/a', 'txt', 'normal')").run();
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, status, duplicate_of) VALUES ('B', 'B', '/b', 'txt', 'duplicate', 'A')").run();
+    // B 内容变化后被重新扫描，不再属于任何重复组
+    const batchId = makeBatch([
+      { type: 'new', payload: { file_path: '/b', title: 'B', file_format: 'txt', file_size: 5, fingerprint: 'changed', status: 'normal' } },
+    ]);
+    applyBatch(batchId, 'admin1', db);
+    const b = db.prepare("SELECT status, duplicate_of FROM books WHERE id = 'B'").get() as { status: string; duplicate_of: string | null };
+    expect(b).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
+  it('still marks the book as duplicate when the same batch regroups it', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, status) VALUES ('A', 'A', '/a', 'txt', 'normal')").run();
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, status, duplicate_of) VALUES ('B', 'B', '/b', 'txt', 'duplicate', 'A')").run();
+    const batchId = makeBatch([
+      { type: 'new', payload: { file_path: '/b', title: 'B', file_format: 'txt', file_size: 5, fingerprint: 'f', status: 'normal' } },
+      { type: 'duplicate_group', payload: { canonical_file_path: '/a', members: [
+        { file_path: '/a', fingerprint: 'f', decision_type: 'hard' },
+        { file_path: '/b', fingerprint: 'f', decision_type: 'hard' },
+      ] } },
+    ]);
+    applyBatch(batchId, 'admin1', db);
+    const b = db.prepare("SELECT status, duplicate_of FROM books WHERE id = 'B'").get() as { status: string; duplicate_of: string | null };
+    expect(b).toEqual({ status: 'duplicate', duplicate_of: 'A' });
+  });
+});

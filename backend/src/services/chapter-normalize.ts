@@ -11,7 +11,12 @@ export interface NormalizeResult {
 
 /**
  * Run AI normalization over a book's chapter list. Stores per-chapter overrides
- * in book_chapter_overrides. Replaces existing overrides (full re-run semantics).
+ * in book_chapter_overrides.
+ *
+ * AI results are collected first and written in one synchronous transaction at
+ * the end, replacing only the index ranges whose batch succeeded: a failed (or
+ * fully failed) run never wipes the user's existing overrides, and two
+ * overlapping runs for the same book can't interleave their writes.
  */
 export async function normalizeChaptersForBook(
   bookId: string,
@@ -21,13 +26,7 @@ export async function normalizeChaptersForBook(
   const result: NormalizeResult = { total: originalTitles.length, normalized: 0, failed_batches: 0 };
   if (originalTitles.length === 0) return result;
 
-  // Clear existing overrides — we're doing a full re-run
-  db.prepare('DELETE FROM book_chapter_overrides WHERE book_id = ?').run(bookId);
-
-  const insert = db.prepare(
-    'INSERT INTO book_chapter_overrides (book_id, chapter_index, normalized_title) VALUES (?, ?, ?)'
-  );
-
+  const succeeded: Array<{ start: number; end: number; titles: string[] }> = [];
   for (let start = 0; start < originalTitles.length; start += BATCH_SIZE) {
     const batch = originalTitles.slice(start, start + BATCH_SIZE);
     let normalizedBatch: string[];
@@ -41,18 +40,26 @@ export async function normalizeChaptersForBook(
       result.failed_batches++;
       continue;
     }
-    const tx = db.transaction(() => {
-      for (let i = 0; i < batch.length; i++) {
-        const original = batch[i];
-        const normalized = normalizedBatch[i];
-        if (normalized && normalized !== original) {
-          insert.run(bookId, start + i, normalized);
+    succeeded.push({ start, end: start + batch.length - 1, titles: normalizedBatch });
+  }
+
+  const clearRange = db.prepare(
+    'DELETE FROM book_chapter_overrides WHERE book_id = ? AND chapter_index BETWEEN ? AND ?'
+  );
+  const upsert = db.prepare(
+    'INSERT OR REPLACE INTO book_chapter_overrides (book_id, chapter_index, normalized_title) VALUES (?, ?, ?)'
+  );
+  db.transaction(() => {
+    for (const b of succeeded) {
+      clearRange.run(bookId, b.start, b.end);
+      b.titles.forEach((normalized, i) => {
+        if (normalized && normalized !== originalTitles[b.start + i]) {
+          upsert.run(bookId, b.start + i, normalized);
           result.normalized++;
         }
-      }
-    });
-    tx();
-  }
+      });
+    }
+  })();
 
   return result;
 }
