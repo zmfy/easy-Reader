@@ -24,7 +24,7 @@ NAS 自托管小说阅读平台，单容器部署。后端 Node.js + Express + T
 | UI | Element Plus |
 | 后端 | Node.js 22 + Express + TypeScript |
 | 数据库 | SQLite（better-sqlite3） |
-| 认证 | JWT（Access Token 30min + Refresh Token 30d） |
+| 认证 | JWT（Access Token 2h + Refresh Token 30d） |
 | 容器 | Docker（单容器，Express 同时托管 API 与静态文件） |
 
 ---

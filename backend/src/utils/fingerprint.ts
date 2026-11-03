@@ -1,6 +1,7 @@
 import fs from 'fs';
 import crypto from 'crypto';
 import { TxtParser } from '../plugins/parser-txt';
+import { unescapeHtml } from './html';
 
 export interface Fingerprint {
   fingerprint: string;
@@ -35,8 +36,8 @@ async function computeTxtFingerprint(filePath: string, fileSize: number): Promis
   let firstContent = '';
   if (chapters.length > 0) {
     const html = await parser.getChapterContent(0);
-    // Strip <p> tags
-    firstContent = html.replace(/<[^>]+>/g, '').trim();
+    // Strip <p> tags, then restore escaped characters so the hash is over plain text
+    firstContent = unescapeHtml(html.replace(/<[^>]+>/g, '')).trim();
   }
 
   const previewText = firstContent.slice(0, FIRST_CHAPTER_PREVIEW_CHARS).trim();

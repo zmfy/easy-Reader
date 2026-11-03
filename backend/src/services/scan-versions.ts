@@ -1,19 +1,25 @@
 import Database from 'better-sqlite3';
 
 /** Bump when the fingerprint algorithm changes → forces a full rebuild next scan. */
-export const FINGERPRINT_VERSION = 1;
+// v2: TXT segments of chapter-less files now align to line starts and chapter
+//     HTML is escaped, both of which change the first-chapter text being hashed.
+export const FINGERPRINT_VERSION = 2;
 /** Bump when the AI-fill prompt/logic changes → forces a full re-fill next run. */
 export const AI_FILL_VERSION = 1;
 
+/** Algorithm version of fingerprints built before versioning existed. */
+export const LEGACY_FINGERPRINT_VERSION = 1;
+
 /**
- * One-time migration backfill: rows that already have a fingerprint (built by a
- * prior version of the app) are assumed to be at the current algorithm version.
- * Rows whose version is already set are left untouched.
+ * One-time migration backfill: rows that already have a fingerprint but no
+ * version were built by the legacy (v1) algorithm before versioning existed.
+ * Stamp them as v1 — not the current version — so they are rebuilt whenever the
+ * algorithm has moved on. Rows whose version is already set are left untouched.
  */
 export function backfillFingerprintVersion(db: Database.Database): void {
   db.prepare(
     'UPDATE books SET fingerprint_version = ? WHERE fingerprint IS NOT NULL AND fingerprint_version IS NULL'
-  ).run(FINGERPRINT_VERSION);
+  ).run(LEGACY_FINGERPRINT_VERSION);
 }
 
 export interface ReuseCheckInput {

@@ -28,6 +28,7 @@
     "vitest": "^1.6.0",
     "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.38"
+    "postcss": "^8.4.38",
+    "unplugin-vue-components": "^0.27.5"
   }
 }

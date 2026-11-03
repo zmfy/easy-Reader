@@ -302,6 +302,31 @@ const hasMoreChapters = computed(() => {
   return waterfallChapters.value[waterfallChapters.value.length - 1].index < reader.chapters.value.length - 1
 })
 
+// 瀑布流最多保留的章节数：超出后移除当前阅读位置之前的章节，避免 DOM 无限增长
+const WATERFALL_MAX_CHAPTERS = 8
+
+async function trimWaterfallTop() {
+  const container = contentRef.value
+  if (!container) return
+  const excess = waterfallChapters.value.length - WATERFALL_MAX_CHAPTERS
+  if (excess <= 0) return
+  // 章节按顺序排列，只移除位于当前阅读章节之前的部分
+  const removable = waterfallChapters.value
+    .slice(0, excess)
+    .filter(ch => ch.index < reader.currentChapterIndex.value).length
+  if (removable === 0) return
+
+  // 以保留下来的第一章为锚点，比较移除前后它在视口中的位置并修正滚动，
+  // 无论浏览器是否已做滚动锚定（overflow-anchor）都不会重复补偿
+  const anchorIndex = waterfallChapters.value[removable].index
+  const anchorEl = container.querySelector<HTMLElement>(`[data-chapter-index="${anchorIndex}"]`)
+  const before = anchorEl?.getBoundingClientRect().top ?? 0
+  waterfallChapters.value.splice(0, removable)
+  await nextTick()
+  const after = anchorEl?.getBoundingClientRect().top ?? 0
+  container.scrollTop += after - before
+}
+
 async function loadWaterfallChapter(index: number) {
   if (waterfallLoading.value) return
   if (index >= reader.chapters.value.length) return
@@ -362,13 +387,18 @@ watchEffect(() => {
 
 // ── Scroll handler ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout>
+let scrollRaf = 0
 
 function handleScroll() {
   if (!contentRef.value) return
-  const scrollTop = contentRef.value.scrollTop
 
   if (readerStore.settings.pageMode === 'waterfall') {
-    handleWaterfallScroll(scrollTop)
+    // 每帧最多处理一次，避免每个 scroll 事件都遍历章节 DOM
+    if (scrollRaf) return
+    scrollRaf = requestAnimationFrame(() => {
+      scrollRaf = 0
+      if (contentRef.value) handleWaterfallScroll(contentRef.value.scrollTop)
+    })
   } else {
     // Debounce-save chapter index only (scrollTop always 0 — restore to beginning)
     clearTimeout(saveTimer)
@@ -400,7 +430,7 @@ function handleWaterfallScroll(scrollTop: number) {
   const nearBottom = scrollTop + container.clientHeight >= container.scrollHeight - 300
   if (nearBottom && hasMoreChapters.value && !waterfallLoading.value) {
     const nextIndex = waterfallChapters.value[waterfallChapters.value.length - 1].index + 1
-    loadWaterfallChapter(nextIndex).then(() => fillWaterfallIfNeeded())
+    loadWaterfallChapter(nextIndex).then(trimWaterfallTop).then(() => fillWaterfallIfNeeded())
   }
 }
 
@@ -582,6 +612,7 @@ onBeforeUnmount(() => {
 })
 
 onUnmounted(() => {
+  cancelAnimationFrame(scrollRaf)
   clearTimeout(toolbarTimer)
   window.removeEventListener('keydown', handleKeydown)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)

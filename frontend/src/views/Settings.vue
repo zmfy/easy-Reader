@@ -278,7 +278,7 @@
                     <span class="plugin-switch-label">{{ plugin.usePlugin ? '插件解析' : '浏览器原生' }}</span>
                     <el-switch
                       :model-value="plugin.usePlugin"
-                      @change="(val: boolean) => togglePdfPlugin(val)"
+                      @change="(val: string | number | boolean) => togglePdfPlugin(!!val)"
                     />
                   </div>
                 </template>
@@ -596,6 +596,11 @@ const changelog: ChangelogRelease[] = [
       { tag: 'reader', text: 'PDF 使用浏览器原生打开时不再在后台完整解析整本 PDF，打开大 PDF 明显更快' },
       { tag: 'lib', text: '扫描清理已删除文件、删除书籍或用户时，同步清理书架、进度、书签等关联数据' },
       { tag: 'auth', text: '邀请码改用安全随机数生成；阅读设置保存时校验格式与大小' },
+      { tag: 'ui', text: 'Element Plus 改为按需引入，首屏 JS 由约 1.2MB 降至约 160KB，页面打开更快' },
+      { tag: 'reader', text: '瀑布流模式滚动处理节流，并最多保留 8 章内容，长时间连续阅读不再越来越卡' },
+      { tag: 'txt', text: 'TXT / PDF / UMD 正文中的 <、>、& 等字符不再被误当作标签而丢失' },
+      { tag: 'lib', text: '书籍指纹算法升级（v2），升级后首次扫描会重建全部指纹，耗时会比平时长' },
+      { tag: 'infra', text: '移除未使用的后端依赖（multer、node-fetch、winston）' },
     ],
   },
   {

@@ -33,14 +33,14 @@
           </div>
         </div>
         <div class="action-row" @click="toggleKeepAlive">
-          <el-icon><component is="Stopwatch" /></el-icon>
+          <el-icon><Stopwatch /></el-icon>
           <span>保持连接</span>
           <div class="toggle-track" :class="{ on: keepAlive }">
             <div class="toggle-knob" />
           </div>
         </div>
         <div class="action-row action-row--logout" @click="handleLogout">
-          <el-icon><component is="SwitchButton" /></el-icon>
+          <el-icon><SwitchButton /></el-icon>
           <span>退出登录</span>
         </div>
       </div>
@@ -68,6 +68,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Collection, Reading, Setting, Stopwatch, SwitchButton } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
@@ -127,9 +128,9 @@ onUnmounted(() => {
 })
 
 const navItems = [
-  { path: '/library', label: '书库', icon: 'Collection' },
-  { path: '/shelf', label: '书架', icon: 'Reading' },
-  ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: 'Setting' }] : []),
+  { path: '/library', label: '书库', icon: Collection },
+  { path: '/shelf', label: '书架', icon: Reading },
+  ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: Setting }] : []),
 ]
 
 async function handleLogout() {

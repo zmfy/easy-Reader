@@ -2,6 +2,7 @@ import fs from 'fs';
 import chardet from 'chardet';
 import iconv from 'iconv-lite';
 import { ReaderPlugin } from '../types';
+import { escapeHtml } from '../utils/html';
 
 interface ChapterMeta {
   index: number;
@@ -220,7 +221,7 @@ export class TxtParser implements ReaderPlugin {
 
     const text = iconv.decode(buffer, this.encoding);
     const paragraphs = text.split(/\r?\n+/).filter((p: string) => p.trim());
-    return paragraphs.map((p: string) => `<p>${p.trim()}</p>`).join('\n');
+    return paragraphs.map((p: string) => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
   }
 
   async getTotalProgress(): Promise<number> {

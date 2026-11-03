@@ -27,3 +27,15 @@
 - [x] #14 reader-prefs 校验：必须是对象、限制大小
 - [x] 验证：新增单测（#8 #9 #11 #13），jest 全绿、tsc、开发服务实测
 - [x] 更新说明 11-03 补充本轮 P1 条目
+
+# P2 修复
+
+- [x] #15 Element Plus 按需引入（unplugin-vue-components），去掉全局注册全部图标；首屏 JS 1186KB → 160KB（gzip 382 → 61KB）
+- [x] #17 瀑布流滚动 rAF 节流；最多保留 8 章 DOM，移除顶部章节时按锚点补偿滚动（逐帧验证无可见跳动）
+- [x] #18 TXT/PDF/UMD 段落 HTML 转义；指纹计算还原转义；FINGERPRINT_VERSION 1→2（同时覆盖 P1 #11 分段变化），旧数据回填改为 legacy v1
+- [x] #19 移除未使用依赖 multer / node-fetch / winston / @types/multer
+- [x] #21 README / CLAUDE.md 令牌有效期改为 2h；CLAUDE.md 修正 AI 插件注册说明
+- [ ] #16 章节模式不保存章内位置 — 代码注释表明是设计选择，待用户决定
+- [ ] #22 默认管理员密码 admin123 — 涉及产品行为，待用户决定
+- [x] #20 测试 — 已补至 23 suites / 179 tests，跳过
+- [x] 验证：jest 全绿、前后端 tsc、Chrome 遍历全部路由无组件解析警告、瀑布流 8 章上限与无跳动

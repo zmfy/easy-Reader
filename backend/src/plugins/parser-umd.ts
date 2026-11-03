@@ -16,6 +16,7 @@
 import fs from 'fs';
 import zlib from 'zlib';
 import { ReaderPlugin } from '../types';
+import { escapeHtml } from '../utils/html';
 
 interface ChapterMeta {
   index: number;
@@ -220,7 +221,7 @@ export class UmdParser implements ReaderPlugin {
       .split(/[\r\n\u2029\u2028]+/)
       .map(line => line.trim())
       .filter(line => line.length > 0)
-      .map(line => `<p>${line}</p>`)
+      .map(line => `<p>${escapeHtml(line)}</p>`)
       .join('\n');
   }
 

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { backfillFingerprintVersion, FINGERPRINT_VERSION, shouldReuseFingerprint } from '../../src/services/scan-versions';
+import { backfillFingerprintVersion, FINGERPRINT_VERSION, LEGACY_FINGERPRINT_VERSION, shouldReuseFingerprint } from '../../src/services/scan-versions';
 
 function freshDb(): Database.Database {
   const db = new Database(':memory:');
@@ -11,15 +11,21 @@ function freshDb(): Database.Database {
 }
 
 describe('backfillFingerprintVersion', () => {
-  it('stamps current version on rows that already have a fingerprint', () => {
+  it('stamps the legacy version on rows that already have a fingerprint', () => {
     const db = freshDb();
     db.prepare("INSERT INTO books (id, title, fingerprint) VALUES ('a','A','fp1')").run();
     db.prepare("INSERT INTO books (id, title, fingerprint) VALUES ('b','B', NULL)").run();
     backfillFingerprintVersion(db);
     const a = db.prepare("SELECT fingerprint_version v FROM books WHERE id='a'").get() as { v: number };
     const b = db.prepare("SELECT fingerprint_version v FROM books WHERE id='b'").get() as { v: number | null };
-    expect(a.v).toBe(FINGERPRINT_VERSION);
+    expect(a.v).toBe(LEGACY_FINGERPRINT_VERSION);
     expect(b.v).toBeNull();
+    // 旧算法的指纹不应被当作当前版本复用
+    expect(shouldReuseFingerprint({
+      existing: { fingerprint: 'fp1', fingerprint_version: a.v }, statSize: 0, statMtime: 0,
+      fingerprintVersion: FINGERPRINT_VERSION, fullRescan: false,
+    })).toBe(false);
+    expect(FINGERPRINT_VERSION).toBeGreaterThan(LEGACY_FINGERPRINT_VERSION);
   });
 
   it('does not overwrite an already-set version', () => {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { ReaderPlugin } from '../types';
+import { escapeHtml } from '../utils/html';
 
 export class PdfParser implements ReaderPlugin {
   format = 'pdf';
@@ -34,7 +35,7 @@ export class PdfParser implements ReaderPlugin {
     const page = this.pages[index];
     if (page === undefined) throw new Error(`页面 ${index} 不存在`);
     const paragraphs = page.split(/\n+/).filter(p => p.trim());
-    return paragraphs.map(p => `<p>${p.trim()}</p>`).join('\n');
+    return paragraphs.map(p => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
   }
 
   async getTotalProgress(): Promise<number> {

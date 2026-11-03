@@ -64,7 +64,7 @@ async function fetchBatches(): Promise<void> {
   }
 }
 
-function statusType(s: string): string {
+function statusType(s: string): 'warning' | 'success' | 'info' {
   return s === 'pending' ? 'warning' : s === 'applied' ? 'success' : 'info'
 }
 function statusLabel(s: string): string {
