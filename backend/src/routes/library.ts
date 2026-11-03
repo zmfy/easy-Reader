@@ -26,6 +26,7 @@ import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
 import { readTxtPreview } from '../plugins/parser-txt';
+import { hideFilePathForNonAdmin } from '../utils/book-view';
 
 const router = Router();
 
@@ -55,7 +56,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 
   if (statusFilter === 'duplicate_groups') {
     const { rows, total } = selectDuplicateGroupBooks(db, pageSize, (page - 1) * pageSize);
-    paginatedResponse(res, rows as unknown as Book[], page, pageSize, total);
+    paginatedResponse(res, hideFilePathForNonAdmin(req, rows as unknown as Book[]), page, pageSize, total);
     return;
   }
 
@@ -103,7 +104,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   const offset = (page - 1) * pageSize;
   const books = db.prepare(`SELECT * FROM books ${whereClause} ORDER BY ${sortBy} ${sortOrder} LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as Book[];
 
-  paginatedResponse(res, books, page, pageSize, total);
+  paginatedResponse(res, hideFilePathForNonAdmin(req, books), page, pageSize, total);
 });
 
 const scanOptionsSchema = z.object({
@@ -264,7 +265,7 @@ router.get('/:id', authMiddleware, (req: Request, res: Response) => {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;
   }
-  successResponse(res, book);
+  successResponse(res, hideFilePathForNonAdmin(req, book));
 });
 
 const updateBookSchema = z.object({

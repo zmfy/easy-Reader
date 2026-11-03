@@ -44,7 +44,7 @@
             placeholder="搜索书名/作者；输入「重复」「ai填充」「填充失败」"
             :prefix-icon="Search"
             clearable
-            style="width: 340px"
+            class="search-input"
             @input="debouncedSearch"
           />
           <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="onCategoryChange">
@@ -373,6 +373,28 @@ onMounted(refreshPendingBatch)
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
   gap: 22px;
+}
+
+.search-input {
+  width: 340px;
+  max-width: 100%;
+}
+
+/* 手机：两列卡片，否则 172px 最小宽度只能排一列，每本书几乎占满一屏；
+   搜索栏占满整行（flex 子项默认按内容宽度撑开，会超出右侧边距） */
+@media (max-width: 480px) {
+  .header-actions {
+    width: 100%;
+    min-width: 0;
+  }
+  .search-input {
+    width: 100%;
+  }
+  .books-grid,
+  .loading-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
 }
 
 .skeleton-card {

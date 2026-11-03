@@ -84,7 +84,9 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
     if (isPdf) extra.pdfUsePlugin = true;
     successResponse(res, extra);
   } catch (err) {
-    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节: ' + (err instanceof Error ? err.message : ''));
+    // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
+    console.error(`[reader:chapters] book=${req.params.bookId}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节');
   }
 });
 
@@ -126,7 +128,9 @@ router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.send(asset.buffer);
   } catch (err) {
-    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取资源: ' + (err instanceof Error ? err.message : ''));
+    // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
+    console.error(`[reader:asset] book=${req.params.bookId}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取资源');
   }
 });
 
@@ -169,7 +173,9 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
     const safeContent = purify.sanitize(processedContent);
     successResponse(res, { index, content: safeContent });
   } catch (err) {
-    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节内容: ' + (err instanceof Error ? err.message : ''));
+    // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
+    console.error(`[reader:chapter] book=${req.params.bookId}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节内容');
   }
 });
 
@@ -202,6 +208,11 @@ router.post('/:bookId/progress', authMiddleware, (req: Request, res: Response) =
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
 
   const db = getDb();
+  // 只允许为真实存在的书写入，避免用随意的 bookId 写入无限孤儿数据（也绕过每书 10 个书签的上限）
+  if (!db.prepare('SELECT 1 FROM books WHERE id = ?').get(req.params.bookId)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+    return;
+  }
   const existing = db.prepare('SELECT id FROM reading_progress WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId);
 
   if (existing) {
@@ -239,6 +250,11 @@ router.post('/:bookId/bookmarks', authMiddleware, (req: Request, res: Response) 
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
 
   const db = getDb();
+  // 只允许为真实存在的书写入，避免用随意的 bookId 写入无限孤儿数据（也绕过每书 10 个书签的上限）
+  if (!db.prepare('SELECT 1 FROM books WHERE id = ?').get(req.params.bookId)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+    return;
+  }
   const id = uuidv4();
   db.prepare('INSERT INTO bookmarks (id, user_id, book_id, chapter_index, scroll_top, note) VALUES (?, ?, ?, ?, ?, ?)').run(
     id, req.user!.userId, req.params.bookId, parsed.data.chapterIndex, parsed.data.scrollTop, parsed.data.note || null

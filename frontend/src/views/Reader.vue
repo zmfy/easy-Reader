@@ -792,6 +792,14 @@ onUnmounted(() => {
   transition: width 0.2s ease;
 }
 
+/* 手机 / 窄屏：「页面宽度」百分比再减去内边距会让正文过窄（375px 宽时每行仅约 12 字），改为占满宽度 */
+@media (max-width: 768px) {
+  .content-wrapper {
+    width: 100% !important;
+    padding: 24px 16px;
+  }
+}
+
 .chapter-content {
   transition: font-size 0.2s ease, line-height 0.2s ease;
 }
