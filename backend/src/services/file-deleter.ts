@@ -2,6 +2,7 @@ import fs from 'fs';
 import { getDb } from '../db';
 import { assertPathInsideRoot } from '../utils/path-safe';
 import { writeAudit } from './audit-log';
+import { deleteBookRelations } from './relation-cleanup';
 
 const DEFAULT_ROOT = process.env.BOOKS_DIR || '/app/books';
 
@@ -80,9 +81,7 @@ export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}):
     const affected = db.prepare(`SELECT COUNT(*) as cnt FROM shelf WHERE book_id IN (${placeholders})`).get(...allBookIds) as { cnt: number };
     result.shelf_entries_affected = affected.cnt;
 
-    db.prepare(`DELETE FROM shelf WHERE book_id IN (${placeholders})`).run(...allBookIds);
-    db.prepare(`DELETE FROM reading_progress WHERE book_id IN (${placeholders})`).run(...allBookIds);
-    db.prepare(`DELETE FROM bookmarks WHERE book_id IN (${placeholders})`).run(...allBookIds);
+    deleteBookRelations(db, allBookIds);
     const r = db.prepare(`DELETE FROM books WHERE id IN (${placeholders})`).run(...allBookIds);
     result.records_deleted = r.changes;
 

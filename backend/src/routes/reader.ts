@@ -45,6 +45,16 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
   if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
 
+  // 原生 PDF 模式由浏览器直接渲染原文件，无需 pdf-parse 全量解析
+  const isPdf = book.file_format.toLowerCase() === 'pdf';
+  if (isPdf) {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;
+    if (row?.value !== 'true') {
+      successResponse(res, { chapters: [], format: book.file_format, pdfUsePlugin: false });
+      return;
+    }
+  }
+
   try {
     const plugin = await getReaderPlugin(book);
     const rawChapters = await plugin.getChapters();
@@ -55,10 +65,7 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
       ? rawChapters.map(c => ({ ...c, title: overrides.get(c.index) ?? c.title }))
       : rawChapters;
     const extra: Record<string, unknown> = { chapters, format: book.file_format };
-    if (book.file_format.toLowerCase() === 'pdf') {
-      const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;
-      extra.pdfUsePlugin = row?.value === 'true';
-    }
+    if (isPdf) extra.pdfUsePlugin = true;
     successResponse(res, extra);
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节: ' + (err instanceof Error ? err.message : ''));

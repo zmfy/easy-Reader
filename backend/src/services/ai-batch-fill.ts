@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import pLimit from 'p-limit';
 import Database from 'better-sqlite3';
@@ -12,6 +11,7 @@ import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
+import { readTxtPreview } from '../plugins/parser-txt';
 
 const DEFAULT_CONCURRENCY = 2;
 const RETRIES = 3;
@@ -240,12 +240,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
 function readPreview(filePath: string, format: string): string {
   if (format !== 'txt') return '';
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return content.slice(0, 2000);
-  } catch {
-    return '';
-  }
+  return readTxtPreview(filePath, 2000);
 }
 
 function parseEditedFields(raw?: string): string[] {

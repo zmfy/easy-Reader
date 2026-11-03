@@ -20,6 +20,7 @@ import {
 import { buildCandidateGroups, ScannedBook } from './dedup-grouper';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
 import { extractAuthorFromName } from '../utils/title-normalizer';
+import { deleteBookRelations } from './relation-cleanup';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
@@ -45,14 +46,14 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         id: string;
         file_path: string;
       }[];
+      const orphanIds = rows.filter(row => !fileSet.has(row.file_path)).map(row => row.id);
       const del = db.prepare('DELETE FROM books WHERE id = ?');
-      let removed = 0;
-      for (const row of rows) {
-        if (!fileSet.has(row.file_path)) {
-          del.run(row.id);
-          removed++;
-        }
-      }
+      db.transaction(() => {
+        // 同时清理书架、进度、书签等关联数据，避免留下孤儿记录
+        deleteBookRelations(db, orphanIds);
+        for (const id of orphanIds) del.run(id);
+      })();
+      const removed = orphanIds.length;
       if (removed > 0) console.log(`[scan ${taskId}] cleaned ${removed} orphan record(s)`);
     }
 

@@ -7,8 +7,19 @@ import { successResponse, errorResponse } from '../utils/response';
 import { aiPlugins, isAiConfigured, getActivePluginName } from '../ai/ai-manager';
 import { User } from '../types';
 import nodemailer from 'nodemailer';
+import { deleteUserData } from '../services/relation-cleanup';
+import crypto from 'crypto';
 
 const router = Router();
+
+const INVITE_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+// 8 位大写字母数字邀请码，使用密码学安全随机数
+function generateInviteCode(): string {
+  let code = '';
+  for (let i = 0; i < 8; i++) code += INVITE_CODE_ALPHABET[crypto.randomInt(INVITE_CODE_ALPHABET.length)];
+  return code;
+}
 
 // GET /api/settings/public — no auth required, returns public-facing site info
 router.get('/public', (req: Request, res: Response) => {
@@ -91,11 +102,22 @@ router.get('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
 });
 
 // PUT /api/settings/reader-prefs
+// 只接受扁平的简单值对象，限制字段数与总大小，防止任意大数据写入 settings 表
+const readerPrefsSchema = z.record(z.union([z.string().max(200), z.number(), z.boolean()]))
+  .refine(v => Object.keys(v).length <= 30, '字段过多');
+const READER_PREFS_MAX_BYTES = 4 * 1024;
+
 router.put('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
+  const parsed = readerPrefsSchema.safeParse(req.body);
+  const value = parsed.success ? JSON.stringify(parsed.data) : '';
+  if (!parsed.success || Buffer.byteLength(value) > READER_PREFS_MAX_BYTES) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
+    return;
+  }
   const db = getDb();
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
     `reader_prefs_${req.user!.userId}`,
-    JSON.stringify(req.body)
+    value
   );
   successResponse(res, null, '阅读设置已保存');
 });
@@ -110,7 +132,7 @@ router.get('/users', authMiddleware, adminMiddleware, (req: Request, res: Respon
 // POST /api/settings/users/invite
 router.post('/users/invite', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const code = generateInviteCode();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   db.prepare('INSERT INTO invite_codes (code, created_by, expires_at) VALUES (?, ?, ?)').run(code, req.user!.userId, expiresAt);
   successResponse(res, { code, expiresAt }, '邀请码已生成', 201);
@@ -221,7 +243,12 @@ router.delete('/users/:id', authMiddleware, adminMiddleware, (req: Request, res:
   if (req.user!.userId === req.params.id) {
     errorResponse(res, 400, 'BUSINESS_CONFLICT', '不能删除自己的账号'); return;
   }
-  const result = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  const result = db.transaction(() => {
+    const r = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    // 同时清理该用户的书架、进度、书签与个人阅读设置
+    if (r.changes > 0) deleteUserData(db, req.params.id);
+    return r;
+  })();
   if (result.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
   successResponse(res, null, '用户已删除');
 });

@@ -581,7 +581,7 @@ const changelogTagLabels: Record<ChangelogTag, string> = {
 const changelog: ChangelogRelease[] = [
   {
     date: '2026-11-03',
-    title: '安全加固与瀑布流书签修复',
+    title: '安全加固、阅读修复与性能优化',
     items: [
       { tag: 'auth', text: '访问令牌与刷新令牌区分用途，刷新令牌不能再直接调用接口（升级后需重新登录一次）' },
       { tag: 'auth', text: '用户被删除或角色变更后立即生效，无需等待令牌过期' },
@@ -590,6 +590,12 @@ const changelog: ChangelogRelease[] = [
       { tag: 'auth', text: '修复扫描批次预览接口可读取书库目录外任意文件的问题，并改为只读取文件开头' },
       { tag: 'lib', text: '封面抓取不再生成调试文件，封面目录仅对外提供图片' },
       { tag: 'reader', text: '瀑布流模式书签记录章节内位置，点击书签可准确定位并继续加载后续章节' },
+      { tag: 'txt', text: '修复无章节标题的 TXT 按固定字节分段时把汉字切断导致段首段尾乱码的问题，分段改为对齐到行首' },
+      { tag: 'ai', text: 'AI 填充只读取 TXT 开头部分并按实际编码解码，GBK 等编码的书不再给 AI 传入乱码，批量填充内存占用大幅降低' },
+      { tag: 'reader', text: '阅读器解析缓存增加上限并合并同一本书的并发加载，长时间运行不再持续占用内存' },
+      { tag: 'reader', text: 'PDF 使用浏览器原生打开时不再在后台完整解析整本 PDF，打开大 PDF 明显更快' },
+      { tag: 'lib', text: '扫描清理已删除文件、删除书籍或用户时，同步清理书架、进度、书签等关联数据' },
+      { tag: 'auth', text: '邀请码改用安全随机数生成；阅读设置保存时校验格式与大小' },
     ],
   },
   {

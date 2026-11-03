@@ -25,6 +25,7 @@ import { selectDuplicateGroupBooks } from '../services/duplicate-view';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { saveMetadata, getMetadata, extractMetadataFromAiResponse } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
+import { readTxtPreview } from '../plugins/parser-txt';
 
 const router = Router();
 
@@ -430,9 +431,8 @@ router.post('/:id/ai-fill', authMiddleware, adminMiddleware, async (req: Request
 
     // Read first 600 chars as a content hint
     let contentHint = '';
-    if (fs.existsSync(book.file_path) && book.file_format === 'txt') {
-      const content = fs.readFileSync(book.file_path, 'utf-8');
-      contentHint = content.slice(0, 600);
+    if (book.file_format === 'txt') {
+      contentHint = readTxtPreview(book.file_path, 600);
     }
 
     // Build structured lookup request for AI

@@ -1,0 +1,58 @@
+import Database from 'better-sqlite3';
+import { deleteBookRelations, deleteUserData } from '../../src/services/relation-cleanup';
+
+function makeDb() {
+  const d = new Database(':memory:');
+  d.exec(`
+    CREATE TABLE shelf (id TEXT, user_id TEXT, book_id TEXT);
+    CREATE TABLE reading_progress (id TEXT, user_id TEXT, book_id TEXT);
+    CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
+    CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
+    CREATE TABLE book_ai_metadata (book_id TEXT);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+  `);
+  for (const [u, b] of [['u1', 'b1'], ['u1', 'b2'], ['u2', 'b1'], ['u2', 'b3']]) {
+    d.prepare('INSERT INTO shelf VALUES (?, ?, ?)').run(`${u}${b}`, u, b);
+    d.prepare('INSERT INTO reading_progress VALUES (?, ?, ?)').run(`${u}${b}`, u, b);
+    d.prepare('INSERT INTO bookmarks VALUES (?, ?, ?)').run(`${u}${b}`, u, b);
+  }
+  for (const b of ['b1', 'b2', 'b3']) {
+    d.prepare('INSERT INTO book_chapter_overrides VALUES (?, 0)').run(b);
+    d.prepare('INSERT INTO book_ai_metadata VALUES (?)').run(b);
+  }
+  d.prepare("INSERT INTO settings VALUES ('reader_prefs_u1', '{}'), ('reader_prefs_u2', '{}'), ('site_name', 'x')").run();
+  return d;
+}
+
+const count = (d: Database.Database, table: string, where = '1=1') =>
+  (d.prepare(`SELECT COUNT(*) c FROM ${table} WHERE ${where}`).get() as { c: number }).c;
+
+describe('deleteBookRelations', () => {
+  it('removes every per-book row for the given books only', () => {
+    const d = makeDb();
+    deleteBookRelations(d, ['b1', 'b2']);
+    for (const t of ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata']) {
+      expect(count(d, t, "book_id IN ('b1','b2')")).toBe(0);
+      expect(count(d, t, "book_id = 'b3'")).toBeGreaterThan(0);
+    }
+  });
+
+  it('is a no-op for an empty id list', () => {
+    const d = makeDb();
+    deleteBookRelations(d, []);
+    expect(count(d, 'shelf')).toBe(4);
+  });
+});
+
+describe('deleteUserData', () => {
+  it("removes the user's shelf, progress, bookmarks and reader prefs only", () => {
+    const d = makeDb();
+    deleteUserData(d, 'u1');
+    for (const t of ['shelf', 'reading_progress', 'bookmarks']) {
+      expect(count(d, t, "user_id = 'u1'")).toBe(0);
+      expect(count(d, t, "user_id = 'u2'")).toBe(2);
+    }
+    expect(count(d, 'settings', "key = 'reader_prefs_u1'")).toBe(0);
+    expect(count(d, 'settings', "key IN ('reader_prefs_u2', 'site_name')")).toBe(2);
+  });
+});

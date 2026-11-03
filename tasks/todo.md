@@ -14,3 +14,16 @@
 - [x] 写入 2026-11-03 本次 P0 修复内容；开发计划移除已完成的"瀑布流书签定位"
 - [x] 修复未定义的 `--border-color` 变量（改用 `--card-border`），标签统一宽度
 - [x] 验证：vue-tsc 通过；浏览器实测展开/收起、截图确认样式
+
+# P1 修复（合并 origin/main 后重新核对）
+
+- [x] #7 扫描卡顿 — 远端已重写为扫描任务 + 并发保护，跳过
+- [x] #8 AI 填充读整个 TXT：parser-txt 导出 `readTxtPreview`（只读开头、按检测编码解码），library.ts / ai-batch-fill.ts 共用
+- [x] #9 插件缓存：加 LRU 上限 + 同书并发加载去重
+- [x] #10 原生 PDF 模式 `/chapters` 跳过 pdf-parse 全量解析
+- [x] #11 无章节 TXT 分段边界对齐到行首，避免截断多字节字符
+- [x] #12 扫描清理已删除文件、删除用户时同步清理 shelf / progress / bookmarks / reader_prefs
+- [x] #13 邀请码改用 crypto 生成（注册并发抢用不成立：处理函数全同步，未加事务）
+- [x] #14 reader-prefs 校验：必须是对象、限制大小
+- [x] 验证：新增单测（#8 #9 #11 #13），jest 全绿、tsc、开发服务实测
+- [x] 更新说明 11-03 补充本轮 P1 条目

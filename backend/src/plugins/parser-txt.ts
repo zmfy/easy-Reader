@@ -36,6 +36,30 @@ function detectEncoding(filePath: string): string {
   return 'utf8';
 }
 
+const PREVIEW_BYTES = 64 * 1024;
+
+/**
+ * Read the first `maxChars` characters of a TXT file, decoded with the detected
+ * encoding. Only the first 64KB is read, so it is safe to call on huge files.
+ */
+export function readTxtPreview(filePath: string, maxChars: number): string {
+  try {
+    const encoding = detectEncoding(filePath);
+    const size = Math.min(PREVIEW_BYTES, fs.statSync(filePath).size);
+    const buffer = Buffer.alloc(size);
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      fs.readSync(fd, buffer, 0, size, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    // The 64KB cut may split the last character; drop the resulting U+FFFD.
+    return iconv.decode(buffer, encoding).replace(/^\uFEFF/, '').replace(/\uFFFD+$/, '').slice(0, maxChars);
+  } catch {
+    return '';
+  }
+}
+
 export class TxtParser implements ReaderPlugin {
   format = 'txt';
   private filePath = '';
@@ -74,12 +98,21 @@ export class TxtParser implements ReaderPlugin {
     const chapterPattern = /^第[零一二三四五六七八九十百千万\d]+[章节卷集]/;
     const chapters: ChapterMeta[] = [];
     const encoding = this.encoding;
+    // Fallback segmenting (used only when no chapter headers are found):
+    // remember a line start roughly every SEGMENT bytes, so segments never cut
+    // through a multi-byte character. 0x0a never occurs inside a UTF-8 /
+    // GB18030 / Big5 multi-byte sequence, so any line start is a safe boundary.
+    const SEGMENT = 100 * 1024;
+    const segmentStarts: number[] = [0];
 
     return new Promise((resolve, reject) => {
       let processedBytes = 0;
       let remainder = Buffer.alloc(0);
 
       const checkLine = (lineBuffer: Buffer, absoluteStart: number) => {
+        if (absoluteStart - segmentStarts[segmentStarts.length - 1] >= SEGMENT) {
+          segmentStarts.push(absoluteStart);
+        }
         const lineText = iconv.decode(lineBuffer, encoding).trim();
         if (chapterPattern.test(lineText) && lineText.length < 60) {
           if (chapters.length > 0) {
@@ -95,21 +128,16 @@ export class TxtParser implements ReaderPlugin {
       };
 
       const finalize = () => {
-        if (chapters.length === 0) {
-          // No chapter headers found — split into 100KB segments
-          const SEGMENT = 100 * 1024;
-          let offset = 0;
-          let num = 0;
-          while (offset < this.fileSize) {
+        if (chapters.length === 0 && this.fileSize > 0) {
+          // No chapter headers found — split into ~100KB segments on line starts
+          segmentStarts.forEach((start, num) => {
             chapters.push({
               index: num,
               title: `第 ${num + 1} 段`,
-              startByte: offset,
-              endByte: Math.min(offset + SEGMENT, this.fileSize),
+              startByte: start,
+              endByte: segmentStarts[num + 1] ?? this.fileSize,
             });
-            offset += SEGMENT;
-            num++;
-          }
+          });
         }
 
         this.chapters = chapters;
