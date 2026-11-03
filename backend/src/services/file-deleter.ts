@@ -32,6 +32,8 @@ export interface DeleteResult {
 export interface DeleteOptions {
   dryRun?: boolean;
   skipDbOps?: boolean;
+  /** Only remove DB records; leave files on disk untouched (they may be re-imported by the next scan). */
+  keepFiles?: boolean;
 }
 
 /**
@@ -43,9 +45,12 @@ export interface DeleteOptions {
  *    nothing commits (BUT note: files already removed from disk are not restored)
  */
 export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}): DeleteResult {
-  assertPathInsideRoot(root(), req.file_path);
-  for (const p of req.cascade_duplicate_paths) {
-    assertPathInsideRoot(root(), p);
+  // Path checks guard file deletion; a record-only delete never touches the disk
+  if (!opts.keepFiles) {
+    assertPathInsideRoot(root(), req.file_path);
+    for (const p of req.cascade_duplicate_paths) {
+      assertPathInsideRoot(root(), p);
+    }
   }
 
   const result: DeleteResult = {
@@ -58,7 +63,7 @@ export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}):
   if (opts.dryRun) return result;
 
   // Delete files first (irreversible)
-  for (const fp of [req.file_path, ...req.cascade_duplicate_paths]) {
+  for (const fp of opts.keepFiles ? [] : [req.file_path, ...req.cascade_duplicate_paths]) {
     try {
       if (fs.existsSync(fp)) {
         fs.unlinkSync(fp);
@@ -87,7 +92,7 @@ export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}):
 
     writeAudit({
       user_id: req.user_id,
-      action: 'delete_book_file',
+      action: opts.keepFiles ? 'delete_book_record' : 'delete_book_file',
       resource_id: req.book_id,
       file_path: req.file_path,
       details: {

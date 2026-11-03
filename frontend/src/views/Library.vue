@@ -119,6 +119,7 @@ import { libraryApi } from '@/api/library'
 import { scanBatchesApi } from '@/api/scan-batches'
 import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
+import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import type { Book, ScanStartOptions, ScanBatch } from '@/types'
 
 const router = useRouter()
@@ -218,38 +219,10 @@ async function onBookDelete(book: Book): Promise<void> {
     )
   } catch { return }
 
-  const tryDelete = async (opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}): Promise<boolean> => {
-    try {
-      await libraryApi.removeWithOptions(book.id, opts)
-      ElMessage.success('已删除')
-      await fetchBooks()
-      return true
-    } catch (err: unknown) {
-      const e = err as { response?: { status?: number; data?: { code?: string; data?: { duplicate_count?: number; affected_users?: number } } } }
-      if (e.response?.status === 409 && e.response.data?.code === 'HAS_DUPLICATES') {
-        const cnt = e.response.data.data?.duplicate_count ?? 0
-        try {
-          await ElMessageBox.confirm(`此书有 ${cnt} 个重复关联，一并删除？`, '级联删除', { type: 'warning' })
-          return await tryDelete({ ...opts, cascade_duplicates: true })
-        } catch { return false }
-      } else if (e.response?.status === 409 && e.response.data?.code === 'AFFECTS_SHELF') {
-        const users = e.response.data.data?.affected_users ?? 0
-        try {
-          await ElMessageBox.confirm(
-            `此书已被 ${users} 个用户加入书架，确认删除？\n\n用户书架上的此书会消失。`,
-            '影响用户书架',
-            { type: 'warning' },
-          )
-          return await tryDelete({ ...opts, confirm_shelf_impact: true })
-        } catch { return false }
-      } else {
-        ElMessage.error('删除失败')
-        return false
-      }
-    }
-  }
-
-  await tryDelete()
+  const result = await deleteBookWithPrompts(book.id)
+  if (!result) return
+  ElMessage.success('已删除')
+  await fetchBooks()
 }
 
 let searchTimer: ReturnType<typeof setTimeout>

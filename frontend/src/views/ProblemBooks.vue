@@ -98,6 +98,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { libraryApi } from '@/api/library'
+import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import type { Book } from '@/types'
 
 const router = useRouter()
@@ -176,8 +177,9 @@ async function onRemoveDbOnly(book: Book): Promise<void> {
       { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
     )
   } catch { return }
-  await libraryApi.remove(book.id, false)
-  ElMessage.success('已从书库移除')
+  const result = await deleteBookWithPrompts(book.id, { keep_file: true })
+  if (!result) return
+  ElMessage.success('已从书库移除，磁盘文件已保留')
   await Promise.all([fetchBooks(), fetchTotals()])
 }
 
@@ -195,14 +197,15 @@ async function onDeleteWithFile(book: Book): Promise<void> {
       },
     )
   } catch { return }
-  const resp = await libraryApi.remove(book.id, true)
-  const data = resp.data.data
-  if (data?.fileDeleted) {
+  const result = await deleteBookWithPrompts(book.id)
+  if (!result) return
+  const failures = result.warnings.filter(w => w.startsWith('failed to delete'))
+  if (failures.length > 0) {
+    ElMessage.warning(`数据库记录已删除，但磁盘文件删除失败：${failures.join('；')}`)
+  } else if (result.files_deleted > 0) {
     ElMessage.success('已彻底删除（含磁盘文件）')
-  } else if (data?.fileError) {
-    ElMessage.warning(`数据库记录已删除，但磁盘文件删除失败：${data.fileError}`)
   } else {
-    ElMessage.success('已删除')
+    ElMessage.success('已删除记录（磁盘上未找到该文件）')
   }
   await Promise.all([fetchBooks(), fetchTotals()])
 }

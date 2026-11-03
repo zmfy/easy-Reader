@@ -330,9 +330,12 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
 const deleteQuerySchema = z.object({
   cascade_duplicates: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
   confirm_shelf_impact: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
+  // true = 仅删除书库记录，保留磁盘文件（下次扫描可能会重新导入）
+  keep_file: z.union([z.string(), z.boolean()]).optional().transform(v => v === '1' || v === 'true' || v === true),
 });
 
 // DELETE /api/library/:id?cascade_duplicates=true&confirm_shelf_impact=true
+//   - keep_file=true: only remove DB records, leave files on disk (default: delete files too)
 //   - Validates path is inside BOOKS_DIR (path traversal protection)
 //   - If book is a canonical with duplicates pointing to it → 409 unless cascade_duplicates=true
 //   - If any of the books are on any user's shelf → 409 unless confirm_shelf_impact=true
@@ -340,7 +343,7 @@ const deleteQuerySchema = z.object({
 router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const parsed = deleteQuerySchema.safeParse(req.query);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
-  const { cascade_duplicates, confirm_shelf_impact } = parsed.data;
+  const { cascade_duplicates, confirm_shelf_impact, keep_file } = parsed.data;
 
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
@@ -376,7 +379,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
       cascade_duplicate_ids: dups.map(d => d.id),
       cascade_duplicate_paths: dups.map(d => d.file_path),
       user_id: req.user!.userId,
-    });
+    }, { keepFiles: keep_file });
     successResponse(res, result, '已删除');
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);

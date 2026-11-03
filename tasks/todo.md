@@ -46,3 +46,10 @@
 - [x] 前端保存：按「段落序号 + 段内比例」锚点保存；延迟保存绑定章节号、加载/恢复中忽略滚动；切后台/关闭页面立即保存
 - [x] 前端恢复：等字体加载后定位，3 秒内随内容尺寸变化重定位，用户主动滚动即停止
 - [x] 验证：Chrome 实测 中途退出恢复 / 改字号后恢复 / 切章后恢复到新章首 / 关闭标签页后恢复
+
+# 二次审查 · 高优先级第一批
+
+- [x] 问题书籍页「仅删书库记录」实际删除磁盘文件 → 后端 DELETE 新增 keep_file（file-deleter keepFiles，审计 delete_book_record）；前端抽出 useBookDelete 共用 409 处理，移除契约不符的 libraryApi.remove
+- [x] 子目录读取失败导致误删书籍及用户数据 → collectFiles 返回 unreadableDirs，findOrphanBookIds 跳过其下书籍
+- [x] 扫描审核「修改后再接受」清空修改 → PATCH 未带 payload 时 COALESCE 保留 admin_payload
+- [x] 验证：新增 6 个测试（25 suites / 185 tests）、tsc、API 实测、Chrome 实测问题书籍页

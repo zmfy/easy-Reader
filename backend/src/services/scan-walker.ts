@@ -33,7 +33,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     }
 
     setScanProgress(taskId, { stage: 'walking' });
-    const allFiles = collectFiles(BOOKS_DIR);
+    const walk = collectFiles(BOOKS_DIR);
+    const allFiles = walk.files;
+    if (walk.unreadableDirs.length > 0) {
+      console.warn(`[scan ${taskId}] ${walk.unreadableDirs.length} 个目录读取失败，其中的书本次不做清理:`, walk.unreadableDirs);
+    }
     setScanProgress(taskId, { total_files: allFiles.length, processed_files: 0 });
 
     // Cleanup orphans: delete DB rows whose file_path is no longer on disk.
@@ -41,12 +45,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // broken bind-mount) — otherwise we'd wipe the whole library on every misconfig.
     if (allFiles.length > 0) {
       const db = getDb();
-      const fileSet = new Set(allFiles);
       const rows = db.prepare('SELECT id, file_path FROM books').all() as {
         id: string;
         file_path: string;
       }[];
-      const orphanIds = rows.filter(row => !fileSet.has(row.file_path)).map(row => row.id);
+      const orphanIds = findOrphanBookIds(rows, walk);
       const del = db.prepare('DELETE FROM books WHERE id = ?');
       db.transaction(() => {
         // 同时清理书架、进度、书签等关联数据，避免留下孤儿记录
@@ -290,8 +293,15 @@ function pickCanonical(group: ScannedBook[]): ScannedBook {
   })[0];
 }
 
-function collectFiles(root: string): string[] {
+export interface WalkResult {
+  files: string[];
+  /** Directories that could not be read (EIO / EACCES / flaky mount) */
+  unreadableDirs: string[];
+}
+
+export function collectFiles(root: string): WalkResult {
   const out: string[] = [];
+  const unreadableDirs: string[] = [];
   const stack: string[] = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
@@ -299,6 +309,7 @@ function collectFiles(root: string): string[] {
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
+      unreadableDirs.push(dir);
       continue;
     }
     for (const e of entries) {
@@ -310,7 +321,21 @@ function collectFiles(root: string): string[] {
       }
     }
   }
-  return out;
+  return { files: out, unreadableDirs };
+}
+
+/**
+ * Books whose file was not found by the walk. Books inside a directory that
+ * could not be read are NOT orphans — they are merely invisible this time, and
+ * deleting them would also wipe users' shelf / progress / bookmarks.
+ */
+export function findOrphanBookIds(rows: Array<{ id: string; file_path: string }>, walk: WalkResult): string[] {
+  const fileSet = new Set(walk.files);
+  const unreadablePrefixes = walk.unreadableDirs.map(d => d.endsWith(path.sep) ? d : d + path.sep);
+  return rows
+    .filter(row => !fileSet.has(row.file_path))
+    .filter(row => !unreadablePrefixes.some(prefix => row.file_path.startsWith(prefix)))
+    .map(row => row.id);
 }
 
 async function processFile(

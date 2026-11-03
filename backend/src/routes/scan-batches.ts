@@ -56,8 +56,9 @@ router.patch('/:batchId/items/:itemId', authMiddleware, adminMiddleware, (req: R
   const item = db.prepare('SELECT id FROM scan_batch_items WHERE id = ? AND batch_id = ?')
     .get(req.params.itemId, req.params.batchId);
   if (!item) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '审核项不存在'); return; }
+  // 未携带 payload 时（如修改后再点「接受」）保留管理员已有的修改，只更新决定
   db.prepare(
-    `UPDATE scan_batch_items SET admin_decision = ?, admin_payload = ?, reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ? WHERE id = ?`
+    `UPDATE scan_batch_items SET admin_decision = ?, admin_payload = COALESCE(?, admin_payload), reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ? WHERE id = ?`
   ).run(
     parsed.data.decision,
     parsed.data.payload !== undefined ? JSON.stringify(parsed.data.payload) : null,

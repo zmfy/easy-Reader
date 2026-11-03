@@ -24,6 +24,14 @@ export interface UpdateBookPayload {
   is_finished?: boolean
 }
 
+/** 与后端 services/file-deleter.ts 的 DeleteResult 一致 */
+export interface BookDeleteResult {
+  files_deleted: number
+  records_deleted: number
+  shelf_entries_affected: number
+  warnings: string[]
+}
+
 export const libraryApi = {
   list: (params: LibraryQuery = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
@@ -46,11 +54,6 @@ export const libraryApi = {
   update: (id: string, payload: UpdateBookPayload) =>
     http.put<ApiResponse<Book>>(`/library/${id}`, payload),
 
-  remove: (id: string, withFile = false) =>
-    http.delete<ApiResponse<{ fileDeleted: boolean; fileError: string | null } | null>>(
-      `/library/${id}`,
-      { params: withFile ? { with_file: true } : {} },
-    ),
 
   aiFill: (id: string) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),
@@ -88,8 +91,9 @@ export const libraryApi = {
   estimate: (params: { ai_fill?: boolean; full_rescan?: boolean; force?: boolean }) =>
     http.get<ApiResponse<import('@/types').CostEstimate>>('/library/scan/estimate', { params }),
 
-  removeWithOptions: (id: string, opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean } = {}) =>
-    http.delete<ApiResponse<{ files_deleted: number; records_deleted: number; shelf_entries_affected: number; warnings: string[] }>>(
+  // keep_file=true 仅删除书库记录、保留磁盘文件；默认连同磁盘文件一起删除
+  removeWithOptions: (id: string, opts: { cascade_duplicates?: boolean; confirm_shelf_impact?: boolean; keep_file?: boolean } = {}) =>
+    http.delete<ApiResponse<BookDeleteResult>>(
       `/library/${id}`,
       { params: opts },
     ),
