@@ -41,11 +41,11 @@
             <div class="form-grid">
               <div class="form-field">
                 <label>站点名称</label>
-                <el-input v-model="sysForm.site_name" placeholder="夜航书房" />
+                <el-input v-model="sysForm.site_name" placeholder="留空则使用默认：简单书房" />
               </div>
               <div class="form-field">
                 <label>站点副标题</label>
-                <el-input v-model="sysForm.site_subtitle" placeholder="Night Reader · NAS Novel Platform" />
+                <el-input v-model="sysForm.site_subtitle" placeholder="留空则使用默认：Easy Reader · NAS Novel Platform" />
               </div>
               <div class="form-field">
                 <label>站点公开地址</label>
@@ -239,7 +239,7 @@
               <el-table-column prop="username" label="用户名" />
               <el-table-column prop="role" label="角色">
                 <template #default="{ row }">
-                  <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">
+                  <el-tag :type="row.role === 'admin' ? 'primary' : 'info'" effect="plain">
                     {{ row.role === 'admin' ? '管理员' : '普通用户' }}
                   </el-tag>
                 </template>
@@ -254,11 +254,13 @@
                   <el-button
                     v-if="row.id !== authStore.user?.id"
                     size="small"
+                    link
+                    type="primary"
                     @click="toggleRole(row)"
                   >
                     {{ row.role === 'admin' ? '降为普通' : '升为管理员' }}
                   </el-button>
-                  <el-button size="small" type="warning" @click="openPwdDialog(row)">
+                  <el-button size="small" link type="primary" @click="openPwdDialog(row)">
                     修改密码
                   </el-button>
                   <el-popconfirm
@@ -270,7 +272,7 @@
                     @confirm="deleteUser(row.id)"
                   >
                     <template #reference>
-                      <el-button size="small" type="danger" plain>删除</el-button>
+                      <el-button size="small" link type="danger">删除</el-button>
                     </template>
                   </el-popconfirm>
                 </template>
