@@ -243,7 +243,7 @@ function readPreview(filePath: string, format: string): string {
   return readTxtPreview(filePath, 2000);
 }
 
-function parseEditedFields(raw?: string): string[] {
+export function parseEditedFields(raw?: string): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
