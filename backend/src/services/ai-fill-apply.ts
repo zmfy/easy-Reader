@@ -6,7 +6,7 @@ import {
 } from '../utils/cover';
 import { replaceMetadata } from './book-ai-metadata';
 import { markFieldsAsEdited, stampFillVersion, unmarkFieldsAsEdited } from './ai-batch-fill';
-import { BookNotFoundError, LockableField, SimilarWork } from './ai-fill-preview';
+import { BookNotFoundError, cleanBookTitle, LockableField, SimilarWork } from './ai-fill-preview';
 
 /**
  * 应用用户在 AI 填充预览中确认的结果。
@@ -25,6 +25,8 @@ export interface AiFillApplyInput {
   cover: CoverChoice;
   /** 选中豆瓣封面时为该候选的书目页，否则为第一个候选的；用于在书没有评分时抓取评分 */
   ratingSubjectUrl?: string;
+  /** 默认封面上印的书名（预览返回的 coverTitle）；未提供时用清洗后的书名 */
+  coverTitle?: string;
   /** 预览返回的 AI 建议原样回传，用于区分「接受 AI 结果」与「手动修改」 */
   suggested: { author?: string; summary?: string; category?: string };
 }
@@ -45,7 +47,7 @@ async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string
     return url;
   }
   const svg = renderDefaultCoverSvg({
-    title: book.title,
+    title: input.coverTitle?.trim() || cleanBookTitle(book.title),
     author: input.author ?? book.author,
     category: input.category ?? book.category,
   });

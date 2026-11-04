@@ -149,6 +149,20 @@ describe('applyAiFill covers', () => {
     expect(svg).toContain('罗贯中 著');
   });
 
+  it('prints the submitted cover title on the default cover', async () => {
+    await applyAiFill('b1', input({ coverTitle: '红楼梦', cover: { type: 'default' } }));
+    const svg = fs.readFileSync(path.join(COVERS(), (row().cover_url as string).replace('/covers/', '')), 'utf-8');
+    expect(svg).toContain('红楼梦');
+  });
+
+  it('falls back to the cleaned book title when no cover title is submitted', async () => {
+    setupDb({ title: '《三国演义》（精校版全本）作者：罗贯中' });
+    await applyAiFill('b1', input({ category: '综合', cover: { type: 'default' } }));
+    const svg = fs.readFileSync(path.join(COVERS(), (row().cover_url as string).replace('/covers/', '')), 'utf-8');
+    expect(svg).toContain('>三国演义<');           // modern 风格横排整行
+    expect(svg).not.toContain('精校版');
+  });
+
   it('keeps the current cover untouched', async () => {
     await applyAiFill('b1', input({ cover: { type: 'keep' } }));
     expect(row().cover_url).toBe('/covers/b1.jpg');

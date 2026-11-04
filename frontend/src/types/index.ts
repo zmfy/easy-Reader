@@ -246,6 +246,49 @@ export interface BookAiMetadata {
   generated_at: string
 }
 
+// ── 单本 AI 填充预览（与 backend/src/services/ai-fill-preview.ts / ai-fill-apply.ts 对应）──
+export type SimilarWork = { title: string; author?: string; reason?: string }
+export type AiFillLockableField = 'author' | 'summary' | 'category'
+
+export interface AiFillCoverCandidate {
+  title: string
+  author?: string
+  year?: string
+  pic: string
+  subjectUrl?: string
+  thumbnail: string
+}
+
+export interface AiFillPreview {
+  current: {
+    title: string; author: string | null; summary: string | null; category: string | null
+    is_finished: boolean | null; cover_url: string | null
+    recommended_tags: string[]; similar_works: SimilarWork[]
+  }
+  suggested: {
+    author?: string; summary?: string; category?: string; is_finished?: boolean
+    recommended_tags: string[]; similar_works: SimilarWork[]
+  }
+  lockedFields: AiFillLockableField[]
+  coverTitle: string
+  coverCandidates: AiFillCoverCandidate[]
+}
+
+export type AiFillCoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' }
+
+export interface AiFillApplyInput {
+  author?: string
+  summary?: string
+  category?: string
+  is_finished?: boolean
+  recommended_tags: string[]
+  similar_works: SimilarWork[]
+  cover: AiFillCoverChoice
+  ratingSubjectUrl?: string
+  coverTitle?: string
+  suggested: { author?: string; summary?: string; category?: string }
+}
+
 export interface CostEstimate {
   fill: number
   total: number

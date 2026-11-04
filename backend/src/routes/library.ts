@@ -457,6 +457,7 @@ const aiFillApplySchema = z.object({
     z.object({ type: z.literal('default') }),
   ]),
   ratingSubjectUrl: z.string().max(500).optional(),
+  coverTitle: z.string().trim().max(200).optional(),
   suggested: z.object({
     author: z.string().optional(),
     summary: z.string().optional(),

@@ -57,7 +57,7 @@
                   </template>
                   <el-tooltip
                     placement="top"
-                    :content="aiConfigured ? 'AI 不会覆盖 admin 修改过的字段。想让 AI 重写，请先清空对应字段再保存。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
+                    :content="aiConfigured ? 'AI 搜索完成后先弹出预览，确认后才保存；手动修改过的字段默认保留。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
                   >
                     <el-button
                       size="small"
@@ -80,7 +80,7 @@
               >
                 <template #title>已手动编辑的字段：{{ editedFieldsList.join('、') }}</template>
                 <template #default>
-                  这些字段已被锁定，AI 填充不会覆盖。如需重写，请清空字段并保存后再点 AI 填充。
+                  AI 填充会先弹出预览，锁定字段默认保留现有内容，可在预览中改用 AI 结果。
                 </template>
               </el-alert>
             </div>
@@ -150,6 +150,13 @@
         </div>
       </div>
     </div>
+    <AiFillPreviewDialog
+      v-if="book"
+      v-model="aiPreviewVisible"
+      :preview="aiPreview"
+      :book-id="book.id"
+      @applied="onAiApplied"
+    />
   </DefaultLayout>
 </template>
 
@@ -159,11 +166,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
-import type { Book, BookAiMetadata } from '@/types'
+import type { AiFillPreview, Book, BookAiMetadata } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -177,6 +185,8 @@ const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
 const aiFilling = ref(false)
+const aiPreview = ref<AiFillPreview | null>(null)
+const aiPreviewVisible = ref(false)
 const aiConfigured = ref(true)
 const addingShelf = ref(false)
 
@@ -242,14 +252,6 @@ async function fetchBook() {
   }
 }
 
-async function refreshAiMeta(): Promise<void> {
-  if (!book.value) return
-  try {
-    const resp = await libraryApi.getAiMetadata(book.value.id)
-    aiMeta.value = resp.data.data ?? null
-  } catch { /* ignore */ }
-}
-
 function startEdit() {
   if (!book.value) return
   editForm.title = book.value.title
@@ -278,15 +280,20 @@ async function saveEdit() {
 async function handleAiFill() {
   aiFilling.value = true
   try {
-    const resp = await libraryApi.aiFill(route.params.bookId as string)
-    book.value = resp.data.data || null
-    await refreshAiMeta()
-    ElMessage.success('AI 填充成功')
+    // 先预览：AI 与豆瓣检索结果在弹窗中确认 / 修改后才写入
+    const resp = await libraryApi.aiFillPreview(route.params.bookId as string)
+    aiPreview.value = resp.data.data ?? null
+    aiPreviewVisible.value = !!aiPreview.value
   } catch (err: unknown) {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
     aiFilling.value = false
   }
+}
+
+async function onAiApplied() {
+  // 重新加载书籍、AI 元数据与类似作品的书库链接
+  await fetchBook()
 }
 
 async function handleAddToShelf() {

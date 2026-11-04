@@ -182,3 +182,14 @@
 - [x] ollama.ts：新增 thinking 下拉（默认关闭 → think:false；开启 → think:true）；解析前去掉 <think>…</think>（防旧版本）；模型提示改为 qwen3 / gemma3 / llama3；出错时带上 Ollama 返回的原因；新增 5 个单测，ai-manager 测试断言改为「不含 apiKey」
 - [x] 验证：32 suites / 239 tests、前后端 tsc；模拟 Ollama 服务端到端：qwen3 关/开、llama3 开（页面显示「"llama3" does not support thinking」）/ 关，请求 think 参数均正确；测试后开发库设置恢复原样
 - [ ] 备注：本机无 Ollama，未调用真实模型
+
+# 单本 AI 填充预览（分支 feature/ai-fill-preview）
+
+- [x] 设计：docs/superpowers/specs/2026-11-04-ai-fill-preview-design.md；计划：docs/superpowers/plans/2026-11-04-ai-fill-preview.md
+- [x] Task 1 默认封面 SVG（夜读 / 古籍 / 现代，按分类）+ /covers 支持 SVG 与安全头
+- [x] Task 2 豆瓣候选列表、主机白名单（含每跳重定向）、封面文件带版本号并清理旧文件
+- [x] Task 3 预览接口（只读）+ 默认封面预览接口；删除原直接写库的 /ai-fill
+- [x] Task 4 应用接口：锁规则、标签与类似作品以提交为准、封面保存、标记已填充
+- [x] Task 5 前端预览弹窗 + 书页接入；Chrome 电脑 / 手机实测：取消不写库、分类改玄幻默认封面变夜读、增删类似作品、选默认封面应用后封面与数据正确、旧封面文件被清理
+- [x] 实测中修复：预览请求体 null 导致 500；开发环境 /covers 代理；默认封面改用 AI 书名 / 清洗后的书名（coverTitle）
+- [ ] 最终评审

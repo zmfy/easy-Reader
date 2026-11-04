@@ -78,6 +78,12 @@ describe('buildAiFillPreview', () => {
     expect(p.lockedFields).toEqual(['author']);
   });
 
+  it('provides a clean title for the default cover: AI title, else the cleaned file title', async () => {
+    expect((await buildAiFillPreview('b1')).coverTitle).toBe('三国演义');
+    fill.mockResolvedValue({ summary: 'x' });
+    expect((await buildAiFillPreview('b1')).coverTitle).toBe('三国演义');   // 《三国演义》（精校版全本） 清洗后
+  });
+
   it('does not write anything, download covers or fetch ratings', async () => {
     const before = snapshot();
     await buildAiFillPreview('b1');

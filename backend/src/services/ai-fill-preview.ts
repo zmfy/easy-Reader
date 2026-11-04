@@ -25,6 +25,8 @@ export interface AiFillPreview {
     recommended_tags: string[]; similar_works: SimilarWork[];
   };
   lockedFields: LockableField[];
+  /** 默认封面上印的书名：AI 给出的书名，否则为清洗后的文件名书名（预览与保存一致） */
+  coverTitle: string;
   coverCandidates: Array<DoubanCandidate & { thumbnail: string }>;
 }
 
@@ -108,6 +110,7 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
       similar_works: meta.similar,
     },
     lockedFields: LOCKABLE.filter(f => edited.has(f)),
+    coverTitle: str(info.title) || cleanedTitle,
     coverCandidates,
   };
 }

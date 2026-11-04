@@ -55,8 +55,16 @@ export const libraryApi = {
     http.put<ApiResponse<Book>>(`/library/${id}`, payload),
 
 
-  aiFill: (id: string) =>
-    http.post<ApiResponse<Book>>(`/library/${id}/ai-fill`),
+  // AI 填充预览：AI 与豆瓣检索可能需要一分多钟，超时单独放宽到 3 分钟
+  aiFillPreview: (id: string) =>
+    http.post<ApiResponse<import('@/types').AiFillPreview>>(`/library/${id}/ai-fill/preview`, {}, { timeout: 180000 }),
+
+  aiFillApply: (id: string, payload: import('@/types').AiFillApplyInput) =>
+    http.post<ApiResponse<Book>>(`/library/${id}/ai-fill/apply`, payload),
+
+  // 系统默认封面 SVG 文本（预览用）
+  defaultCoverSvg: (params: { title: string; author?: string; category?: string }) =>
+    http.get<string>('/library/default-cover', { params, responseType: 'text' }),
 
   getAiMetadata: (id: string) =>
     http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
