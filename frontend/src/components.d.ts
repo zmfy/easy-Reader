@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AiFillPreviewDialog: typeof import('./components/AiFillPreviewDialog.vue')['default']
     BatchItemPreview: typeof import('./components/BatchItemPreview.vue')['default']
     BookCard: typeof import('./components/BookCard.vue')['default']
     CostWarningDialog: typeof import('./components/CostWarningDialog.vue')['default']
