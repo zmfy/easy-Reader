@@ -33,21 +33,24 @@
         role="img"
       />
       <!-- 悬停操作层 -->
+      <!-- 悬停操作：封面底部渐变区，主操作「阅读」单独一行，详情 / 删除并排 -->
       <div class="cover-overlay">
-        <el-button type="primary" size="small" @click.stop="$emit('read')">
+        <el-button type="primary" size="small" class="overlay-read" @click.stop="$emit('read')">
           <el-icon><VideoPlay /></el-icon>
           阅读
         </el-button>
-        <el-button size="small" @click.stop="$emit('detail')">详情</el-button>
-        <el-button
-          v-if="authStore.isAdmin"
-          type="danger"
-          size="small"
-          plain
-          @click.stop="$emit('delete', book)"
-        >
-          删除
-        </el-button>
+        <div class="overlay-row">
+          <el-button size="small" @click.stop="$emit('detail')">详情</el-button>
+          <el-button
+            v-if="authStore.isAdmin"
+            type="danger"
+            size="small"
+            plain
+            @click.stop="$emit('delete', book)"
+          >
+            删除
+          </el-button>
+        </div>
       </div>
       <!-- 底部渐变（有封面时增加层次感） -->
       <div v-if="!imgError && book.cover_url" class="cover-bottom-fade" />
@@ -214,14 +217,39 @@ const placeholderGradient = computed(() => {
 .cover-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(11, 16, 32, 0.78);
+  z-index: 3;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  flex-direction: column;
+  justify-content: flex-end;   /* 按钮放在封面下部，不挡封面主体 */
+  gap: 6px;
+  padding: 0 14px 14px;        /* 两侧与底部留白 */
+  /* 只压暗下半部分，上半部分封面仍清晰可见 */
+  background: linear-gradient(to top, rgba(11, 16, 32, 0.92) 0%, rgba(11, 16, 32, 0.65) 40%, rgba(11, 16, 32, 0) 72%);
   opacity: 0;
   transition: opacity 0.22s ease;
-  backdrop-filter: blur(2px);
+}
+
+.cover-overlay .el-button {
+  margin-left: 0;              /* 去掉 Element Plus 相邻按钮的默认左间距 */
+}
+
+.overlay-read {
+  width: 100%;
+}
+
+.overlay-row {
+  display: flex;
+  gap: 6px;
+}
+
+.overlay-row .el-button {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 悬停时隐藏 AI 填充圆点，避免压在按钮上 */
+.book-card:hover .ai-fill-dot {
+  opacity: 0;
 }
 
 /* ── 信息区域 ── */
@@ -289,13 +317,14 @@ const placeholderGradient = computed(() => {
   position: absolute;
   bottom: 8px;
   right: 8px;
-  z-index: 5;           /* 高于悬停操作层，悬停圆点时仍能看到提示 */
+  z-index: 2;
   width: 9px;
   height: 9px;
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.75);   /* 深色描边，浅色封面上也清晰 */
 }
 .ai-fill-dot.success { background: #22c55e; }
+.ai-fill-dot { transition: opacity 0.2s ease; }
 .ai-fill-dot.warning { background: #f59e0b; }
 
 .rating-badge {
