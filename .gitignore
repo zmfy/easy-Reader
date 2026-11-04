@@ -16,11 +16,6 @@ node_modules/
 backend/node_modules/
 frontend/node_modules/
 
-# Lock files generated locally (Docker uses npm without a lock file)
-package-lock.json
-backend/package-lock.json
-frontend/package-lock.json
-
 # Build output
 backend/dist/
 frontend/dist/
@@ -37,12 +32,6 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
-backend/src/routes/settings.ts
-frontend/src/App.vue
-frontend/src/api/settings.ts
-frontend/src/assets/styles/main.css
-frontend/src/views/Settings.vue
-backend/tmp/novel-reader.db
 
 # brainstorming 草图（本地）
 .superpowers/

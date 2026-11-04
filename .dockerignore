@@ -9,3 +9,8 @@ data
 .claude
 .project
 README.md
+# 开发产物，与构建无关（Dockerfile 只 COPY frontend/ 与 backend/src）
+docs
+tasks
+scripts
+.github
