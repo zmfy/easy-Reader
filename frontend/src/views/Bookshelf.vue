@@ -28,13 +28,13 @@
               @click="router.push(`/reader/${item.book_id}`)"
             >
               <div class="recent-cover">
-                <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                <img v-if="item.cover_url" :src="item.cover_url" :alt="titleOf(item)" />
                 <div v-else class="cover-placeholder">
-                  <span>{{ item.title }}</span>
+                  <span>{{ titleOf(item) }}</span>
                 </div>
               </div>
               <div class="recent-info">
-                <div class="recent-title">{{ item.title }}</div>
+                <div class="recent-title">{{ titleOf(item) }}</div>
                 <div class="recent-author">{{ item.author || '未知作者' }}</div>
                 <div class="progress-bar-wrapper">
                   <div class="progress-label">
@@ -51,27 +51,32 @@
         <div class="section">
           <h2 class="section-title">全部书籍</h2>
           <div class="all-books">
+            <!-- 点整行继续阅读；详情 / 移出收进「⋯」菜单 -->
             <div
               v-for="item in items"
               :key="item.id"
               class="book-row"
+              :title="`继续阅读《${titleOf(item)}》`"
+              @click="router.push(`/reader/${item.book_id}`)"
             >
               <div class="row-cover">
-                <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                <img v-if="item.cover_url" :src="item.cover_url" :alt="titleOf(item)" />
                 <div v-else class="row-cover-placeholder">{{ item.file_format?.toUpperCase() }}</div>
               </div>
               <div class="row-info">
-                <div class="row-title">{{ item.title }}</div>
+                <div class="row-title">{{ titleOf(item) }}</div>
                 <div class="row-author">{{ item.author || '未知作者' }}</div>
-                <div class="row-meta">
-                  <span v-if="item.category" class="tag">{{ item.category }}</span>
-                </div>
+                <div class="row-progress">{{ progressText(item) }}</div>
               </div>
-              <div class="row-actions">
-                <el-button size="small" type="primary" @click="router.push(`/reader/${item.book_id}`)">阅读</el-button>
-                <el-button size="small" @click="router.push(`/book/${item.book_id}`)">详情</el-button>
-                <el-button size="small" type="danger" @click="handleRemove(item.book_id)">移除</el-button>
-              </div>
+              <el-dropdown trigger="click" @command="(cmd: string) => onRowCommand(cmd, item)" @click.stop>
+                <el-button class="row-more" text :icon="MoreFilled" title="更多" @click.stop />
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="detail">详情</el-dropdown-item>
+                    <el-dropdown-item command="remove" divided>移出书架</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </div>
         </div>
@@ -81,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { CollectionTag } from '@element-plus/icons-vue'
+import { CollectionTag, MoreFilled } from '@element-plus/icons-vue'
 import { ref, computed, onMounted } from 'vue'
 import { parseServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'
@@ -110,6 +115,21 @@ function formatDate(date: string) {
   if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
   if (diff < 604800) return `${Math.floor(diff / 86400)} 天前`
   return d.toLocaleDateString('zh-CN')
+}
+
+function titleOf(item: ShelfItem): string {
+  return item.display_title || item.title || ''
+}
+
+function progressText(item: ShelfItem): string {
+  if (item.chapter_index == null) return '未开始'
+  const chapter = item.chapter_title || `第 ${item.chapter_index + 1} 章`
+  return `读到 ${chapter}${item.last_read_at ? ` · ${formatDate(item.last_read_at)}` : ''}`
+}
+
+function onRowCommand(command: string, item: ShelfItem) {
+  if (command === 'detail') router.push(`/book/${item.book_id}`)
+  else if (command === 'remove') handleRemove(item.book_id).catch(() => { /* 取消确认 */ })
 }
 
 async function fetchShelf() {
@@ -273,6 +293,7 @@ onMounted(fetchShelf)
   display: flex;
   align-items: center;
   gap: 14px;
+  cursor: pointer;
   transition: all 0.18s ease;
 }
 
@@ -326,22 +347,19 @@ onMounted(fetchShelf)
   color: var(--text-2);
 }
 
-.row-meta {
+.row-progress {
   margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tag {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(124, 92, 255, 0.15);
-  color: var(--accent);
-}
-
-.row-actions {
-  display: flex;
-  gap: 6px;
+.row-more {
   flex-shrink: 0;
+  font-size: 18px;
+  color: var(--text-2);
 }
 
 .empty-state {
@@ -400,16 +418,9 @@ onMounted(fetchShelf)
     margin-left: auto;
   }
 
-  /* Book rows: wrap actions to second line */
   .book-row {
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 8px 12px;
+    gap: 12px;
     padding: 12px;
-  }
-
-  .row-info {
-    width: calc(100% - 52px); /* cover 40px + gap 12px */
   }
 
   .row-title {
@@ -428,12 +439,5 @@ onMounted(fetchShelf)
     font-size: 13px;
   }
 
-  /* Actions wrap below, indented past the cover */
-  .row-actions {
-    width: 100%;
-    padding-left: 52px;
-    margin-top: 0;
-    justify-content: flex-start;
-  }
 }
 </style>

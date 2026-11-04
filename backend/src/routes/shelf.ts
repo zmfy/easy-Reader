@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { withDisplayTitle } from '../utils/book-view';
 import { randomUUID as uuidv4 } from 'crypto';
 import { z } from 'zod';
 import { getDb } from '../db';
@@ -18,8 +19,8 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     LEFT JOIN reading_progress rp ON rp.user_id = s.user_id AND rp.book_id = s.book_id
     WHERE s.user_id = ?
     ORDER BY COALESCE(s.last_read_at, s.added_at) DESC
-  `).all(req.user!.userId);
-  successResponse(res, items);
+  `).all(req.user!.userId) as Array<{ title?: string }>;
+  successResponse(res, withDisplayTitle(items));
 });
 
 // POST /api/shelf

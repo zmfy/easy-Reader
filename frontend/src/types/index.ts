@@ -43,6 +43,8 @@ export interface ShelfItem {
   last_read_at?: string
   // Joined fields
   title?: string
+  /** 清洗后的书名，仅用于显示 */
+  display_title?: string
   author?: string
   cover_url?: string
   category?: string
