@@ -102,7 +102,8 @@ export class TxtParser implements ReaderPlugin {
    * Only byte offsets are stored — no full content in memory.
    */
   private scanChapters(): Promise<void> {
-    const chapterPattern = /^第[零一二三四五六七八九十百千万\d]+[章节卷集]/;
+    // 章 / 节 / 卷 / 集，以及古典章回体小说的「回」（如《西游记》「第一回 灵根育孕源流出」）
+    const chapterPattern = /^第[零一二三四五六七八九十百千万\d]+[章节卷集回]/;
     const chapters: ChapterMeta[] = [];
     const encoding = this.encoding;
     // Fallback segmenting (used only when no chapter headers are found):
