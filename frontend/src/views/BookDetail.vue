@@ -322,9 +322,13 @@ async function toggleShelf() {
       ElMessage.success('已加入书架')
     }
   } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-    if (msg?.includes('已在书架')) {
+    const resp = (err as { response?: { status?: number; data?: { message?: string } } })?.response
+    if (resp?.data?.message?.includes('已在书架')) {
       onShelf.value = true
+    } else if (onShelf.value && resp?.status === 404) {
+      // 已在别处移出：同步为未在书架
+      onShelf.value = false
+      ElMessage.info('该书已不在书架中')
     } else {
       ElMessage.error(onShelf.value ? '移出失败' : '添加失败')
     }

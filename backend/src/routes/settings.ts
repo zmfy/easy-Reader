@@ -181,7 +181,7 @@ router.post('/users/invite/send-email', authMiddleware, adminMiddleware, async (
       auth: cfg.smtp_user ? { user: cfg.smtp_user, pass: cfg.smtp_pass } : undefined,
     });
 
-    const siteName = cfg.site_name || '夜航书房';
+    const siteName = cfg.site_name || '简单书房';
     const safeSiteName = escapeHtmlAttr(siteName);
     const safeUrl = escapeHtmlAttr(parsed.data.inviteUrl);
     const safeCode = escapeHtmlAttr(parsed.data.code);

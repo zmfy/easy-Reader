@@ -738,7 +738,7 @@ function handleKeydown(e: KeyboardEvent) {
       break
     }
     case 'bookmark':
-      handleAddBookmark()
+      if (!e.repeat) handleAddBookmark()  // 按住不放不重复添加
       break
   }
 }

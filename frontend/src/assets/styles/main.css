@@ -171,6 +171,12 @@ html.dark {
   --el-border-color-light: rgba(128, 128, 128, 0.2);
   --el-border-color-lighter: rgba(128, 128, 128, 0.14);
   --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 70%, var(--bg-1));
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 50%, var(--bg-1));
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, var(--bg-1));
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, var(--bg-1));
+  --el-color-primary-light-9: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--accent) 80%, #000);
 }
 
 /* Element Plus override — uses CSS vars so all themes apply automatically */

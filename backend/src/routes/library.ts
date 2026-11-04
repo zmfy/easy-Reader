@@ -343,7 +343,7 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   }
 
   const updated = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book;
-  successResponse(res, updated, '更新成功');
+  successResponse(res, withDisplayTitle(hideFilePathForNonAdmin(req, updated)), '更新成功');
 });
 
 const deleteQuerySchema = z.object({

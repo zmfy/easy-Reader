@@ -4,7 +4,7 @@ import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Series, Book } from '../types';
-import { hideFilePathForNonAdmin } from '../utils/book-view';
+import { hideFilePathForNonAdmin, withDisplayTitle } from '../utils/book-view';
 
 const router = Router();
 
@@ -28,7 +28,7 @@ router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const members = getDb().prepare(
     'SELECT * FROM books WHERE series_id = ? ORDER BY title'
   ).all(req.params.id) as Book[];
-  successResponse(res, { series, members: hideFilePathForNonAdmin(req, members) });
+  successResponse(res, { series, members: withDisplayTitle(hideFilePathForNonAdmin(req, members)) });
 });
 
 const updateSchema = z.object({

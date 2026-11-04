@@ -57,7 +57,10 @@
               :key="item.id"
               class="book-row"
               :title="`继续阅读《${titleOf(item)}》`"
+              tabindex="0"
+              role="button"
               @click="router.push(`/reader/${item.book_id}`)"
+              @keydown.enter.self="router.push(`/reader/${item.book_id}`)"
             >
               <div class="row-cover">
                 <img v-if="item.cover_url" :src="item.cover_url" :alt="titleOf(item)" />
@@ -68,7 +71,7 @@
                 <div class="row-author">{{ item.author || '未知作者' }}</div>
                 <div class="row-progress">{{ progressText(item) }}</div>
               </div>
-              <el-dropdown trigger="click" @command="(cmd: string) => onRowCommand(cmd, item)" @click.stop>
+              <el-dropdown trigger="click" @command="(cmd: string) => onRowCommand(cmd, item)">
                 <el-button class="row-more" text :icon="MoreFilled" title="更多" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -129,7 +132,7 @@ function progressText(item: ShelfItem): string {
 
 function onRowCommand(command: string, item: ShelfItem) {
   if (command === 'detail') router.push(`/book/${item.book_id}`)
-  else if (command === 'remove') handleRemove(item.book_id).catch(() => { /* 取消确认 */ })
+  else if (command === 'remove') handleRemove(item.book_id)
 }
 
 async function fetchShelf() {
@@ -143,14 +146,22 @@ async function fetchShelf() {
 }
 
 async function handleRemove(bookId: string) {
-  await ElMessageBox.confirm('确定从书架移除这本书吗？', '确认移除', {
-    type: 'warning',
-    confirmButtonText: '移除',
-    cancelButtonText: '取消',
-  })
-  await shelfApi.remove(bookId)
-  items.value = items.value.filter(i => i.book_id !== bookId)
-  ElMessage.success('已从书架移除')
+  try {
+    await ElMessageBox.confirm('确定从书架移除这本书吗？', '确认移除', {
+      type: 'warning',
+      confirmButtonText: '移除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return  // 取消或关闭确认框
+  }
+  try {
+    await shelfApi.remove(bookId)
+    items.value = items.value.filter(i => i.book_id !== bookId)
+    ElMessage.success('已从书架移除')
+  } catch {
+    ElMessage.error('移出失败，请稍后重试')
+  }
 }
 
 onMounted(fetchShelf)
