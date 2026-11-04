@@ -1,31 +1,41 @@
 # easyReader
 
-NAS 自托管小说阅读平台，单容器部署。后端 Node.js + Express + TypeScript + SQLite，前端 Vue 3 + Vite + TypeScript + Element Plus。
+NAS 自托管小说阅读平台，单容器部署。把书库目录挂进来，扫描入库，就能在浏览器里阅读、听书，并用 AI 补全书籍信息。
+
+https://easyreader.ucool.uk/
 
 ---
 
 ## 功能特性
 
-- **多格式支持**：TXT / PDF / EPUB，插件化架构可扩展
+### 阅读
+
+- **多格式**：TXT / EPUB / PDF / UMD，插件化架构可扩展
 - **大文件优化**：TXT 流式扫描建立章节字节索引，按需读取单章，万章大书秒开
-- **AI 辅助管理**：自动填充书名、作者、简介、分类，支持 6 家 AI 服务商
-- **阅读进度同步**：精确记录章节与滚动位置，重新打开自动还原
-- **书签系统**：按章节添加带备注的书签
-- **邀请码注册**：管理员生成邀请码，支持复制链接或 SMTP 邮件发送
-- **多主题阅读器**：白天 / 护眼 / 夜间 / 暗黑，字体、字号、行距全部可调
+- **外观可调**：10 种阅读主题（默认「靛青」）、10 种中文字体，字号、行距、字间距、页宽均可调，滚动 / 瀑布流两种浏览模式
+- **目录面板**：目录与书签分 Tab，当前章节高亮，已读过的章节标题显示为浅灰
+- **进度同步**：按用户记录章节、段落与滚动位置，换设备打开自动还原
+- **书签**：按章节添加带备注的书签，每本书自动保留最近 10 个
 
----
+### 听书
 
-## 技术栈
+- 朗读当前章节并自动续读下一章，语速 0.8× ~ 2×，可定时停止（15 / 30 / 60 分钟或本章读完）
+- 配置 MiniMax 语音合成后使用 AI 语音；**未配置时自动降级为浏览器内置语音**，开箱即用
+- 合成结果按文本缓存，同一段重听不再计费
 
-| 层级 | 选型 |
-|---|---|
-| 前端 | Vue 3 + Vite + TypeScript + Pinia + Vue Router |
-| UI | Element Plus |
-| 后端 | Node.js 22 + Express + TypeScript |
-| 数据库 | SQLite（better-sqlite3） |
-| 认证 | JWT（Access Token 2h + Refresh Token 30d） |
-| 容器 | Docker（单容器，Express 同时托管 API 与静态文件） |
+### AI 辅助
+
+- **前情提要 / 问书**：只读取你当前阅读位置之前的内容，不会剧透
+- **AI 填充**：自动识别书名、作者、简介、分类，先预览再决定是否应用；支持整库批量填充与失败重试
+- **3 家服务商**：DeepSeek / MiniMax / Ollama（本地模型）
+
+### 书库管理（管理员）
+
+- **扫描审核**：扫描结果先进入待审核批次，逐条确认后才写入书库；上一批未处理完不允许发起新扫描
+- **判重与纠错**：文件指纹判重、乱码检测，可疑书籍集中在「问题书籍」页处理
+- **人工覆盖**：把误判的判重 / 系列归类固化下来，后续扫描不再重复犯同样的错
+- **系列归类**、**章节规范化**、**审计日志**
+- **用户管理**：邀请码注册（复制链接或 SMTP 发信）、角色与密码管理
 
 ---
 
@@ -49,8 +59,8 @@ cp .env.example .env
 
 ```bash
 mkdir -p books data
-# 将 .txt / .epub / .pdf 文件放入 books/ 目录
-# 或修改 docker-compose.yml 中 volumes 挂载 NAS 路径
+# 把 .txt / .epub / .pdf / .umd 文件放进 books/
+# 或修改 docker-compose.yml 的 volumes，直接挂载 NAS 上的书库路径
 ```
 
 ### 4. 启动
@@ -59,7 +69,7 @@ mkdir -p books data
 docker compose up -d --build
 ```
 
-首次构建约需 3-5 分钟（编译 C++ 原生模块）。之后修改代码重建时大部分层会命中缓存。
+首次构建约 3-5 分钟（需编译 C++ 原生模块），之后重建大部分层会命中缓存。
 
 访问 **http://localhost:8080**
 
@@ -69,53 +79,37 @@ docker compose up -d --build
 |---|---|
 | `admin` | `admin123` |
 
-登录后进入书库页，点击「扫描书库」导入 `books/` 目录中的文件。
-
 ---
 
-## 目录结构
+## 使用指南
 
-```
-easyReader/
-├── Dockerfile              # 三阶段构建（前端 + 后端 + 运行时）
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
-├── .dockerignore
-├── README.md
-│
-├── frontend/               # Vue 3 前端
-│   └── src/
-│       ├── api/            # HTTP 请求封装（auth/library/reader/shelf/settings）
-│       ├── assets/styles/  # CSS 设计变量
-│       ├── composables/    # useReader / useAuth
-│       ├── layouts/        # DefaultLayout（导航栏）
-│       ├── router/         # 路由与权限守卫
-│       ├── stores/         # Pinia（auth / reader）
-│       ├── types/          # DTO 类型定义
-│       └── views/          # 7 个页面视图
-│           ├── Login.vue
-│           ├── Register.vue
-│           ├── Library.vue
-│           ├── Bookshelf.vue
-│           ├── BookDetail.vue
-│           ├── Reader.vue
-│           └── Settings.vue
-│
-├── backend/                # Node.js 后端
-│   └── src/
-│       ├── ai/             # AI 插件（6 家服务商）
-│       ├── middleware/     # JWT 认证
-│       ├── plugins/        # 文件解析（TXT / EPUB / PDF）
-│       ├── routes/         # API 路由（5 个模块）
-│       ├── utils/          # 响应格式封装
-│       ├── db.ts           # SQLite Schema 初始化
-│       ├── index.ts        # Express 入口 + 静态文件托管
-│       └── types/          # 共享接口定义
-│
-├── books/                  # 书库目录（挂载宿主机路径）
-└── data/                   # SQLite 持久化目录
-```
+### 导入书籍
+
+1. 以管理员登录，进入**书库**页，点击「扫描书库」。扫描在后台异步执行，可随时查看进度或取消。
+2. 扫描完成后生成一个**待审核批次**。进入「扫描批次」逐条核对识别出的书名、作者、判重与系列归类，需要时直接修改。
+3. 确认无误后点「应用」，这一批才真正写入书库。
+4. 被判定为重复或乱码的文件不会入库，集中在「问题书籍」页处理。若是误判，处理时可登记为**人工覆盖**，下次扫描不会再误判同一本。
+
+### 补全书籍信息
+
+先在设置页的「AI 插件设置」里配置好服务商和 API Key，然后：
+
+- **单本**：书籍详情页点「AI 填充」，弹窗里预览 AI 给出的结果，满意再应用。
+- **整库**：书库页点「批量 AI 填充」。已填充过的书会自动跳过以节省 token，失败的可单独重置后重试。
+
+### 阅读
+
+进入阅读器后，顶栏与左侧工具栏都有图标按钮：列表图标打开目录面板（目录 / 书签分 Tab），齿轮图标打开阅读设置，可调主题、字体、字号、行距、字间距、页宽与浏览模式。阅读进度自动保存，换台设备登录同一账号即可接着读。
+
+### 听书
+
+点耳机图标开始朗读，从当前阅读位置所在段落起，读完自动进入下一章。底部会出现播放条，可调语速与定时停止，锁屏或切到后台也会继续播放。
+
+默认使用浏览器内置语音，无需任何配置。想要更自然的 AI 语音，在设置页的「AI 插件设置 → MiniMax」里填入 API Key 并打开听书开关，按钮上会出现 `AI` 角标 —— 这个开关独立于当前选中的 AI 插件，两者互不影响。
+
+### AI 前情提要与问书
+
+侧边工具栏有「前情提要」和「问书」两个按钮（鼠标悬停可见名称），前者快速回顾剧情，后者可就剧情、人物提问。两者都只会读取你当前位置之前的内容，不会剧透后文。
 
 ---
 
@@ -123,12 +117,12 @@ easyReader/
 
 | 变量 | 必填 | 默认值 | 说明 |
 |---|---|---|---|
-| `JWT_SECRET` | 是 | — | JWT 签名密钥，生产环境必须修改 |
-| `PORT` | 否 | `3000` | 容器内监听端口 |
+| `JWT_SECRET` | 是 | — | JWT 签名密钥，生产环境必须改成随机字符串 |
+| `PORT` | 否 | `3000` | 容器内监听端口（对外映射见 `docker-compose.yml`） |
 | `BOOKS_DIR` | 否 | `/app/books` | 书库目录（容器内路径） |
 | `DATA_DIR` | 否 | `/app/data` | 数据库目录（容器内路径） |
 
-NAS 路径在 `docker-compose.yml` 的 `volumes` 中配置：
+NAS 上的实际路径在 `docker-compose.yml` 的 `volumes` 里配置：
 
 ```yaml
 volumes:
@@ -138,46 +132,37 @@ volumes:
 
 ---
 
-## AI 插件
+## AI 服务商
 
-在「系统设置 → AI 设置」中选择服务商并填写 API Key：
+在设置页的「AI 插件设置」中选择服务商并填写 API Key：
 
-| 插件 | 服务商 | 默认 Base URL |
-|---|---|---|
-| DeepSeek | 深度求索 | `https://api.deepseek.com/v1` |
-| 通义千问 | 阿里云 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| MiniMax | MiniMax | `https://api.minimax.chat/v1` |
-| OpenAI | OpenAI（可自定义） | `https://api.openai.com/v1` |
-| Claude | Anthropic | `https://api.anthropic.com` |
-| Ollama | 本地模型 | `http://localhost:11434` |
+| 插件 | 服务商 | 接口地址 | 地址可改 |
+|---|---|---|---|
+| DeepSeek | 深度求索 | `https://api.deepseek.com/v1` | ✅ |
+| Ollama | 本地模型 | `http://localhost:11434` | ✅ |
+| MiniMax | MiniMax | `https://api.minimax.cn/v1` | ❌ 固定 |
 
-配置后，在书籍详情页点击「AI 填充」可自动识别元信息。
+DeepSeek 和 Ollama 可以在设置里填自定义 Base URL；MiniMax 的地址写死在代码里，只需填 API Key 和模型。
 
----
-
-## API 概览
-
-所有响应格式：`{ "success": true, "code": "OK", "data": {} }`
-
-| 模块 | 前缀 |
-|---|---|
-| 认证 | `POST /api/auth/login` `POST /api/auth/register` `GET /api/auth/me` |
-| 书库 | `GET /api/library` `POST /api/library/scan` `PUT /api/library/:id` `POST /api/library/:id/ai-fill` |
-| 书架 | `GET /api/shelf` `POST /api/shelf` `DELETE /api/shelf/:bookId` |
-| 阅读器 | `GET /api/reader/:id/chapters` `GET /api/reader/:id/chapter/:n` `POST /api/reader/:id/progress` |
-| 设置 | `GET/PUT /api/settings` `POST /api/users/invite` |
+> **Ollama 用户**：容器内访问宿主机上的 Ollama，Base URL 填 `http://host.docker.internal:11434`（`docker-compose.yml` 已配好 `extra_hosts`）。
+>
+> **听书**：使用 MiniMax 的语音合成接口，在 MiniMax 插件设置里单独开关，与元信息填充用哪家服务商无关。
 
 ---
 
-## 本地开发
+## 技术栈
 
-```bash
-# 后端（热重载）
-cd backend && npm install && npm run dev   # http://localhost:3000
+单容器运行，**不依赖任何外部数据库或中间件**——数据全部存在 `DATA_DIR` 下的 SQLite 文件里，备份直接拷目录即可。
 
-# 前端（热重载，代理 /api 到 :3000）
-cd frontend && npm install && npm run dev  # http://localhost:8080
-```
+- 前端：Vue 3 + Vite + TypeScript + Element Plus
+- 后端：Node.js 22 + Express + TypeScript，同时托管 API 与前端静态文件
+- 数据库：SQLite（better-sqlite3）
+
+---
+
+## 开发
+
+目录结构、API 列表、本地开发与测试见 [docs/development.md](docs/development.md)。
 
 ---
 
