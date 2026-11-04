@@ -34,7 +34,8 @@ describe('aiPlugins registry', () => {
 
   it('ollama declares no apiKey field', () => {
     const ollama = aiPlugins.find(p => p.name === 'ollama')!;
-    expect(ollama.fields).toEqual(['baseUrl', 'model']);
+    expect(ollama.fields).not.toContain('apiKey');
+    expect(ollama.fields).toEqual(expect.arrayContaining(['baseUrl', 'model']));
   });
 
   it('every plugin exposes placeholders for its non-apiKey fields', () => {

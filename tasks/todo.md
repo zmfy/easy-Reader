@@ -174,3 +174,11 @@
 - [x] deepseek.ts：默认模型 deepseek-flash；新增 thinking 下拉（空 = 关闭并显式传 disabled、保留原 temperature；low/high/max = 开启并设 reasoning_effort、不传 temperature）；请求体统一由 requestBody 生成；新增 5 个单测
 - [x] 设置页：字段名「思考模式」与说明；「已测试通过的配置」deepseek-chat → deepseek-flash；更新说明补一条
 - [x] 验证：32 suites / 234 tests、前后端 tsc；Chrome 默认关闭时《红楼梦》1.3 秒、开启 low 时《三国演义》4.6 秒，结果均正确；保存 low → 库中 low，切回关闭 → 清空；API Key 未被覆盖
+
+# Ollama 检查与思考模式
+
+- [x] 核对官方文档与源码：/api/chat、stream、options.temperature 仍有效；结果读 message.content，思考在 message.thinking 不混入；docker-compose 已配置 host.docker.internal
+- [x] 发现：未传 think 时支持思考的模型默认思考（源码 req.Think==nil → true），明显变慢；think=false 对不支持思考的模型不报错，think=true 返回 400 "does not support thinking"
+- [x] ollama.ts：新增 thinking 下拉（默认关闭 → think:false；开启 → think:true）；解析前去掉 <think>…</think>（防旧版本）；模型提示改为 qwen3 / gemma3 / llama3；出错时带上 Ollama 返回的原因；新增 5 个单测，ai-manager 测试断言改为「不含 apiKey」
+- [x] 验证：32 suites / 239 tests、前后端 tsc；模拟 Ollama 服务端到端：qwen3 关/开、llama3 开（页面显示「"llama3" does not support thinking」）/ 关，请求 think 参数均正确；测试后开发库设置恢复原样
+- [ ] 备注：本机无 Ollama，未调用真实模型

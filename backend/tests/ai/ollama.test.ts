@@ -10,6 +10,7 @@ function mockFetch(content: string, ok = true, status = 200): FetchArgs[] {
       ok,
       status,
       json: async () => ({ message: { content } }),
+      text: async () => '',
     };
   }) as unknown as typeof fetch;
   return calls;
@@ -65,6 +66,40 @@ describe('ollama plugin', () => {
     expect(await ollamaPlugin.classifyBook({ title: 'A' }, {})).toBe('玄幻');
     mockFetch('');
     expect(await ollamaPlugin.classifyBook({ title: 'A' }, {})).toBe('综合');
+  });
+
+  it('disables thinking by default (thinking-capable models think when think is unset)', async () => {
+    const calls = mockFetch('x');
+    await ollamaPlugin.chat('hi', {});
+    expect(calls[0].body.think).toBe(false);
+  });
+
+  it('enables thinking when configured', async () => {
+    const calls = mockFetch('x');
+    await ollamaPlugin.chat('hi', { thinking: 'enabled' });
+    expect(calls[0].body.think).toBe(true);
+  });
+
+  it('declares thinking as a select field: off by default, or on', () => {
+    expect(ollamaPlugin.fields).toContain('thinking');
+    expect(ollamaPlugin.options?.thinking.map(o => o.value)).toEqual(['', 'enabled']);
+  });
+
+  it('strips inline <think> blocks (older Ollama) before parsing', async () => {
+    mockFetch('<think>先想想 {"title":"错的"} 再回答</think>\n{"title":"雪中悍刀行"}');
+    expect(await ollamaPlugin.fillBookInfo('正文', {})).toEqual({ title: '雪中悍刀行' });
+    mockFetch('<think>\n应该是玄幻\n</think>\n\n玄幻');
+    expect(await ollamaPlugin.classifyBook({ title: 'A' }, {})).toBe('玄幻');
+  });
+
+  it('includes the Ollama error reason in the thrown message', async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 400,
+      text: async () => '{"error":"\\"llama3\\" does not support thinking"}',
+    })) as unknown as typeof fetch;
+    await expect(ollamaPlugin.chat('hi', { thinking: 'enabled' }))
+      .rejects.toThrow('Ollama API error: 400 - "llama3" does not support thinking');
   });
 
   it('throws on a non-2xx response', async () => {

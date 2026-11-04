@@ -15,6 +15,11 @@ function resolve(config: Record<string, string>): { baseUrl: string; model: stri
   };
 }
 
+// 支持思考的模型（qwen3、deepseek-r1 等）在请求未指定 think 时默认会思考，明显变慢；
+// 因此默认显式传 think: false（不支持思考的模型传 false 不会报错，传 true 会返回 400）
+// 较旧版本的 Ollama 可能把思考过程以 <think>…</think> 放在 content 中，解析前去掉
+const THINK_BLOCK_RE = /<think>[\s\S]*?<\/think>/g;
+
 /** 统一走 /api/chat（会套用模型自身的 chat template），非流式。 */
 async function ollamaChat(prompt: string, config: Record<string, string>, temperature: number): Promise<string> {
   const { baseUrl, model } = resolve(config);
@@ -26,24 +31,38 @@ async function ollamaChat(prompt: string, config: Record<string, string>, temper
       model,
       messages: [{ role: 'user', content: prompt }],
       stream: false,
+      think: !!config.thinking,
       options: { temperature },
     }),
   });
 
-  if (!resp.ok) throw new Error(`Ollama API error: ${resp.status}`);
+  if (!resp.ok) {
+    // Ollama 出错时返回 {"error": "..."}（如模型未下载、模型不支持思考），带上原因便于排查
+    const text = (await resp.text().catch(() => '')).trim();
+    let reason = text;
+    try { reason = (JSON.parse(text) as { error?: string }).error || text; } catch { /* 非 JSON，用原文 */ }
+    throw new Error(`Ollama API error: ${resp.status}${reason ? ` - ${reason.slice(0, 200)}` : ''}`);
+  }
 
   const data = await resp.json() as Record<string, unknown>;
   const msg = data.message as { content?: string } | undefined;
-  return msg?.content || '';
+  return (msg?.content || '').replace(THINK_BLOCK_RE, '').trim();
 }
 
 const ollamaPlugin: AiPlugin = {
   name: 'ollama',
   label: 'Ollama 本地模型',
-  fields: ['baseUrl', 'model'],
+  fields: ['baseUrl', 'model', 'thinking'],
   placeholders: {
     baseUrl: 'http://localhost:11434（Docker 部署填 host.docker.internal）',
-    model: 'llama3 / qwen2.5 / gemma3',
+    model: 'qwen3 / gemma3 / llama3',
+    thinking: '关闭（默认）',
+  },
+  options: {
+    thinking: [
+      { value: '', label: '关闭（默认，速度快）' },
+      { value: 'enabled', label: '开启（仅支持思考的模型，如 qwen3、deepseek-r1）' },
+    ],
   },
 
   async fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {

@@ -605,6 +605,7 @@ const changelog: ChangelogRelease[] = [
       { tag: 'ai', text: 'MiniMax 跟进官方接口变更：默认模型改为 MiniMax-M3.1-Flash（MiniMax-M2 已下线，未填写模型时 AI 填充会失败），接口地址改为 api.minimax.cn' },
       { tag: 'ai', text: 'MiniMax 新增「推理强度」设置（仅 MiniMax-M3.1-Flash 生效）：调低可明显加快 AI 填充并减少消耗' },
       { tag: 'ai', text: 'DeepSeek 默认模型改为 deepseek-flash（旧名 deepseek-chat 已不在官方模型列表中），新增「思考模式」设置：默认关闭，速度与费用和之前一致，可按需开启并选择强度' },
+      { tag: 'ai', text: 'Ollama 新增「思考模式」设置：默认关闭，qwen3、deepseek-r1 等支持思考的模型不再默认先思考，AI 填充明显更快；调用失败时显示 Ollama 返回的原因（如模型未下载、模型不支持思考）' },
       { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
     ],
   },
@@ -718,7 +719,7 @@ const fieldLabels: Record<string, string> = {
 
 const fieldHints: Record<string, string> = {
   reasoningEffort: '仅对 MiniMax-M3.1-Flash 生效；越低越快、消耗越少，书名与内容明确时 low 已足够',
-  thinking: '开启后模型先推理再作答，结果可能更准确，但更慢、费用更高；书名与内容明确时无需开启',
+  thinking: '开启后模型先推理再作答，结果可能更准确，但更慢、费用更高；书名与内容明确时无需开启。所选模型不支持思考时开启会报错',
 }
 
 const fieldPlaceholders: Record<string, string> = {
