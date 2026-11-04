@@ -29,7 +29,7 @@
       <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
       <span class="chapter-title">{{ currentChapter ? (currentChapter.title || `第 ${currentChapter.index + 1} 页`) : '加载中...' }}</span>
       <div class="toolbar-actions">
-        <el-button :icon="Bookmark" circle title="书签" @click="bookmarkDrawerVisible = true" />
+        <el-button :icon="Bookmark" circle title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true" />
         <el-button :icon="Setting" circle title="阅读设置" @click="settingsPanelVisible = true" />
         <el-button :icon="List" circle title="章节目录" @click="chapterListVisible = true" />
       </div>
@@ -106,12 +106,6 @@
       </template>
     </div>
 
-    <!-- Bookmark FAB -->
-    <div class="bookmark-fab" title="添加书签 (B)" @click.stop="handleAddBookmark">
-      <el-icon><Bookmark /></el-icon>
-      <span class="fab-hotkey">B</span>
-    </div>
-
     <!-- Settings Panel -->
     <el-drawer
       v-model="settingsPanelVisible"
@@ -186,6 +180,8 @@
 
         <!-- 重置 -->
         <el-button size="small" @click="readerStore.resetSettings()" style="margin-top:8px">恢复默认</el-button>
+
+        <div class="shortcut-hint">快捷键：← → 翻章 · 空格 翻页 · B 加书签</div>
       </div>
     </el-drawer>
 
@@ -253,6 +249,7 @@ import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
+import { readerKeyAction } from '@/utils/reader-keys'
 
 const route = useRoute()
 const router = useRouter()
@@ -717,7 +714,33 @@ async function setPageMode(mode: 'scroll' | 'waterfall') {
 // ── Lifecycle ────────────────────────────────────────────────
 function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-  if (e.key === 'b' || e.key === 'B') handleAddBookmark()
+  if ((e.target as HTMLElement | null)?.isContentEditable) return
+  // 原生 PDF（浏览器内置查看器）或侧边抽屉打开时不处理
+  if (isPdf.value || settingsPanelVisible.value || chapterListVisible.value || bookmarkDrawerVisible.value) return
+  const action = readerKeyAction(e)
+  if (!action) return
+  e.preventDefault()
+  const current = reader.currentChapterIndex.value
+  const last = reader.chapters.value.length - 1
+  const waterfall = readerStore.settings.pageMode === 'waterfall'
+  switch (action) {
+    case 'prevChapter':
+      if (current > 0) waterfall ? jumpToChapter(current - 1) : goToPrevChapter()
+      break
+    case 'nextChapter':
+      if (current < last) waterfall ? jumpToChapter(current + 1) : goToNextChapter()
+      break
+    case 'pageDown':
+    case 'pageUp': {
+      const el = contentRef.value
+      // 每次滚动 90% 屏高，保留一行上下文
+      if (el) el.scrollBy({ top: (action === 'pageDown' ? 1 : -1) * el.clientHeight * 0.9, behavior: 'smooth' })
+      break
+    }
+    case 'bookmark':
+      handleAddBookmark()
+      break
+  }
 }
 
 onMounted(async () => {
@@ -1003,36 +1026,9 @@ onUnmounted(() => {
   font-size: 32px;
 }
 
-/* ── Bookmark FAB ── */
-.bookmark-fab {
-  position: fixed;
-  right: 18px;
-  bottom: 120px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 10px 9px;
-  background: rgba(11, 16, 32, 0.7);
-  border: 1px solid rgba(124, 92, 255, 0.35);
-  border-radius: 24px;
-  cursor: pointer;
-  z-index: 90;
-  color: var(--accent);
-  font-size: 18px;
-  opacity: 0.55;
-  backdrop-filter: blur(8px);
-  transition: opacity 0.2s, background 0.2s;
-  user-select: none;
-}
-.bookmark-fab:hover {
-  opacity: 1;
-  background: rgba(124, 92, 255, 0.2);
-}
-.fab-hotkey {
-  font-size: 10px;
-  font-family: monospace;
+.shortcut-hint {
+  margin-top: 16px;
+  font-size: 12px;
   color: var(--text-2);
-  line-height: 1;
 }
 </style>
