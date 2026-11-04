@@ -581,6 +581,15 @@ const changelogTagLabels: Record<ChangelogTag, string> = {
 
 const changelog: ChangelogRelease[] = [
   {
+    date: '2026-11-04',
+    title: 'PDF 原版显示与 EPUB 修复',
+    items: [
+      { tag: 'reader', text: 'PDF 「阅读器逐页显示」模式（原「插件解析」）改为按原版逐页显示，封面图片、字体与排版和原文件一致；支持章节翻页 / 瀑布流、阅读进度与书签，手机上按屏幕宽度自适应' },
+      { tag: 'epub', text: '修复部分漫画 EPUB 第一页封面空白的问题（SVG 方式引用的图片此前未能加载）' },
+      { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
+    ],
+  },
+  {
     date: '2026-11-03',
     title: '安全加固、阅读修复与性能优化',
     items: [
@@ -617,7 +626,6 @@ const changelog: ChangelogRelease[] = [
       { tag: 'infra', text: '后端依赖大版本升级：zod 3→4、nodemailer 6→10；移除 uuid 依赖改用 Node 内置 crypto.randomUUID' },
       { tag: 'lib', text: '审核模式：「非重复，加入书库」的判定会被记住，已标记的乱码书不再重复提交审核，书库无变化时扫描不再反复产生待审核批次（可在「手动规则」中撤销判定）' },
       { tag: 'txt', text: 'TXT 第一个章节标题之前的内容（书名、作者、简介、前言等）现在显示在第一章开头，此前这部分无法阅读；章节划分与书籍指纹保持不变，无需重新扫描' },
-      { tag: 'reader', text: 'PDF 插件模式改为在阅读器内按原版逐页显示（pdf.js 渲染），封面图片、字体与排版和原文件一致；支持章节翻页 / 瀑布流、阅读进度与书签，手机上按屏幕宽度自适应' },
       { tag: 'auth', text: '邀请码改用安全随机数生成；阅读设置保存时校验格式与大小' },
       { tag: 'ui', text: 'Element Plus 改为按需引入，首屏 JS 由约 1.2MB 降至约 160KB，页面打开更快' },
       { tag: 'reader', text: '瀑布流模式滚动处理节流，并最多保留 8 章内容，长时间连续阅读不再越来越卡' },
