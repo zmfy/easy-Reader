@@ -28,9 +28,14 @@ const coversDir = path.join(DATA_DIR, 'covers');
 if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true });
 // 只对外提供图片，避免目录中的其他文件被公开访问
 app.use('/covers', (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (!/\.(jpe?g|png|webp|gif)$/i.test(req.path)) {
+  if (!/\.(jpe?g|png|webp|gif|svg)$/i.test(req.path)) {
     res.status(404).end();
     return;
+  }
+  // 系统生成的默认封面是 SVG：禁止脚本与外部资源，即使被单独打开也无法执行
+  if (/\.svg$/i.test(req.path)) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
   }
   next();
 }, express.static(coversDir));
