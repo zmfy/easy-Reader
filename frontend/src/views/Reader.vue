@@ -40,25 +40,29 @@
           </span>
           <!-- 窄屏：左侧工具栏放不下，按钮收在导航右侧 -->
           <div class="nav-actions">
-            <button class="nav-btn" title="章节目录" @click="chapterListVisible = true"><IconList :size="20" :stroke-width="1.75" /></button>
-            <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="章节目录" data-toc-toggle @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="书签（按 B 添加当前位置）" data-toc-toggle @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </div>
         </header>
 
-        <!-- 左侧悬浮工具栏：贴在纸张左外侧（宽屏） -->
+        <!-- 右侧悬浮工具栏：固定在纸张右外侧、垂直居中（宽屏） -->
         <aside class="side-tools" @click.stop>
-          <div class="side-tools-inner">
-            <button class="side-tool" title="章节目录" @click="chapterListVisible = true">
-              <IconList :size="20" :stroke-width="1.75" /><span>目录</span>
-            </button>
-            <button class="side-tool" title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true">
-              <IconBookmark :size="20" :stroke-width="1.75" /><span>书签</span>
-            </button>
-            <button class="side-tool" title="阅读设置" @click="settingsPanelVisible = true">
-              <IconSettings :size="20" :stroke-width="1.75" /><span>设置</span>
-            </button>
-          </div>
+          <button class="side-tool" :class="{ on: tocVisible && tocTab === 'toc' }" title="章节目录" data-toc-toggle @click="openToc('toc')">
+            <IconList :size="24" :stroke-width="1.5" /><span>目录</span>
+          </button>
+          <button class="side-tool" :class="{ on: tocVisible && tocTab === 'bookmark' }" title="书签（按 B 添加当前位置）" data-toc-toggle @click="openToc('bookmark')">
+            <IconBookmark :size="24" :stroke-width="1.5" /><span>书签</span>
+          </button>
+          <button class="side-tool" title="书籍详情" @click="router.push(`/book/${bookId}`)">
+            <IconBook2 :size="24" :stroke-width="1.5" /><span>书详情</span>
+          </button>
+          <button class="side-tool" :title="nightMode ? '切换到护眼绿' : '切换到夜间'" @click="toggleNight">
+            <component :is="nightMode ? IconSun : IconMoon" :size="24" :stroke-width="1.5" /><span>{{ nightMode ? '日间' : '夜间' }}</span>
+          </button>
+          <button class="side-tool" title="阅读设置" @click="settingsPanelVisible = true">
+            <IconSettings :size="24" :stroke-width="1.5" /><span>设置</span>
+          </button>
         </aside>
 
         <!-- ── 章节模式 ── -->
@@ -86,7 +90,7 @@
             <!-- 章末导航：上一章 · 目录 · 下一章 -->
             <nav class="chapter-end" @click.stop>
               <button class="end-btn" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一{{ unitLabel }}</button>
-              <button class="end-btn" @click="chapterListVisible = true">目录</button>
+              <button class="end-btn" data-toc-toggle @click="openToc('toc')">目录</button>
               <button class="end-btn" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}</button>
             </nav>
           </template>
@@ -198,53 +202,55 @@
       </div>
     </el-drawer>
 
-    <!-- Chapter List -->
-    <el-drawer
-      v-model="chapterListVisible"
-      title="章节目录"
-      direction="ltr"
-      size="280px"
-      @open="scrollChapterListToActive"
-    >
-      <div class="chapter-list" ref="chapterListRef">
-        <div
-          v-for="ch in reader.chapters.value"
-          :key="ch.index"
-          class="chapter-item"
-          :class="{ active: ch.index === reader.currentChapterIndex.value }"
-          @click="jumpToChapter(ch.index)"
-        >
-          {{ ch.title || `第 ${ch.index + 1} 页` }}
-        </div>
-      </div>
-    </el-drawer>
-
-    <!-- Bookmark Drawer -->
-    <el-drawer
-      v-model="bookmarkDrawerVisible"
-      title="书签"
-      direction="ltr"
-      size="280px"
-    >
-      <div class="bookmark-panel">
-        <el-button type="primary" size="small" style="width:100%;margin-bottom:12px" @click="handleAddBookmark">
-          + 添加当前位置
-        </el-button>
-        <div v-if="reader.bookmarks.value.length === 0" class="bookmark-empty">
-          暂无书签
-        </div>
-        <div v-else class="bookmark-list">
-          <div v-for="bm in reader.bookmarks.value" :key="bm.id" class="bookmark-item">
-            <div class="bookmark-info" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
-              <div class="bookmark-chapter">{{ reader.chapters.value[bm.chapter_index]?.title || `第 ${bm.chapter_index + 1} 章` }}</div>
-              <div v-if="bm.note" class="bookmark-note">{{ bm.note }}</div>
-              <div class="bookmark-time">{{ formatServerTime(bm.created_at) }}</div>
+    <!-- 目录面板（docs/reader-toc-spec.md）：与纸张同宽、正好盖住正文区，无遮罩；点外部 / Esc 关闭 -->
+    <Transition name="toc">
+      <div v-if="tocVisible" class="toc-layer">
+        <div class="toc-panel" ref="tocPanelRef">
+          <div class="toc-head">
+            <button class="toc-tab" :class="{ active: tocTab === 'toc' }" @click="switchTocTab('toc')">目录</button>
+            <span v-if="tocTab === 'toc'" class="toc-status">{{ tocStatus }}</span>
+            <button class="toc-tab" :class="{ active: tocTab === 'bookmark' }" @click="switchTocTab('bookmark')">书签</button>
+            <div class="toc-actions">
+              <button v-if="tocTab === 'toc'" class="toc-action" @click="tocReversed = !tocReversed">
+                <IconArrowsSort :size="16" :stroke-width="1.75" />{{ tocReversed ? '正序' : '倒序' }}
+              </button>
+              <button v-else class="toc-action" @click="handleAddBookmark">
+                <IconBookmarkPlus :size="16" :stroke-width="1.75" />添加当前位置
+              </button>
+              <!-- 窄屏面板占满屏幕、没有「外部」可点，提供关闭按钮 -->
+              <button class="toc-action toc-close" title="关闭" @click="tocVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
             </div>
-            <el-button :icon="Delete" circle size="small" text @click="reader.deleteBookmark(bm.id)" />
+          </div>
+          <div class="toc-body" ref="tocBodyRef">
+            <ul v-if="tocTab === 'toc'" class="toc-list">
+              <li v-for="ch in tocChapters" :key="ch.index">
+                <a
+                  class="toc-link"
+                  :class="{ current: ch.index === reader.currentChapterIndex.value }"
+                  :title="ch.title || `第 ${ch.index + 1} ${unitLabel}`"
+                  @click="jumpToChapter(ch.index)"
+                ><span class="toc-title">{{ ch.title || `第 ${ch.index + 1} ${unitLabel}` }}</span></a>
+              </li>
+            </ul>
+            <template v-else>
+              <div v-if="reader.bookmarks.value.length === 0" class="toc-empty">还没有书签，阅读时按 B 或点右上角「添加当前位置」</div>
+              <ul v-else class="toc-list">
+                <li v-for="bm in reader.bookmarks.value" :key="bm.id">
+                  <a class="toc-link" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
+                    <span class="toc-title">
+                      {{ reader.chapters.value[bm.chapter_index]?.title || `第 ${bm.chapter_index + 1} ${unitLabel}` }}
+                      <small v-if="bm.note" class="toc-note">{{ bm.note }}</small>
+                    </span>
+                    <span class="toc-extra">{{ formatServerTime(bm.created_at) }}</span>
+                    <button class="toc-del" title="删除书签" @click.stop="reader.deleteBookmark(bm.id)"><IconTrash :size="16" :stroke-width="1.75" /></button>
+                  </a>
+                </li>
+              </ul>
+            </template>
           </div>
         </div>
       </div>
-    </el-drawer>
+    </Transition>
 
     </template><!-- end 章节模式 -->
   </div>
@@ -254,7 +260,7 @@
 import { ref, shallowRef, computed, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Loading, Delete } from '@element-plus/icons-vue'
+import { ArrowLeft, Loading } from '@element-plus/icons-vue'
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
@@ -262,9 +268,9 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
-import { readerPalette, hideLeadingTitle, countChapterChars } from '@/utils/reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
-import { IconBookmark, IconChevronLeft, IconList, IconSettings } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconList, IconMoon, IconSettings, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,11 +280,16 @@ const bookId = route.params.bookId as string
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
 const contentRef = ref<HTMLElement | null>(null)
-const chapterListRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
-const chapterListVisible = ref(false)
-const bookmarkDrawerVisible = ref(false)
+
+// ── 目录面板 ─────────────────────────────────────────────────
+const tocVisible = ref(false)
+const tocTab = ref<'toc' | 'bookmark'>('toc')
+const tocReversed = ref(false)
+const tocPanelRef = ref<HTMLElement | null>(null)
+const tocBodyRef = ref<HTMLElement | null>(null)
+let tocClosedAt = 0
 
 // ── PDF native rendering ─────────────────────────────────────
 // isPdf: true 表示使用浏览器原生 iframe 打开（插件未启用时的默认行为）
@@ -305,6 +316,7 @@ const unitLabel = computed(() => isPdfRender.value ? '页' : '章')
 // 标题区：章节标题 + 元信息（书名 · 作者 · 本章字数）
 const bookTitle = ref('')
 const bookAuthor = ref('')
+const bookFinished = ref(false)
 const chapterTitle = computed(() => {
   const ch = reader.currentChapter.value
   return ch ? (ch.title || `第 ${ch.index + 1} ${unitLabel.value}`) : ''
@@ -317,6 +329,7 @@ async function loadBookInfo() {
     const b = (await libraryApi.get(bookId)).data.data
     bookTitle.value = b?.display_title || b?.title || ''
     bookAuthor.value = b?.author || ''
+    bookFinished.value = !!b?.is_finished
   } catch { /* 标题区仅作展示，失败不影响阅读 */ }
 }
 const pdfDoc = shallowRef<PDFDocumentProxy | null>(null)
@@ -336,13 +349,14 @@ async function loadPdfDocument() {
 // ── Computed styles ──────────────────────────────────────────
 // 阅读配色以 CSS 变量提供（--reader-page-bg / --reader-paper-bg / --reader-text …），便于切换阅读主题
 const readerStyle = computed(() => ({
+  // 纸张宽度：「页面宽度」百分比，最宽 1280px，并给右侧工具栏留出位置；目录面板与工具栏定位共用
+  '--paper-w': `min(${readerStore.settings.pageWidth}%, 1280px, calc(100% - 176px))`,
   ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor),
   color: 'var(--reader-text)',
 }))
 
-// 纸张宽度：「页面宽度」百分比，最宽 1280px，并给左侧工具栏留出位置
 const paperStyle = computed(() => ({
-  width: `min(${readerStore.settings.pageWidth}%, 1280px, calc(100% - 176px))`,
+  width: 'var(--paper-w)',
   '--reader-font': readerStore.settings.fontFamily,
 }))
 
@@ -446,6 +460,8 @@ async function initWaterfall() {
 
 // ── 顶部导航显隐：下滑隐藏、上滑显示，回到顶部时总是显示；点击正文切换 ──
 function toggleToolbar() {
+  // 点面板外部关闭目录时，同一次点击不再切换导航
+  if (Date.now() - tocClosedAt < 400) return
   toolbarVisible.value = !toolbarVisible.value
 }
 
@@ -659,7 +675,7 @@ async function goToNextChapter() {
 }
 
 async function jumpToChapter(index: number) {
-  chapterListVisible.value = false
+  tocVisible.value = false
   resetChapterPositionTracking()
   if (readerStore.settings.pageMode === 'waterfall') {
     // In waterfall, reset to the selected chapter
@@ -693,7 +709,7 @@ async function handleAddBookmark() {
 }
 
 async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
-  bookmarkDrawerVisible.value = false
+  tocVisible.value = false
   if (readerStore.settings.pageMode === 'waterfall') {
     reader.currentChapterIndex.value = chapterIndex
     resetWaterfall()
@@ -724,11 +740,51 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
   })
 }
 
-function scrollChapterListToActive() {
+const tocChapters = computed(() => tocReversed.value ? [...reader.chapters.value].reverse() : reader.chapters.value)
+const tocStatus = computed(() =>
+  [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
+
+// 点「目录 / 书签」：同一个 Tab 再点一次关闭，否则打开并切到该 Tab
+function openToc(tab: 'toc' | 'bookmark') {
+  if (tocVisible.value && tocTab.value === tab) {
+    tocVisible.value = false
+    return
+  }
+  tocTab.value = tab
+  tocVisible.value = true
+  scrollTocToCurrent()
+}
+
+function switchTocTab(tab: 'toc' | 'bookmark') {
+  tocTab.value = tab
+  scrollTocToCurrent()
+}
+
+// 打开时把当前章节滚到可视区域中间
+function scrollTocToCurrent() {
   nextTick(() => {
-    const active = chapterListRef.value?.querySelector<HTMLElement>('.chapter-item.active')
-    active?.scrollIntoView({ block: 'center', behavior: 'instant' })
+    if (tocTab.value === 'toc') {
+      tocBodyRef.value?.querySelector<HTMLElement>('.toc-link.current')?.scrollIntoView({ block: 'center', behavior: 'instant' })
+    } else if (tocBodyRef.value) {
+      tocBodyRef.value.scrollTop = 0
+    }
   })
+}
+
+// 点面板外部关闭（工具栏上的目录 / 书签按钮自己切换，不算外部）
+function handleTocOutside(e: PointerEvent) {
+  if (!tocVisible.value) return
+  const target = e.target as HTMLElement | null
+  if (!target || tocPanelRef.value?.contains(target) || target.closest('[data-toc-toggle]')) return
+  if (target.closest('.el-overlay, .el-popper, .el-message-box')) return
+  tocVisible.value = false
+  tocClosedAt = Date.now()
+}
+
+// 「夜间」按钮：浅色主题切到夜间，深色主题切回护眼绿
+const nightMode = computed(() => isDarkReaderTheme(readerStore.settings.theme))
+function toggleNight() {
+  readerStore.applyTheme(nightToggleTheme(readerStore.settings.theme))
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -799,7 +855,11 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if ((e.target as HTMLElement | null)?.isContentEditable) return
   // 原生 PDF（浏览器内置查看器）或侧边抽屉打开时不处理
-  if (isPdf.value || settingsPanelVisible.value || chapterListVisible.value || bookmarkDrawerVisible.value) return
+  if (e.key === 'Escape' && tocVisible.value) {
+    tocVisible.value = false
+    return
+  }
+  if (isPdf.value || settingsPanelVisible.value || tocVisible.value) return
   const action = readerKeyAction(e)
   if (!action) return
   e.preventDefault()
@@ -836,6 +896,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('pointerdown', handleTocOutside, true)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
   await readerStore.loadPrefs()
@@ -877,6 +938,7 @@ onBeforeUnmount(() => {
 onUnmounted(() => {
   cancelAnimationFrame(scrollRaf)
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('pointerdown', handleTocOutside, true)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
   pdfDoc.value?.loadingTask.destroy()
@@ -918,7 +980,9 @@ onUnmounted(() => {
 
 /* 纸张：细微噪点纹理平铺 */
 .paper,
-.reader-nav {
+.reader-nav,
+.side-tool,
+.toc-panel {
   background-color: var(--reader-paper-bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -981,38 +1045,41 @@ onUnmounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.nav-btn:hover,
-.side-tool:hover { color: var(--reader-text); }
+.nav-btn:hover { color: var(--reader-text); }
 
-/* 左侧悬浮工具栏：贴在纸张左外侧的竖向窄条，随滚动保持可见 */
+/* 右侧悬浮工具栏：固定在纸张右外侧、垂直居中；64×64 竖排按钮 */
 .side-tools {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 100%;
-  margin-right: 16px;
-  width: 52px;
-}
-.side-tools-inner {
-  position: sticky;
-  top: 80px;
+  position: fixed;
+  top: 50%;
+  left: calc(50% + var(--paper-w) / 2 + 12px);
+  transform: translateY(-50%);
+  z-index: 30;
   display: flex;
   flex-direction: column;
-  padding: 6px 0;
-  background: var(--reader-paper-bg);
+  gap: 8px;
 }
 .side-tool {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background-color: var(--reader-toc-bg);
+  box-shadow: var(--reader-toc-shadow);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 12px 0;
+  justify-content: center;
 }
 .side-tool span {
-  writing-mode: vertical-rl;
-  font-size: 12px;
-  letter-spacing: 2px;
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--reader-text-secondary);
+  transition: color 0.15s ease;
 }
+.side-tool:hover,
+.side-tool:hover span,
+.side-tool.on,
+.side-tool.on span { color: var(--reader-accent); }
 
 /* 章节标题区 */
 .chapter-head { text-align: center; }
@@ -1086,11 +1153,164 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* 窄屏：纸张占满宽度，左侧工具栏收进顶部导航 */
+/* ── 目录面板（docs/reader-toc-spec.md）── */
+.toc-layer {
+  position: fixed;
+  /* 右侧让出阅读区滚动条（6px），面板与纸张按同一宽度居中、正好重合 */
+  inset: 0 6px 0 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.toc-panel {
+  pointer-events: auto;
+  width: var(--paper-w);
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--reader-toc-bg);
+  box-shadow: var(--reader-toc-shadow);
+  color: var(--reader-text);
+  font-family: var(--font-sans);
+}
+.toc-enter-active,
+.toc-leave-active { transition: opacity 180ms ease, transform 180ms ease; }
+.toc-enter-from,
+.toc-leave-to { opacity: 0; transform: translateY(8px); }
+
+.toc-head {
+  margin-top: 36px;
+  padding: 0 32px 0 22px;
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+.toc-tab {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 400;
+  color: var(--reader-text-2);
+  cursor: pointer;
+}
+.toc-tab.active { font-weight: 500; color: var(--reader-text); }
+.toc-tab:hover { background: var(--reader-hover-bg); }
+.toc-tab:active { background: var(--reader-active-bg); }
+/* 状态文字紧跟「目录」Tab */
+.toc-status {
+  margin-left: calc(8px - 18px);
+  padding-bottom: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--reader-text-secondary);
+  white-space: nowrap;
+}
+.toc-actions { margin-left: auto; padding-bottom: 6px; display: flex; align-items: center; }
+.toc-action.toc-close { display: none; }
+.toc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--reader-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toc-action:hover { color: var(--reader-accent); background: var(--reader-hover-bg); }
+
+/* 列表滚动区：细滚动条 */
+.toc-body {
+  margin-top: 24px;
+  padding: 0 16px 32px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.toc-body::-webkit-scrollbar { width: 6px; }
+.toc-body::-webkit-scrollbar-track { background: transparent; }
+.toc-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 18%, transparent); border-radius: 3px; }
+
+/* 两列章节列表，每项底部分隔线两端内缩 16px */
+.toc-list {
+  list-style: none;
+  margin: 8px 0 20px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.toc-list li { position: relative; min-width: 0; }
+.toc-list li::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 1px;
+  background: var(--reader-divider);
+}
+.toc-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--reader-text);
+  cursor: pointer;
+}
+.toc-link:hover { background: var(--reader-hover-bg); }
+.toc-link:active { background: var(--reader-active-bg); }
+.toc-link.current { color: var(--reader-accent); }
+.toc-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toc-note { margin-left: 8px; font-size: 13px; color: var(--reader-text-secondary); }
+.toc-extra { flex-shrink: 0; font-size: 13px; color: var(--reader-text-secondary); }
+.toc-del {
+  flex-shrink: 0;
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--reader-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.toc-link:hover .toc-del,
+.toc-del:focus-visible { opacity: 1; }
+.toc-del:hover { color: var(--reader-accent); background: var(--reader-active-bg); }
+.toc-empty {
+  padding: 64px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--reader-text-secondary);
+}
+
+/* 窄屏：纸张与目录面板占满宽度，右侧工具栏收进顶部导航 */
 @media (max-width: 768px) {
-  .paper { width: 100% !important; }
+  .paper,
+  .toc-panel { width: 100% !important; }
   .side-tools { display: none; }
   .nav-actions { display: flex; }
+  .toc-action.toc-close { display: inline-flex; }
 }
 /* 手机（<640px） */
 @media (max-width: 639px) {
@@ -1105,6 +1325,14 @@ onUnmounted(() => {
   /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
   .paper.pdf-wrapper { padding: 0 6px 16px; }
   .paper.pdf-wrapper .reader-nav { margin: 0 -6px; }
+  /* 目录：单列，头部收紧，删除按钮常显（触屏无悬停） */
+  .toc-head { margin-top: 20px; padding: 0 12px 0 6px; gap: 6px; }
+  .toc-tab { font-size: 20px; line-height: 28px; }
+  .toc-status { margin-left: 0; }
+  .toc-body { margin-top: 12px; padding: 0 4px 24px; }
+  .toc-list { grid-template-columns: 1fr; }
+  .toc-extra { display: none; }
+  .toc-del { opacity: 1; }
 }
 
 /* ── Settings panel ── */
@@ -1146,41 +1374,8 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* ── Progress & chapter list ── */
+/* ── Progress ── */
 .progress-info { font-size: 13px; color: var(--text-2); }
-
-.chapter-list { display: flex; flex-direction: column; gap: 2px; }
-
-/* ── Bookmark panel ── */
-.bookmark-panel { display: flex; flex-direction: column; }
-.bookmark-empty { text-align: center; color: var(--text-2); font-size: 13px; padding: 32px 0; }
-.bookmark-list { display: flex; flex-direction: column; gap: 4px; }
-.bookmark-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: 8px;
-  transition: background 0.15s;
-}
-.bookmark-item:hover { background: rgba(124,92,255,0.08); }
-.bookmark-info { flex: 1; cursor: pointer; overflow: hidden; }
-.bookmark-chapter { font-size: 14px; color: var(--text-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bookmark-note { font-size: 12px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bookmark-time { font-size: 11px; color: var(--text-2); margin-top: 2px; opacity: 0.7; }
-.chapter-item {
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-1);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chapter-item:hover { background: rgba(124,92,255,0.1); color: var(--text-0); }
-.chapter-item.active { background: rgba(124,92,255,0.2); color: var(--accent); font-weight: 500; }
 
 .content-loading { padding: 20px 0; }
 

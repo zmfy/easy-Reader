@@ -1,8 +1,22 @@
 import type { ReaderTheme } from '@/types'
 
+/** 深色阅读主题（目录面板阴影加深、「夜间」按钮切回日间） */
+const DARK_READER_THEMES: ReaderTheme[] = ['night', 'dark']
+
+export function isDarkReaderTheme(theme: ReaderTheme): boolean {
+  return DARK_READER_THEMES.includes(theme)
+}
+
+/** 工具栏「夜间」按钮：浅色主题切到夜间，深色主题切回默认的护眼绿 */
+export function nightToggleTheme(theme: ReaderTheme): ReaderTheme {
+  return isDarkReaderTheme(theme) ? 'green-paper' : 'night'
+}
+
+const ACCENT = '#E5353E'
+
 /**
- * 阅读器配色变量（docs/reader-style-spec.md）：
- * 外围底色 / 纸张底色 / 正文 / 次要文字 / 分隔线。
+ * 阅读器配色变量（docs/reader-style-spec.md、docs/reader-toc-spec.md）：
+ * 外围底色 / 纸张底色 / 正文 / 次要文字 / 分隔线，以及目录面板的底色、阴影、强调色、悬停 / 按下底色。
  * 「护眼绿」使用规范给定的精确值；其他阅读主题由背景色与文字色派生。
  */
 export function readerPalette(theme: ReaderTheme, paperBg: string, text: string): Record<string, string> {
@@ -13,6 +27,13 @@ export function readerPalette(theme: ReaderTheme, paperBg: string, text: string)
       '--reader-text': 'rgba(0,0,0,.9)',
       '--reader-text-secondary': 'rgba(0,0,0,.48)',
       '--reader-divider': 'rgba(0,0,0,.08)',
+      '--reader-toc-bg': '#EBFAEB',
+      '--reader-toc-shadow': '0 2px 16px rgba(0,0,0,.16)',
+      '--reader-accent': ACCENT,
+      '--reader-accent-weak': '#FFE6E7',
+      '--reader-hover-bg': 'rgba(0,0,0,.04)',
+      '--reader-active-bg': 'rgba(0,0,0,.08)',
+      '--reader-text-2': 'rgba(0,0,0,.7)',
     }
   }
   return {
@@ -22,6 +43,14 @@ export function readerPalette(theme: ReaderTheme, paperBg: string, text: string)
     '--reader-text': text,
     '--reader-text-secondary': `color-mix(in srgb, ${text} 55%, transparent)`,
     '--reader-divider': `color-mix(in srgb, ${text} 10%, transparent)`,
+    // 面板比纸张略亮（深色主题则略浅一些）
+    '--reader-toc-bg': `color-mix(in srgb, ${paperBg} 94%, #fff)`,
+    '--reader-toc-shadow': isDarkReaderTheme(theme) ? '0 2px 16px rgba(0,0,0,.5)' : '0 2px 16px rgba(0,0,0,.16)',
+    '--reader-accent': ACCENT,
+    '--reader-accent-weak': `color-mix(in srgb, ${ACCENT} 14%, ${paperBg})`,
+    '--reader-hover-bg': `color-mix(in srgb, ${text} 5%, transparent)`,
+    '--reader-active-bg': `color-mix(in srgb, ${text} 10%, transparent)`,
+    '--reader-text-2': `color-mix(in srgb, ${text} 78%, transparent)`,
   }
 }
 

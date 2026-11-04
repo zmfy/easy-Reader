@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readerPalette, hideLeadingTitle, countChapterChars } from './reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from './reader-style'
 
 describe('readerPalette', () => {
   it('uses the exact spec colours for 护眼绿', () => {
@@ -9,7 +9,25 @@ describe('readerPalette', () => {
       '--reader-text': 'rgba(0,0,0,.9)',
       '--reader-text-secondary': 'rgba(0,0,0,.48)',
       '--reader-divider': 'rgba(0,0,0,.08)',
+      '--reader-toc-bg': '#EBFAEB',
+      '--reader-toc-shadow': '0 2px 16px rgba(0,0,0,.16)',
+      '--reader-accent': '#E5353E',
+      '--reader-accent-weak': '#FFE6E7',
+      '--reader-hover-bg': 'rgba(0,0,0,.04)',
+      '--reader-active-bg': 'rgba(0,0,0,.08)',
+      '--reader-text-2': 'rgba(0,0,0,.7)',
     })
+  })
+
+  it('derives toc panel colours for other themes, darker shadow on dark themes', () => {
+    const light = readerPalette('white', '#FFFFFF', '#333333')
+    expect(light['--reader-toc-bg']).toContain('#FFFFFF')
+    expect(light['--reader-hover-bg']).toContain('#333333')
+    expect(light['--reader-active-bg']).toContain('#333333')
+    expect(light['--reader-text-2']).toContain('#333333')
+    expect(light['--reader-accent']).toBe('#E5353E')
+    const dark = readerPalette('night', '#0b1020', '#c9d3ea')
+    expect(dark['--reader-toc-shadow']).not.toBe(light['--reader-toc-shadow'])
   })
 
   it('derives page / secondary / divider colours for other themes from bg and text', () => {
@@ -54,5 +72,21 @@ describe('countChapterChars', () => {
 
   it('counts entities as one character', () => {
     expect(countChapterChars('<p>a&amp;b&lt;</p>')).toBe(4)
+  })
+})
+
+describe('night toggle', () => {
+  it('knows which reader themes are dark', () => {
+    expect(isDarkReaderTheme('night')).toBe(true)
+    expect(isDarkReaderTheme('dark')).toBe(true)
+    expect(isDarkReaderTheme('green-paper')).toBe(false)
+    expect(isDarkReaderTheme('light-blue')).toBe(false)
+  })
+
+  it('switches light themes to 夜间 and dark themes back to 护眼绿', () => {
+    expect(nightToggleTheme('light-blue')).toBe('night')
+    expect(nightToggleTheme('green-paper')).toBe('night')
+    expect(nightToggleTheme('night')).toBe('green-paper')
+    expect(nightToggleTheme('dark')).toBe('green-paper')
   })
 })
