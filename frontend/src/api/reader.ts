@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark } from '@/types'
+import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, AiRecap, AiAnswer } from '@/types'
 
 export const readerApi = {
   getChapters: (bookId: string) =>
@@ -33,6 +33,13 @@ export const readerApi = {
 
   addBookmark: (bookId: string, chapterIndex: number, scrollTop: number, note?: string) =>
     http.post<ApiResponse<Bookmark>>(`/reader/${bookId}/bookmarks`, { chapterIndex, scrollTop, note }),
+
+  // AI 前情提要 / 问书：模型响应可能较慢，单独放宽超时
+  recap: (bookId: string, chapterIndex: number, paragraphIndex: number) =>
+    http.post<ApiResponse<AiRecap>>(`/reader/${bookId}/recap`, { chapterIndex, paragraphIndex }, { timeout: 180000 }),
+
+  ask: (bookId: string, body: { question: string; chapterIndex: number; paragraphIndex: number; history: Array<{ q: string; a: string }> }) =>
+    http.post<ApiResponse<AiAnswer>>(`/reader/${bookId}/ask`, body, { timeout: 180000 }),
 
   deleteBookmark: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/bookmarks/${id}`),

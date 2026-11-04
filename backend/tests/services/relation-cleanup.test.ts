@@ -9,6 +9,7 @@ function makeDb() {
     CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
     CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
     CREATE TABLE book_ai_metadata (book_id TEXT);
+    CREATE TABLE ai_recaps (book_id TEXT, chapter_index INTEGER, paragraph_index INTEGER, content TEXT);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
   `);
   for (const [u, b] of [['u1', 'b1'], ['u1', 'b2'], ['u2', 'b1'], ['u2', 'b3']]) {
@@ -19,6 +20,7 @@ function makeDb() {
   for (const b of ['b1', 'b2', 'b3']) {
     d.prepare('INSERT INTO book_chapter_overrides VALUES (?, 0)').run(b);
     d.prepare('INSERT INTO book_ai_metadata VALUES (?)').run(b);
+    d.prepare("INSERT INTO ai_recaps VALUES (?, 0, 0, 'x')").run(b);
   }
   d.prepare("INSERT INTO settings VALUES ('reader_prefs_u1', '{}'), ('reader_prefs_u2', '{}'), ('site_name', 'x')").run();
   return d;
@@ -31,7 +33,7 @@ describe('deleteBookRelations', () => {
   it('removes every per-book row for the given books only', () => {
     const d = makeDb();
     deleteBookRelations(d, ['b1', 'b2']);
-    for (const t of ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata']) {
+    for (const t of ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps']) {
       expect(count(d, t, "book_id IN ('b1','b2')")).toBe(0);
       expect(count(d, t, "book_id = 'b3'")).toBeGreaterThan(0);
     }

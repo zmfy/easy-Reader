@@ -42,6 +42,7 @@
           <div class="nav-actions">
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </div>
         </div>
@@ -61,6 +62,15 @@
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
             <button class="side-tool" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
+          <template v-if="aiReady">
+            <span class="side-sep" />
+            <el-tooltip content="前情提要（AI）" placement="left" :show-after="300">
+              <button class="side-tool" :class="{ on: recapVisible }" @click="toggleRecap"><IconHistory :size="20" :stroke-width="1.75" /></button>
+            </el-tooltip>
+            <el-tooltip content="问书（AI）" placement="left" :show-after="300">
+              <button class="side-tool" :class="{ on: askVisible }" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
+            </el-tooltip>
+          </template>
           <span class="side-sep" />
           <el-tooltip :content="nightMode ? '切换到日间（靛青）' : '切换到夜间'" placement="left" :show-after="300">
             <button class="side-tool" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="20" :stroke-width="1.75" /></button>
@@ -215,6 +225,71 @@
       </div>
     </el-drawer>
 
+    <!-- 前情提要卡片：隔几天再打开时自动出现，工具栏随时调出；点按钮才调用 AI -->
+    <Transition name="recap">
+      <div v-if="recapVisible" class="recap-card" @click.stop>
+        <div class="recap-head">
+          <IconHistory :size="18" :stroke-width="1.75" class="recap-icon" />
+          <div class="recap-heading">
+            <div class="recap-title">{{ recapAwayDays !== null ? `上次阅读是 ${awayLabel(recapAwayDays)}` : '前情提要' }}</div>
+            <div class="recap-sub">读到：{{ chapterTitle }}</div>
+          </div>
+          <button class="toc-icon-btn" title="关闭" @click="recapVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
+        </div>
+        <p v-if="recapText" class="recap-text">{{ recapText }}</p>
+        <p v-else-if="recapError" class="recap-text recap-error">{{ recapError }}</p>
+        <div v-if="!recapText" class="recap-actions">
+          <button class="end-btn primary" :disabled="recapLoading" @click="loadRecap">
+            <el-icon v-if="recapLoading" class="is-loading"><Loading /></el-icon>
+            <IconSparkles v-else :size="16" :stroke-width="1.75" />
+            {{ recapLoading ? 'AI 正在回顾…' : 'AI 回顾前情' }}
+          </button>
+          <span class="recap-hint">概括最近 3 章到当前位置，不剧透</span>
+        </div>
+        <div v-else-if="recapRange" class="recap-hint">回顾范围：{{ recapRange }}</div>
+      </div>
+    </Transition>
+
+    <!-- 问书：右侧对话面板，只根据已读内容回答 -->
+    <Transition name="ask">
+      <div v-if="askVisible" class="toc-layer" @click.self="askVisible = false">
+        <aside class="toc-panel ask-panel">
+          <div class="ask-head">
+            <div>
+              <div class="ask-title"><IconSparkles :size="18" :stroke-width="1.75" />问书</div>
+              <div class="ask-sub">只根据你已读的内容回答，不会剧透</div>
+            </div>
+            <button class="toc-icon-btn" title="关闭（Esc）" @click="askVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
+          </div>
+          <div class="ask-body" ref="askBodyRef">
+            <div v-if="askMessages.length === 0" class="ask-empty">
+              <p>可以问人物、事件、伏笔……</p>
+              <div class="ask-chips">
+                <button v-for="q in ASK_SUGGESTIONS" :key="q" @click="q === '前情提要' ? askRecap() : sendAsk(q)">{{ q }}</button>
+              </div>
+            </div>
+            <div v-for="(m, i) in askMessages" :key="i" class="ask-msg" :class="[m.role, { error: m.error }]">
+              <div class="ask-bubble">
+                <template v-if="m.pending"><el-icon class="is-loading"><Loading /></el-icon> 正在翻书…</template>
+                <template v-else>{{ m.text }}</template>
+              </div>
+              <div v-if="m.sources?.length" class="ask-sources">参考：{{ m.sources.map(s => s.title).join('、') }}</div>
+            </div>
+          </div>
+          <form class="ask-input" @submit.prevent="sendAsk()">
+            <textarea
+              v-model="askDraft"
+              rows="2"
+              maxlength="500"
+              placeholder="问点什么，比如「这个人是谁？」"
+              @keydown.enter="onAskEnter"
+            />
+            <button type="submit" class="ask-send" title="发送（Enter）" :disabled="!askDraft.trim() || askBusy"><IconSend :size="18" :stroke-width="1.75" /></button>
+          </form>
+        </aside>
+      </div>
+    </Transition>
+
     <!-- 目录抽屉：从左侧滑出，浅色遮罩；点遮罩 / Esc / 选章关闭 -->
     <Transition name="toc">
       <div v-if="tocVisible" class="toc-layer" @click.self="tocVisible = false">
@@ -283,7 +358,9 @@ import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconMoon, IconSettings, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { settingsApi } from '@/api/settings'
+import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconHistory, IconMoon, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -784,6 +861,128 @@ function scrollTocToCurrent() {
   })
 }
 
+// ── AI：前情提要 / 问书（只用当前位置之前的内容）──────────────
+const aiReady = ref(false)
+const recapVisible = ref(false)
+const recapAwayDays = ref<number | null>(null)
+const recapLoading = ref(false)
+const recapText = ref('')
+const recapError = ref('')
+const recapRange = ref('')
+let recapKey = ''
+const askVisible = ref(false)
+const askMessages = ref<AskMessage[]>([])
+const askDraft = ref('')
+const askBusy = ref(false)
+const askBodyRef = ref<HTMLElement | null>(null)
+const ASK_SUGGESTIONS = ['前情提要', '上一章讲了什么？', '现在出场的主要人物有哪些？']
+
+// 当前阅读位置：章节 + 屏幕顶部所在段落（瀑布流在当前章节的区块里找）
+function currentReadingPosition() {
+  const chapterIndex = reader.currentChapterIndex.value
+  if (readerStore.settings.pageMode === 'scroll') return { chapterIndex, paragraphIndex: getCurrentAnchor().paragraphIndex }
+  const container = contentRef.value
+  const content = container?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] .chapter-content`)
+  if (!container || !content) return { chapterIndex, paragraphIndex: 0 }
+  const viewTop = container.getBoundingClientRect().top
+  const blocks = Array.from(content.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR))
+  const i = blocks.findIndex(b => b.getBoundingClientRect().bottom > viewTop)
+  return { chapterIndex, paragraphIndex: i < 0 ? Math.max(0, blocks.length - 1) : i }
+}
+
+function aiErrorMessage(err: unknown, fallback: string): string {
+  const e = err as { response?: { data?: { message?: string } }; code?: string }
+  if (e.code === 'ECONNABORTED') return 'AI 响应超时，请稍后再试'
+  return e.response?.data?.message || fallback
+}
+
+async function fetchRecap(): Promise<{ text: string; range: string }> {
+  const pos = currentReadingPosition()
+  const resp = await readerApi.recap(bookId, pos.chapterIndex, pos.paragraphIndex)
+  const data = resp.data.data!
+  const range = data.chapters.length > 1 ? `${data.chapters[0]} — ${data.chapters[data.chapters.length - 1]}` : (data.chapters[0] || '')
+  return { text: data.content, range }
+}
+
+function toggleRecap() {
+  if (recapVisible.value) { recapVisible.value = false; return }
+  // 位置变了就重新回顾
+  const pos = currentReadingPosition()
+  const key = `${pos.chapterIndex}:${pos.paragraphIndex}`
+  if (key !== recapKey) { recapText.value = ''; recapError.value = ''; recapRange.value = '' }
+  recapAwayDays.value = null
+  recapVisible.value = true
+}
+
+async function loadRecap() {
+  if (recapLoading.value) return
+  recapLoading.value = true
+  recapError.value = ''
+  try {
+    const pos = currentReadingPosition()
+    const r = await fetchRecap()
+    recapText.value = r.text
+    recapRange.value = r.range
+    recapKey = `${pos.chapterIndex}:${pos.paragraphIndex}`
+  } catch (err) {
+    recapError.value = aiErrorMessage(err, '生成前情提要失败')
+  } finally {
+    recapLoading.value = false
+  }
+}
+
+function openAsk() {
+  askVisible.value = !askVisible.value
+}
+
+function scrollAskToBottom() {
+  nextTick(() => {
+    const el = askBodyRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+// 追加一问一答：先显示「正在翻书」，结果回来后替换
+async function runAsk(question: string, call: () => Promise<{ text: string; sources?: AskMessage['sources'] }>) {
+  askBusy.value = true
+  askMessages.value.push({ role: 'user', text: question }, { role: 'ai', text: '', pending: true })
+  const reply = askMessages.value[askMessages.value.length - 1]
+  scrollAskToBottom()
+  try {
+    const r = await call()
+    Object.assign(reply, { text: r.text, sources: r.sources, pending: false })
+  } catch (err) {
+    Object.assign(reply, { text: aiErrorMessage(err, '问书失败，请稍后再试'), pending: false, error: true })
+  } finally {
+    askBusy.value = false
+    scrollAskToBottom()
+  }
+}
+
+function sendAsk(preset?: string) {
+  const question = (preset ?? askDraft.value).trim()
+  if (!question || askBusy.value) return
+  if (!preset) askDraft.value = ''
+  const history = askHistory(askMessages.value)
+  const pos = currentReadingPosition()
+  return runAsk(question, async () => {
+    const resp = await readerApi.ask(bookId, { question, ...pos, history })
+    return { text: resp.data.data!.answer, sources: resp.data.data!.sources }
+  })
+}
+
+function askRecap() {
+  if (askBusy.value) return
+  return runAsk('前情提要', async () => ({ text: (await fetchRecap()).text }))
+}
+
+// Enter 发送，Shift+Enter 换行；输入法选词时的回车不发送
+function onAskEnter(e: KeyboardEvent) {
+  if (e.shiftKey || e.isComposing) return
+  e.preventDefault()
+  sendAsk()
+}
+
 // 「夜间」按钮：浅色主题切到夜间，深色主题切回靛青
 const nightMode = computed(() => isDarkReaderTheme(readerStore.settings.theme))
 function toggleNight() {
@@ -858,11 +1057,12 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if ((e.target as HTMLElement | null)?.isContentEditable) return
   // 原生 PDF（浏览器内置查看器）或侧边抽屉打开时不处理
-  if (e.key === 'Escape' && tocVisible.value) {
+  if (e.key === 'Escape' && (tocVisible.value || askVisible.value)) {
     tocVisible.value = false
+    askVisible.value = false
     return
   }
-  if (isPdf.value || settingsPanelVisible.value || tocVisible.value) return
+  if (isPdf.value || settingsPanelVisible.value || tocVisible.value || askVisible.value) return
   const action = readerKeyAction(e)
   if (!action) return
   e.preventDefault()
@@ -901,6 +1101,7 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
+  const aiStatus = settingsApi.getAiStatus().then(r => { aiReady.value = !!r.data.data?.configured }).catch(() => {})
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
@@ -913,6 +1114,14 @@ onMounted(async () => {
 
   await reader.loadProgress()
   reader.loadBookmarks()
+  // 隔了几天再打开：提示前情提要（不自动调用 AI）
+  aiStatus.then(() => {
+    const p = reader.progress.value
+    if (shouldOfferRecap(p, aiReady.value)) {
+      recapAwayDays.value = daysSince(p.updatedAt)
+      recapVisible.value = true
+    }
+  })
 
   if (readerStore.settings.pageMode === 'waterfall') {
     await initWaterfall()
@@ -1362,6 +1571,154 @@ onUnmounted(() => {
   line-height: 1.8;
   color: var(--reader-text-secondary);
 }
+
+/* ── 前情提要卡片：悬浮在顶栏下方，不随正文滚动 ── */
+.recap-card {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 35;
+  width: min(560px, calc(100% - 24px));
+  transform: translateX(-50%);
+  padding: 16px 16px 16px 18px;
+  background: var(--reader-panel-bg);
+  border: 1px solid var(--reader-divider);
+  border-radius: 14px;
+  box-shadow: var(--reader-panel-shadow);
+  font-family: var(--font-sans);
+  color: var(--reader-text);
+}
+.recap-enter-active,
+.recap-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
+.recap-enter-from,
+.recap-leave-to { opacity: 0; transform: translate(-50%, -8px); }
+.recap-head { display: flex; align-items: flex-start; gap: 10px; }
+.recap-icon { flex-shrink: 0; margin-top: 2px; color: var(--reader-accent); }
+.recap-heading { flex: 1; min-width: 0; }
+.recap-title { font-size: 15px; font-weight: 600; }
+.recap-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--reader-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recap-text {
+  margin: 12px 0 0;
+  max-height: 40vh;
+  overflow: auto;
+  font-family: var(--reader-font);
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--reader-text-2);
+}
+.recap-error { font-family: var(--font-sans); font-size: 13px; color: #e5484d; }
+.recap-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.recap-actions .end-btn { height: 36px; padding: 0 14px; }
+.recap-hint { margin-top: 10px; font-size: 12px; color: var(--reader-text-secondary); }
+.recap-actions .recap-hint { margin-top: 0; }
+
+/* ── 问书：右侧对话面板（复用目录抽屉的外层与配色）── */
+.ask-panel { left: auto; right: 0; width: min(420px, 100%); }
+.ask-enter-active,
+.ask-leave-active { transition: opacity 200ms ease; }
+.ask-enter-active .ask-panel,
+.ask-leave-active .ask-panel { transition: transform 200ms ease; }
+.ask-enter-from,
+.ask-leave-to { opacity: 0; }
+.ask-enter-from .ask-panel,
+.ask-leave-to .ask-panel { transform: translateX(24px); }
+.ask-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 16px 14px 20px;
+  border-bottom: 1px solid var(--reader-divider);
+}
+.ask-title { display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600; }
+.ask-title svg { color: var(--reader-accent); }
+.ask-sub { margin-top: 4px; font-size: 12px; color: var(--reader-text-secondary); }
+.ask-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ask-body::-webkit-scrollbar { width: 6px; }
+.ask-body::-webkit-scrollbar-track { background: transparent; }
+.ask-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 16%, transparent); border-radius: 3px; }
+.ask-empty { margin: auto 0; text-align: center; font-size: 13px; color: var(--reader-text-secondary); }
+.ask-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; }
+.ask-chips button {
+  padding: 6px 12px;
+  border: 1px solid var(--reader-divider);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--reader-text-2);
+  cursor: pointer;
+}
+.ask-chips button:hover { color: var(--reader-accent); border-color: var(--reader-accent); }
+.ask-msg { display: flex; flex-direction: column; max-width: 88%; }
+.ask-msg.user { align-self: flex-end; align-items: flex-end; }
+.ask-msg.ai { align-self: flex-start; }
+.ask-bubble {
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ask-msg.user .ask-bubble { background: var(--reader-accent); color: #fff; border-bottom-right-radius: 4px; }
+.ask-msg.ai .ask-bubble { background: var(--reader-active-bg); color: var(--reader-text); border-bottom-left-radius: 4px; }
+.ask-msg.ai.error .ask-bubble { color: #e5484d; }
+.ask-bubble .el-icon { vertical-align: -2px; }
+.ask-sources { margin-top: 4px; font-size: 12px; color: var(--reader-text-secondary); }
+.ask-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--reader-divider);
+  border-radius: 12px;
+  background: var(--reader-paper-bg);
+}
+.ask-input:focus-within { border-color: var(--reader-accent); }
+.ask-input textarea {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--reader-text);
+}
+.ask-input textarea::placeholder { color: var(--reader-text-secondary); }
+.ask-send {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 9px;
+  background: var(--reader-accent);
+  color: #fff;
+  cursor: pointer;
+}
+.ask-send:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* 窄屏：纸张占满宽度，工具栏收进顶栏 */
 @media (max-width: 768px) {

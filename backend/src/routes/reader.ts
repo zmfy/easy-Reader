@@ -7,6 +7,8 @@ import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { getReaderPlugin } from '../plugins/plugin-manager';
+import { isAiConfigured } from '../ai/ai-manager';
+import { generateRecap, answerQuestion } from '../services/ai-reading-run';
 import { resolveRealPathInsideRoot } from '../utils/path-safe';
 import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
 import DOMPurify from 'dompurify';
@@ -170,8 +172,10 @@ router.get('/:bookId/progress', authMiddleware, (req: Request, res: Response) =>
       scrollTop: row.scroll_top,
       paragraphIndex: row.paragraph_index ?? 0,
       paragraphOffset: row.paragraph_offset ?? 0,
+      // 上次阅读时间：阅读器据此判断是否隔了几天，提示「前情提要」
+      updatedAt: row.updated_at ?? null,
     }
-    : { hasProgress: false, chapterIndex: 0, chapterTitle: '', scrollTop: 0, paragraphIndex: 0, paragraphOffset: 0 }
+    : { hasProgress: false, chapterIndex: 0, chapterTitle: '', scrollTop: 0, paragraphIndex: 0, paragraphOffset: 0, updatedAt: null }
   );
 });
 
@@ -210,6 +214,49 @@ router.post('/:bookId/progress', authMiddleware, (req: Request, res: Response) =
 
   const progress = db.prepare('SELECT * FROM reading_progress WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId);
   successResponse(res, progress, '进度已保存');
+});
+
+// ── 阅读器 AI：前情提要 / 问书（只用当前位置之前的内容，防剧透） ──
+const aiPositionSchema = {
+  chapterIndex: z.number().int().min(0).max(1_000_000),
+  paragraphIndex: z.number().int().min(0).max(1_000_000).optional().default(0),
+};
+const AI_NOT_CONFIGURED_MSG = '未配置 AI 插件，请先在「AI 插件设置」中配置';
+
+// POST /api/reader/:bookId/recap — 前情提要（同一位置有缓存直接返回）
+router.post('/:bookId/recap', authMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object(aiPositionSchema).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
+  try {
+    successResponse(res, await generateRecap(db, book, parsed.data.chapterIndex, parsed.data.paragraphIndex));
+  } catch (err) {
+    console.error(`[reader:recap] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '生成前情提要失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
+});
+
+// POST /api/reader/:bookId/ask — 问书
+router.post('/:bookId/ask', authMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({
+    ...aiPositionSchema,
+    question: z.string().trim().min(1).max(500),
+    history: z.array(z.object({ q: z.string().max(500), a: z.string().max(2000) })).max(10).optional().default([]),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
+  try {
+    successResponse(res, await answerQuestion(db, book, parsed.data));
+  } catch (err) {
+    console.error(`[reader:ask] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '问书失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
 });
 
 // GET /api/reader/:bookId/bookmarks

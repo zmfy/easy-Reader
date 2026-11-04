@@ -247,6 +247,18 @@ function initSchema(): void {
     );
   `);
 
+  // === 阅读器 AI 前情提要缓存（按阅读位置） ===
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ai_recaps (
+      book_id TEXT NOT NULL,
+      chapter_index INTEGER NOT NULL,
+      paragraph_index INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (book_id, chapter_index, paragraph_index)
+    );
+  `);
+
   // === Plan 3 schema: audit_log ===
   database.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (

@@ -63,7 +63,12 @@ export interface ReadingProgress {
   paragraphIndex?: number
   paragraphOffset?: number
   updated_at?: string
+  /** 上次阅读时间（SQLite UTC 字符串），用于判断是否提示「前情提要」 */
+  updatedAt?: string | null
 }
+
+export interface AiRecap { content: string; cached: boolean; chapters: string[] }
+export interface AiAnswer { answer: string; sources: Array<{ chapterIndex: number; title: string }> }
 
 /** 章内阅读位置：屏幕顶部所在段落的序号 + 该段落已读过的比例（0–1） */
 export interface ReadingAnchor {
