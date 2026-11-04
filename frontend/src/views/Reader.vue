@@ -43,7 +43,7 @@
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
-            <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" title="听书" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /></button>
+            <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" :title="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </div>
         </div>
@@ -63,8 +63,8 @@
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书籍详情" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
-          <el-tooltip v-if="listenAvailable" :content="listenActive ? '关闭听书' : '听书'" placement="left" :show-after="300">
-            <button class="side-tool" :aria-label="listenActive ? '关闭听书' : '听书'" :class="{ on: listenActive }" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /></button>
+          <el-tooltip v-if="listenAvailable" :content="listenActive ? '关闭听书' : (ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）')" placement="left" :show-after="300">
+            <button class="side-tool" :aria-label="listenActive ? '关闭听书' : (ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）')" :class="{ on: listenActive }" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
           </el-tooltip>
           <template v-if="aiReady">
             <span class="side-sep" />
@@ -237,6 +237,7 @@
           <div class="listen-text">
             <div class="listen-title">{{ chapterTitle }}</div>
             <div class="listen-status" :class="{ error: !!listenError }">{{ listenStatus }}</div>
+            <div v-if="listenMode === 'browser'" class="listen-hint">想要更自然的声音？可在「AI 设置 → MiniMax」开启听书</div>
           </div>
         </div>
         <div class="listen-controls">
@@ -1035,9 +1036,10 @@ function onAskEnter(e: KeyboardEvent) {
   sendAsk()
 }
 
-// ── 听书（MiniMax 语音合成；在 AI 插件设置 → MiniMax 中开启）────
+// ── 听书：开启了 MiniMax 听书用 MiniMax 语音，否则用浏览器自带语音 ────
 const ttsReady = ref(false)
-const listenAvailable = computed(() => ttsReady.value && !isPdfRender.value)
+const browserSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window
+const listenAvailable = computed(() => (ttsReady.value || browserSpeech) && !isPdfRender.value)
 
 // 当前章节的段落元素（与阅读位置同一套段落）；瀑布流取当前章节的区块
 function listenChapter() {
@@ -1050,10 +1052,23 @@ function listenChapter() {
   return { title: reader.chapters.value[idx]?.title || chapterTitle.value, blocks: blocks.length ? blocks : [content] }
 }
 
+// 从屏幕上第一个完整可见的段落开始念（避开顶栏；进度锚点可能是大半已滚出屏幕的段落）
+function listenStartBlock(): number {
+  const blocks = listenChapter()?.blocks || []
+  const container = contentRef.value
+  if (!container || blocks.length === 0) return 0
+  const nav = container.querySelector<HTMLElement>('.reader-nav')
+  const navBottom = toolbarVisible.value && nav ? nav.getBoundingClientRect().bottom : container.getBoundingClientRect().top
+  const i = blocks.findIndex(b => !b.hidden && b.getBoundingClientRect().top >= navBottom - 4)
+  // 长段落占满整屏时，下一段在屏幕之外：从当前这段开始
+  if (i >= 0 && blocks[i].getBoundingClientRect().top < window.innerHeight * 0.6) return i
+  return currentReadingPosition().paragraphIndex
+}
+
 const listen = useListen({
   bookId,
   chapter: listenChapter,
-  startBlock: () => currentReadingPosition().paragraphIndex,
+  startBlock: listenStartBlock,
   nextChapter: async () => {
     const next = reader.currentChapterIndex.value + 1
     if (next >= reader.chapters.value.length) return false
@@ -1062,10 +1077,11 @@ const listen = useListen({
     return true
   },
   meta: () => ({ title: chapterTitle.value, artist: [bookTitle.value, bookAuthor.value].filter(Boolean).join(' · '), artwork: bookCover.value || undefined }),
+  useAi: () => ttsReady.value,
 })
 const {
   active: listenActive, playing: listenPlaying, loading: listenLoading, error: listenError,
-  rate: listenRate, sleepMode: listenSleepMode, sleepLeft: listenSleepLeft,
+  rate: listenRate, sleepMode: listenSleepMode, sleepLeft: listenSleepLeft, mode: listenMode,
 } = listen
 
 const sleepLabel = computed(() => {
@@ -1075,9 +1091,11 @@ const sleepLabel = computed(() => {
 const listenStatus = computed(() => {
   if (listenError.value) return listenError.value
   if (listenLoading.value) return '正在合成语音…'
-  if (!listenPlaying.value) return '已暂停'
-  if (listenSleepMode.value === 'chapter') return '正在朗读 · 本章结束后停止'
-  return listenSleepMode.value ? `正在朗读 · ${listenSleepLeft.value} 后停止` : '正在朗读'
+  // 浏览器语音时提示可换用 MiniMax 获得更自然的声音
+  const engine = listenMode.value === 'browser' ? '浏览器语音 · ' : ''
+  if (!listenPlaying.value) return `${engine}已暂停`
+  if (listenSleepMode.value === 'chapter') return `${engine}正在朗读 · 本章结束后停止`
+  return listenSleepMode.value ? `${engine}正在朗读 · ${listenSleepLeft.value} 后停止` : `${engine}正在朗读`
 })
 
 function toggleListen() {
@@ -1735,6 +1753,15 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .listen-status.error { color: #e5484d; }
+.listen-hint {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--reader-text-secondary);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .listen-controls,
 .listen-extra { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .listen-btn {
@@ -1776,6 +1803,25 @@ onUnmounted(() => {
 .listen-chip:hover,
 .listen-chip.on { color: var(--reader-accent); border-color: var(--reader-accent); }
 .nav-btn.on { color: var(--reader-accent); }
+/* 听书按钮的「AI」角标：使用 MiniMax AI 语音时显示，与浏览器语音区分 */
+.side-tool,
+.nav-btn { position: relative; }
+.ai-badge {
+  position: absolute;
+  right: 3px;
+  bottom: 4px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--reader-accent);
+  box-shadow: 0 0 0 1.5px var(--reader-panel-bg);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
 
 /* ── 前情提要卡片：悬浮在顶栏下方，不随正文滚动 ── */
 .recap-card {

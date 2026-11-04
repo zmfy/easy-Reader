@@ -152,6 +152,10 @@
                 <span class="ai-tip-name">MiniMax</span>
                 <span class="ai-tip-desc">模型：<code>MiniMax-M3.1-Flash</code></span>
               </div>
+              <div class="ai-tip-item">
+                <span class="ai-tip-name">AI 语音</span>
+                <span class="ai-tip-desc">听书的 AI 语音目前只支持 MiniMax（选择 MiniMax 后开启「听书功能」），其他插件暂不支持；未开启时阅读器的听书使用浏览器自带语音</span>
+              </div>
             </div>
             <div class="form-field" style="margin-bottom: 20px">
               <label>选择 AI 插件</label>
@@ -600,10 +604,11 @@ const changelogTagLabels: Record<ChangelogTag, string> = {
 const changelog: ChangelogRelease[] = [
   {
     date: '2026-11-04',
-    title: 'PDF 原版显示与 EPUB 修复',
+    title: '听书、AI 前情提要与问书、阅读器改版',
     items: [
       { tag: 'ui', text: '新增默认主题「靛青」：浅灰底、白色卡片、靛蓝主色，更现代简洁，侧栏换用统一的线条图标；原有五个主题仍可在「网站主题」中选择（已保存过主题的站点保持原设置）' },
       { tag: 'ui', text: '界面精简：书库「AI已填充」改为封面角小圆点，手机端书库顶部压缩为两行；书页显示干净的书名、书架状态与「继续阅读 · 章节」；书架整行点击继续阅读；深色主题下按钮与下拉框统一为深色；图标不再依赖 emoji' },
+      { tag: 'reader', text: '听书不再依赖 MiniMax：未开启 MiniMax 听书时，阅读器的听书按钮也会显示，改用浏览器自带语音朗读，段落高亮、自动翻章、语速、定时停止等功能相同（浏览器语音在手机锁屏后可能停止）；使用 MiniMax AI 语音时，听书按钮右下角显示「AI」角标以示区分；「AI 设置」中注明 AI 语音目前只支持 MiniMax' },
       { tag: 'reader', text: '新增「听书」（MiniMax 真人感语音）：在「AI 设置 → MiniMax」中开启并选择模型与音色后，阅读器出现听书按钮；从当前位置开始朗读，正在念的段落高亮并自动滚动，章末自动进入下一章；底部播放条可暂停、切段、调语速（0.8–2 倍），支持定时停止（15 / 30 / 60 分钟或本章结束，音量渐弱）；手机锁屏、切到后台可继续播放，锁屏界面和耳机按键可控制；合成过的段落缓存在 NAS 上，重听不再花费' },
       { tag: 'ai', text: '阅读器新增 AI「前情提要」：隔 3 天以上再打开一本书时提示「上次阅读是 X 天前」，点「AI 回顾前情」概括最近 3 章到当前位置的情节；工具栏随时可调出，同一位置的结果会缓存，不重复花费' },
       { tag: 'ai', text: '阅读器新增 AI「问书」：在右侧对话面板里问人物、事件、伏笔，可连续追问；只根据当前位置之前的内容回答，不剧透，回答附参考章节。先在本地检索已读章节里的相关片段，只把片段发给 AI，费用可控' },

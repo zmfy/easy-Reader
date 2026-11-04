@@ -1,6 +1,7 @@
 import { ref, computed, onUnmounted } from 'vue'
 import { readerApi } from '@/api/reader'
 import { buildTtsSegments, type TtsSegment } from '@/utils/tts-segments'
+import { createBrowserSpeaker, speechErrorMessage } from '@/utils/browser-speech'
 
 /** 阅读器提供给听书的数据与操作 */
 export interface ListenSource {
@@ -12,13 +13,20 @@ export interface ListenSource {
   /** 进入下一章（内容渲染完成后 resolve）；没有下一章返回 false */
   nextChapter(): Promise<boolean>
   meta(): { title: string; artist: string; artwork?: string }
+  /** 是否使用 MiniMax 语音（开启了听书功能）；否则用浏览器自带语音 */
+  useAi(): boolean
 }
+
+/** ai：MiniMax 语音合成；browser：浏览器自带语音（备用） */
+export type ListenMode = 'ai' | 'browser'
 
 export type SleepMode = 0 | 15 | 30 | 60 | 'chapter'
 
 export const LISTEN_RATES = [0.8, 1, 1.25, 1.5, 2]
 const RATE_KEY = 'listenRate'
 const PREFETCH = 2
+// 浏览器语音一次念太长的文字容易中途停住（Chrome 的已知问题），分段更短
+const BROWSER_SEGMENT_MAX = 100
 const HIGHLIGHT_CLASS = 'tts-reading'
 
 // 极短的静音 WAV：首次点击播放时同步播放一下，解锁 iOS 等浏览器的自动播放限制
@@ -64,6 +72,11 @@ export function useListen(src: ListenSource) {
   const sleepMode = ref<SleepMode>(0)
   const sleepEndsAt = ref(0)
   const now = ref(Date.now())
+  const mode = ref<ListenMode>('ai')
+  const browserSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+  const speaker = browserSupported
+    ? createBrowserSpeaker(window.speechSynthesis, t => new SpeechSynthesisUtterance(t))
+    : null
 
   let segs: TtsSegment[] = []
   let blocks: HTMLElement[] = []
@@ -89,7 +102,11 @@ export function useListen(src: ListenSource) {
     blocks = ch.blocks
     const texts = blocks.map(b => (b.hidden ? '' : b.textContent || ''))
     const start = fromTop ? 0 : Math.max(0, src.startBlock())
-    segs = buildTtsSegments(texts, { start, title: start === 0 ? ch.title : undefined })
+    segs = buildTtsSegments(texts, {
+      start,
+      title: start === 0 ? ch.title : undefined,
+      max: mode.value === 'browser' ? BROWSER_SEGMENT_MAX : undefined,
+    })
     idx = 0
     revokeAll()
     return segs.length > 0
@@ -135,7 +152,27 @@ export function useListen(src: ListenSource) {
     if (r.top < 80 || r.bottom > window.innerHeight - 120) first.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
 
+  // 浏览器语音：同步开始朗读（iOS 要求首次朗读在点击事件里发起）
+  function speakIndex(i: number) {
+    idx = i
+    error.value = ''
+    loading.value = false
+    highlight(segs[i])
+    playing.value = true
+    speaker!.speak(segs[i].text, {
+      rate: rate.value,
+      onEnd: segmentEnded,
+      onError: (e) => { error.value = speechErrorMessage(e); playing.value = false },
+    })
+  }
+
+  function segmentEnded() {
+    if (idx + 1 < segs.length) playIndex(idx + 1)
+    else advanceChapter()
+  }
+
   async function playIndex(i: number) {
+    if (mode.value === 'browser') { speakIndex(i); return }
     const g = gen
     idx = i
     error.value = ''
@@ -176,8 +213,7 @@ export function useListen(src: ListenSource) {
 
   audio.addEventListener('ended', () => {
     if (unlocking) return
-    if (idx + 1 < segs.length) playIndex(idx + 1)
-    else advanceChapter()
+    segmentEnded()
   })
   audio.addEventListener('play', () => { playing.value = true; setPlaybackState() })
   audio.addEventListener('pause', () => { playing.value = false; setPlaybackState() })
@@ -234,9 +270,10 @@ export function useListen(src: ListenSource) {
     }
   }
 
-  // 到点：音量在 4 秒内渐弱后暂停
+  // 到点：音量在 4 秒内渐弱后暂停（浏览器语音无法中途调音量，直接停）
   function pauseForSleep() {
     clearSleep()
+    if (mode.value === 'browser') { pause(); return }
     const steps = 20
     let n = 0
     const fade = setInterval(() => {
@@ -252,25 +289,36 @@ export function useListen(src: ListenSource) {
 
   // ── 对外操作 ───────────────────────────────────────
   function start() {
-    // 必须在点击事件里同步调用 play()，之后异步换源才允许播放（iOS）
-    unlocking = true
-    audio.src = silentWav()
-    audio.play().catch(() => {})
+    mode.value = src.useAi() || !speaker ? 'ai' : 'browser'
+    if (mode.value === 'ai') {
+      // 必须在点击事件里同步调用 play()，之后异步换源才允许播放（iOS）
+      unlocking = true
+      audio.src = silentWav()
+      audio.play().catch(() => {})
+      bindMediaSession()
+    }
     gen++
-    if (!loadChapter(false)) { error.value = '本章没有可朗读的文字'; active.value = true; return }
     active.value = true
-    bindMediaSession()
+    if (!loadChapter(false)) { error.value = '本章没有可朗读的文字'; return }
     playIndex(0)
   }
 
+  // 浏览器语音的暂停：各浏览器 pause / resume 表现不一，统一停掉，继续时从本段开头重念
+  function pause() {
+    if (mode.value === 'browser') { speaker?.cancel(); playing.value = false }
+    else audio.pause()
+  }
+
   function toggle() {
-    if (playing.value) { audio.pause(); return }
+    if (playing.value) { pause(); return }
     if (loading.value) return
+    if (mode.value === 'browser') { speakIndex(idx); return }
     if (audio.src && !audio.ended && !error.value && audio.currentTime > 0) { audio.play().catch(() => {}); return }
     playIndex(idx)
   }
 
   function prev() {
+    if (mode.value === 'browser') { speakIndex(Math.max(0, idx - 1)); return }
     if (audio.currentTime > 3 || idx === 0) { audio.currentTime = 0; if (!playing.value) audio.play().catch(() => {}); return }
     gen++
     playIndex(idx - 1)
@@ -287,18 +335,21 @@ export function useListen(src: ListenSource) {
     audio.defaultPlaybackRate = r
     audio.playbackRate = r
     try { localStorage.setItem(RATE_KEY, String(r)) } catch { /* 隐私模式 */ }
+    // 浏览器语音念到一半不能改语速：用新语速重念当前段
+    if (mode.value === 'browser' && playing.value) speakIndex(idx)
   }
 
   /** 用户手动换章后，从新章节开头接着念 */
   function restartFromChapterTop() {
     if (!active.value || advancing) return
     gen++
-    audio.pause()
+    pause()
     if (loadChapter(true)) playIndex(0)
   }
 
   function stop() {
     gen++
+    speaker?.cancel()
     audio.pause()
     audio.removeAttribute('src')
     audio.load()
@@ -315,7 +366,7 @@ export function useListen(src: ListenSource) {
   onUnmounted(stop)
 
   return {
-    active, playing, loading, error, rate, sleepMode, sleepLeft,
+    active, playing, loading, error, rate, sleepMode, sleepLeft, mode,
     start, toggle, prev, next, stop, setRate, setSleep, restartFromChapterTop,
     isAdvancing: () => advancing,
   }
