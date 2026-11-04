@@ -132,15 +132,6 @@
               </div>
             </div>
 
-            <h3 class="roadmap-title">开发计划</h3>
-            <div class="changelog-list">
-              <div class="changelog-item changelog-item--plan">
-                <div class="changelog-main">
-                  <span class="changelog-tag tag-plan">计划</span>
-                  <span class="changelog-text">封面抓取改为用户可选，手动触发</span>
-                </div>
-              </div>
-            </div>
             <div style="margin-top: 24px;">
               <el-button type="primary" @click="openFeedback">
                 意见反馈
@@ -1590,12 +1581,6 @@ onMounted(async () => {
   padding-top: 0;
 }
 
-.changelog-item--plan {
-  opacity: 0.75;
-  border: 1px dashed var(--card-border);
-  background: transparent;
-}
-
 .changelog-main {
   display: flex;
   align-items: flex-start;
@@ -1631,17 +1616,8 @@ onMounted(async () => {
 .tag-txt    { background: #3a2410; color: #fdba74; }
 .tag-ai     { background: #2d1020; color: #f9a8d4; }
 .tag-infra  { background: #1f2937; color: #9ca3af; }
-.tag-plan   { background: #1c1c2e; color: #a5b4fc; border: 1px solid #3730a3; }
 
 .changelog-text {
   line-height: 1.6;
-}
-
-.roadmap-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-2);
-  margin: 20px 0 10px;
-  max-width: 600px;
 }
 </style>
