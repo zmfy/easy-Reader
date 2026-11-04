@@ -40,6 +40,25 @@ export function saveMetadata(input: SaveMetadataInput): void {
   }
 }
 
+/**
+ * Replace metadata exactly with what the admin confirmed in the AI fill preview.
+ * Unlike saveMetadata, empty arrays DO clear the stored lists.
+ */
+export function replaceMetadata(
+  bookId: string,
+  tags: string[],
+  similar: Array<{ title: string; author?: string; reason?: string }>,
+  generatedBy?: string,
+): void {
+  getDb().prepare(
+    `INSERT INTO book_ai_metadata (book_id, recommended_tags, similar_works, generated_by)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(book_id) DO UPDATE SET recommended_tags = excluded.recommended_tags,
+       similar_works = excluded.similar_works, generated_by = excluded.generated_by,
+       generated_at = CURRENT_TIMESTAMP`
+  ).run(bookId, JSON.stringify(tags), JSON.stringify(similar), generatedBy ?? null);
+}
+
 export function getMetadata(bookId: string): BookAiMetadata | null {
   const row = getDb().prepare('SELECT * FROM book_ai_metadata WHERE book_id = ?').get(bookId) as
     | { book_id: string; recommended_tags?: string; similar_works?: string; generated_by?: string; generated_at: string }

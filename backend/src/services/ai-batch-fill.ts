@@ -283,3 +283,13 @@ export function markFieldsAsEdited(bookId: string, fields: Array<'title' | 'auth
   for (const f of fields) existing.add(f);
   db.prepare('UPDATE books SET manually_edited_fields = ? WHERE id = ?').run(JSON.stringify([...existing]), bookId);
 }
+
+/** Remove fields from manually_edited_fields (e.g. admin accepted the AI value for a locked field). */
+export function unmarkFieldsAsEdited(bookId: string, fields: Array<'title' | 'author' | 'summary' | 'category'>): void {
+  const db = getDb();
+  const row = db.prepare('SELECT manually_edited_fields FROM books WHERE id = ?').get(bookId) as
+    | { manually_edited_fields?: string }
+    | undefined;
+  const remaining = parseEditedFields(row?.manually_edited_fields).filter(f => !(fields as string[]).includes(f));
+  db.prepare('UPDATE books SET manually_edited_fields = ? WHERE id = ?').run(JSON.stringify(remaining), bookId);
+}
