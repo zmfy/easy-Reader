@@ -8,7 +8,7 @@
     <!-- Sidebar -->
     <nav class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-logo">
-        <el-icon class="logo-icon"><Reading /></el-icon>
+        <span class="logo-tile"><IconBook2 :size="18" :stroke-width="2" /></span>
         <span class="logo-text">{{ siteName }}</span>
       </div>
       <div class="sidebar-nav">
@@ -20,7 +20,7 @@
           :class="{ active: $route.path.startsWith(item.path) }"
           @click="sidebarOpen = false"
         >
-          <el-icon><component :is="item.icon" /></el-icon>
+          <component :is="item.icon" class="nav-icon" :size="19" :stroke-width="1.75" />
           <span>{{ item.label }}</span>
         </router-link>
       </div>
@@ -33,14 +33,14 @@
           </div>
         </div>
         <div class="action-row" @click="toggleKeepAlive">
-          <el-icon><Stopwatch /></el-icon>
+          <IconPlugConnected class="action-icon" :size="16" :stroke-width="1.75" />
           <span>保持连接</span>
           <div class="toggle-track" :class="{ on: keepAlive }">
             <div class="toggle-knob" />
           </div>
         </div>
         <div class="action-row action-row--logout" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
+          <IconLogout class="action-icon" :size="16" :stroke-width="1.75" />
           <span>退出登录</span>
         </div>
       </div>
@@ -68,7 +68,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Collection, Reading, Setting, Stopwatch, SwitchButton } from '@element-plus/icons-vue'
+// 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
+import { IconBook2, IconBookmarks, IconBooks, IconLogout, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
@@ -128,9 +129,9 @@ onUnmounted(() => {
 })
 
 const navItems = [
-  { path: '/library', label: '书库', icon: Collection },
-  { path: '/shelf', label: '书架', icon: Reading },
-  ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: Setting }] : []),
+  { path: '/library', label: '书库', icon: IconBooks },
+  { path: '/shelf', label: '书架', icon: IconBookmarks },
+  ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: IconSettings2 }] : []),
 ]
 
 async function handleLogout() {
@@ -166,7 +167,19 @@ async function handleLogout() {
   border-bottom: 1px solid rgba(124, 92, 255, 0.08);
 }
 
-.logo-icon { font-size: 24px; color: var(--accent); }
+/* logo：强调色渐变圆角方块 + 白色图标 */
+.logo-tile {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000));
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 .logo-text {
   font-size: 18px;
@@ -209,7 +222,7 @@ async function handleLogout() {
   border-radius: 3px;
   background: var(--accent);
 }
-.nav-item .el-icon { font-size: 18px; }
+.nav-icon { flex: none; }
 
 .sidebar-user {
   padding: 16px;
@@ -265,7 +278,7 @@ async function handleLogout() {
   user-select: none;
 }
 .action-row span { flex: 1; }
-.action-row .el-icon { font-size: 15px; flex-shrink: 0; }
+.action-icon { flex-shrink: 0; }
 .action-row:hover { color: var(--text-1); background: rgba(124, 92, 255, 0.08); }
 .action-row--logout:hover { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.07); }
 
