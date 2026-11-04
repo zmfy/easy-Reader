@@ -1,43 +1,40 @@
 import { describe, it, expect } from 'vitest'
-import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from './reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, migrateReaderTheme } from './reader-style'
 
 describe('readerPalette', () => {
-  it('uses the exact spec colours for 护眼绿', () => {
-    expect(readerPalette('green-paper', '#E0EEE1', 'rgba(0,0,0,.9)')).toEqual({
-      '--reader-page-bg': '#C9E0CB',
-      '--reader-paper-bg': '#E0EEE1',
-      '--reader-text': 'rgba(0,0,0,.9)',
-      '--reader-text-secondary': 'rgba(0,0,0,.48)',
-      '--reader-divider': 'rgba(0,0,0,.08)',
-      '--reader-toc-bg': '#EBFAEB',
-      '--reader-toc-shadow': '0 2px 16px rgba(0,0,0,.16)',
-      '--reader-accent': '#E5353E',
-      '--reader-accent-weak': '#FFE6E7',
-      '--reader-hover-bg': 'rgba(0,0,0,.04)',
-      '--reader-active-bg': 'rgba(0,0,0,.08)',
-      '--reader-text-2': 'rgba(0,0,0,.7)',
+  it('uses fixed 靛青 colours matching the site theme, accent follows the site accent', () => {
+    expect(readerPalette('indigo', '#ffffff', '#1a2440')).toEqual({
+      '--reader-page-bg': '#eef1f6',
+      '--reader-paper-bg': '#ffffff',
+      '--reader-text': '#1a2440',
+      '--reader-text-secondary': '#8a94a6',
+      '--reader-divider': '#e8ecf4',
+      '--reader-panel-bg': '#ffffff',
+      '--reader-panel-shadow': '0 1px 2px rgba(26,36,64,.04), 0 8px 32px rgba(26,36,64,.12)',
+      '--reader-accent': 'var(--accent)',
+      '--reader-accent-weak': 'color-mix(in srgb, var(--accent) 10%, #ffffff)',
+      '--reader-hover-bg': 'rgba(26,36,64,.04)',
+      '--reader-active-bg': 'rgba(26,36,64,.07)',
+      '--reader-text-2': '#4a5568',
     })
   })
 
-  it('derives toc panel colours for other themes, darker shadow on dark themes', () => {
-    const light = readerPalette('white', '#FFFFFF', '#333333')
-    expect(light['--reader-toc-bg']).toContain('#FFFFFF')
-    expect(light['--reader-hover-bg']).toContain('#333333')
-    expect(light['--reader-active-bg']).toContain('#333333')
-    expect(light['--reader-text-2']).toContain('#333333')
-    expect(light['--reader-accent']).toBe('#E5353E')
-    const dark = readerPalette('night', '#0b1020', '#c9d3ea')
-    expect(dark['--reader-toc-shadow']).not.toBe(light['--reader-toc-shadow'])
+  it('derives colours for other themes from bg and text', () => {
+    const p = readerPalette('white', '#FFFFFF', '#333333')
+    expect(p['--reader-paper-bg']).toBe('#FFFFFF')
+    expect(p['--reader-text']).toBe('#333333')
+    for (const k of ['--reader-page-bg', '--reader-text-secondary', '--reader-divider', '--reader-hover-bg', '--reader-active-bg', '--reader-text-2']) {
+      expect(p[k]).toContain('color-mix')
+    }
+    expect(p['--reader-accent']).toBe('var(--accent)')
   })
 
-  it('derives page / secondary / divider colours for other themes from bg and text', () => {
-    const p = readerPalette('night', '#0b1020', '#c9d3ea')
-    expect(p['--reader-paper-bg']).toBe('#0b1020')
-    expect(p['--reader-text']).toBe('#c9d3ea')
-    expect(p['--reader-page-bg']).toContain('color-mix')
-    expect(p['--reader-page-bg']).toContain('#0b1020')
-    expect(p['--reader-text-secondary']).toContain('#c9d3ea')
-    expect(p['--reader-divider']).toContain('#c9d3ea')
+  it('lightens the accent and deepens the shadow on dark themes', () => {
+    const light = readerPalette('white', '#FFFFFF', '#333333')
+    const dark = readerPalette('night', '#0b1020', '#c9d3ea')
+    expect(dark['--reader-accent']).toContain('var(--accent)')
+    expect(dark['--reader-accent']).not.toBe('var(--accent)')
+    expect(dark['--reader-panel-shadow']).not.toBe(light['--reader-panel-shadow'])
   })
 })
 
@@ -79,14 +76,31 @@ describe('night toggle', () => {
   it('knows which reader themes are dark', () => {
     expect(isDarkReaderTheme('night')).toBe(true)
     expect(isDarkReaderTheme('dark')).toBe(true)
-    expect(isDarkReaderTheme('green-paper')).toBe(false)
+    expect(isDarkReaderTheme('indigo')).toBe(false)
     expect(isDarkReaderTheme('light-blue')).toBe(false)
   })
 
-  it('switches light themes to 夜间 and dark themes back to 护眼绿', () => {
+  it('switches light themes to 夜间 and dark themes back to 靛青', () => {
     expect(nightToggleTheme('light-blue')).toBe('night')
-    expect(nightToggleTheme('green-paper')).toBe('night')
-    expect(nightToggleTheme('night')).toBe('green-paper')
-    expect(nightToggleTheme('dark')).toBe('green-paper')
+    expect(nightToggleTheme('indigo')).toBe('night')
+    expect(nightToggleTheme('night')).toBe('indigo')
+    expect(nightToggleTheme('dark')).toBe('indigo')
+  })
+})
+
+describe('migrateReaderTheme', () => {
+  const themes = {
+    indigo: { backgroundColor: '#ffffff', fontColor: '#1a2440', label: '靛青' },
+    night: { backgroundColor: '#0b1020', fontColor: '#c9d3ea', label: '夜间' },
+  }
+
+  it('moves a removed theme (e.g. 护眼绿) to 靛青 with its colours', () => {
+    const s = { theme: 'green-paper', backgroundColor: '#E0EEE1', fontColor: 'rgba(0,0,0,.9)', fontSize: 22 }
+    expect(migrateReaderTheme(s, themes)).toEqual({ theme: 'indigo', backgroundColor: '#ffffff', fontColor: '#1a2440', fontSize: 22 })
+  })
+
+  it('keeps a known theme untouched', () => {
+    const s = { theme: 'night', backgroundColor: '#0b1020', fontColor: '#c9d3ea' }
+    expect(migrateReaderTheme(s, themes)).toBe(s)
   })
 })

@@ -7,49 +7,60 @@ export function isDarkReaderTheme(theme: ReaderTheme): boolean {
   return DARK_READER_THEMES.includes(theme)
 }
 
-/** 工具栏「夜间」按钮：浅色主题切到夜间，深色主题切回默认的护眼绿 */
+/** 工具栏「夜间」按钮：浅色主题切到夜间，深色主题切回默认的靛青 */
 export function nightToggleTheme(theme: ReaderTheme): ReaderTheme {
-  return isDarkReaderTheme(theme) ? 'green-paper' : 'night'
+  return isDarkReaderTheme(theme) ? 'indigo' : 'night'
 }
 
-const ACCENT = '#E5353E'
+/** 已移除的阅读主题（如旧版「护眼绿」）迁移到默认的靛青，配色一并替换 */
+export function migrateReaderTheme<T extends { theme: string; backgroundColor: string; fontColor: string }>(
+  settings: T,
+  themes: Record<string, { backgroundColor: string; fontColor: string }>,
+): T {
+  if (settings.theme in themes) return settings
+  const t = themes.indigo
+  return { ...settings, theme: 'indigo', backgroundColor: t.backgroundColor, fontColor: t.fontColor }
+}
 
 /**
- * 阅读器配色变量（docs/reader-style-spec.md、docs/reader-toc-spec.md）：
- * 外围底色 / 纸张底色 / 正文 / 次要文字 / 分隔线，以及目录面板的底色、阴影、强调色、悬停 / 按下底色。
- * 「护眼绿」使用规范给定的精确值；其他阅读主题由背景色与文字色派生。
+ * 阅读器配色变量：外围底色 / 纸张 / 正文 / 次要文字 / 分隔线，以及面板（目录、工具栏）的底色与阴影、
+ * 强调色、悬停 / 按下底色。默认的「靛青」与网站靛青主题同色；其他阅读主题由背景色与文字色派生。
+ * 强调色跟随网站主题的 --accent，深色阅读主题上提亮以保证对比度。
  */
 export function readerPalette(theme: ReaderTheme, paperBg: string, text: string): Record<string, string> {
-  if (theme === 'green-paper') {
+  if (theme === 'indigo') {
     return {
-      '--reader-page-bg': '#C9E0CB',
-      '--reader-paper-bg': '#E0EEE1',
-      '--reader-text': 'rgba(0,0,0,.9)',
-      '--reader-text-secondary': 'rgba(0,0,0,.48)',
-      '--reader-divider': 'rgba(0,0,0,.08)',
-      '--reader-toc-bg': '#EBFAEB',
-      '--reader-toc-shadow': '0 2px 16px rgba(0,0,0,.16)',
-      '--reader-accent': ACCENT,
-      '--reader-accent-weak': '#FFE6E7',
-      '--reader-hover-bg': 'rgba(0,0,0,.04)',
-      '--reader-active-bg': 'rgba(0,0,0,.08)',
-      '--reader-text-2': 'rgba(0,0,0,.7)',
+      '--reader-page-bg': '#eef1f6',
+      '--reader-paper-bg': '#ffffff',
+      '--reader-text': '#1a2440',
+      '--reader-text-secondary': '#8a94a6',
+      '--reader-divider': '#e8ecf4',
+      '--reader-panel-bg': '#ffffff',
+      '--reader-panel-shadow': '0 1px 2px rgba(26,36,64,.04), 0 8px 32px rgba(26,36,64,.12)',
+      '--reader-accent': 'var(--accent)',
+      '--reader-accent-weak': 'color-mix(in srgb, var(--accent) 10%, #ffffff)',
+      '--reader-hover-bg': 'rgba(26,36,64,.04)',
+      '--reader-active-bg': 'rgba(26,36,64,.07)',
+      '--reader-text-2': '#4a5568',
     }
   }
+  const dark = isDarkReaderTheme(theme)
+  const accent = dark ? 'color-mix(in srgb, var(--accent) 55%, #ffffff)' : 'var(--accent)'
   return {
     // 外围比纸张略向文字色偏移：浅色主题略深、深色主题略浅
-    '--reader-page-bg': `color-mix(in srgb, ${paperBg} 90%, ${text})`,
+    '--reader-page-bg': `color-mix(in srgb, ${paperBg} 92%, ${text})`,
     '--reader-paper-bg': paperBg,
     '--reader-text': text,
     '--reader-text-secondary': `color-mix(in srgb, ${text} 55%, transparent)`,
     '--reader-divider': `color-mix(in srgb, ${text} 10%, transparent)`,
-    // 面板比纸张略亮（深色主题则略浅一些）
-    '--reader-toc-bg': `color-mix(in srgb, ${paperBg} 94%, #fff)`,
-    '--reader-toc-shadow': isDarkReaderTheme(theme) ? '0 2px 16px rgba(0,0,0,.5)' : '0 2px 16px rgba(0,0,0,.16)',
-    '--reader-accent': ACCENT,
-    '--reader-accent-weak': `color-mix(in srgb, ${ACCENT} 14%, ${paperBg})`,
+    '--reader-panel-bg': dark ? `color-mix(in srgb, ${paperBg} 92%, #ffffff)` : paperBg,
+    '--reader-panel-shadow': dark
+      ? '0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.5)'
+      : '0 1px 2px rgba(0,0,0,.04), 0 8px 32px rgba(0,0,0,.12)',
+    '--reader-accent': accent,
+    '--reader-accent-weak': `color-mix(in srgb, ${accent} 14%, ${paperBg})`,
     '--reader-hover-bg': `color-mix(in srgb, ${text} 5%, transparent)`,
-    '--reader-active-bg': `color-mix(in srgb, ${text} 10%, transparent)`,
+    '--reader-active-bg': `color-mix(in srgb, ${text} 9%, transparent)`,
     '--reader-text-2': `color-mix(in srgb, ${text} 78%, transparent)`,
   }
 }

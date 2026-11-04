@@ -2,24 +2,26 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ReaderSettings, ReaderTheme } from '@/types'
 import { settingsApi } from '@/api/settings'
+import { migrateReaderTheme } from '@/utils/reader-style'
 
-// 默认样式见 docs/reader-style-spec.md（护眼绿、思源黑体 20px、行高 1.8、纸张最宽 1280px）
-export const SPEC_FONT_STACK = '"Source Han Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+// 默认阅读样式：靛青（与网站靛青主题同色）、Noto Serif SC 20px、行高 1.8
+export const DEFAULT_READER_FONT = 'Noto Serif SC'
+export const SANS_FONT_STACK = '"Source Han Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
 
 const defaultSettings: ReaderSettings = {
-  fontFamily: SPEC_FONT_STACK,
+  fontFamily: DEFAULT_READER_FONT,
   fontSize: 20,
   letterSpacing: 0,
   lineHeight: 1.8,
   pageWidth: 90,
-  theme: 'green-paper',
-  backgroundColor: '#E0EEE1',
-  fontColor: 'rgba(0,0,0,.9)',
+  theme: 'indigo',
+  backgroundColor: '#ffffff',
+  fontColor: '#1a2440',
   pageMode: 'scroll',
 }
 
 export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: string; label: string }> = {
-  'green-paper': { backgroundColor: '#E0EEE1',  fontColor: 'rgba(0,0,0,.9)', label: '护眼绿' },
+  'indigo':      { backgroundColor: '#ffffff',  fontColor: '#1a2440', label: '靛青' },
   'white':       { backgroundColor: '#FFFFFF',  fontColor: '#333333', label: '白昼' },
   'eye-care':    { backgroundColor: '#FFFDF0',  fontColor: '#4a4a4a', label: '护眼' },
   'night':       { backgroundColor: '#0b1020',  fontColor: '#c9d3ea', label: '夜间' },
@@ -32,8 +34,8 @@ export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: s
 }
 
 export const fontOptions = [
-  { label: '思源黑体（默认）',        value: SPEC_FONT_STACK },
-  { label: 'Noto Serif SC（衬线）',   value: 'Noto Serif SC' },
+  { label: 'Noto Serif SC（默认）',   value: DEFAULT_READER_FONT },
+  { label: '思源黑体',                value: SANS_FONT_STACK },
   { label: 'Noto Sans SC（无衬线）',  value: 'Noto Sans SC' },
   { label: '宋体',                    value: 'SimSun, 宋体, serif' },
   { label: '黑体',                    value: 'SimHei, 黑体, sans-serif' },
@@ -51,12 +53,13 @@ export const useReaderStore = defineStore('reader', () => {
     ...defaultSettings,
     ...JSON.parse(localStorage.getItem('readerSettings') || '{}'),
   })
+  settings.value = migrateReaderTheme(settings.value, themes)
 
   async function loadPrefs() {
     try {
       const resp = await settingsApi.getReaderPrefs()
       if (resp.data.data) {
-        settings.value = { ...defaultSettings, ...resp.data.data }
+        settings.value = migrateReaderTheme({ ...defaultSettings, ...resp.data.data }, themes)
         localStorage.setItem('readerSettings', JSON.stringify(settings.value))
       }
     } catch {

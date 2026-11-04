@@ -22,47 +22,52 @@
       </div>
     </template>
 
-    <!-- ── 章节阅读模式（样式见 docs/reader-style-spec.md）── -->
+    <!-- ── 章节阅读模式 ── -->
     <template v-else>
-    <!-- 外围底色 + 居中「纸张」；顶部导航吸顶，下滑隐藏、上滑显示 -->
+    <!-- 浅灰底 + 居中白色卡片「纸张」；顶栏吸顶，下滑隐藏、上滑显示 -->
     <div
       class="reader-content"
       ref="contentRef"
       @click="toggleToolbar"
       @scroll="handleScroll"
     >
-      <div class="paper" :class="{ 'pdf-wrapper': isPdfRender }" :style="paperStyle">
-        <header class="reader-nav" :class="{ hidden: !toolbarVisible }" @click.stop>
+      <header class="reader-nav" :class="{ hidden: !toolbarVisible }" @click.stop>
+        <div class="nav-inner">
           <button class="nav-btn" title="返回" @click="router.back()"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
           <span class="nav-title">{{ bookTitle }}</span>
           <span class="nav-progress">
             {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
           </span>
-          <!-- 窄屏：左侧工具栏放不下，按钮收在导航右侧 -->
+          <!-- 窄屏：右侧工具栏放不下，按钮收在顶栏右侧 -->
           <div class="nav-actions">
-            <button class="nav-btn" title="章节目录" data-toc-toggle @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
-            <button class="nav-btn" title="书签（按 B 添加当前位置）" data-toc-toggle @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </div>
-        </header>
+        </div>
+        <!-- 全书进度：读到第几章 -->
+        <div class="nav-bar"><i :style="{ width: bookProgress }" /></div>
+      </header>
 
-        <!-- 右侧悬浮工具栏：固定在纸张右外侧、垂直居中（宽屏） -->
+      <div class="paper" :class="{ 'pdf-wrapper': isPdfRender }" :style="paperStyle">
+        <!-- 右侧悬浮工具栏：纸张右外侧的竖向胶囊，图标按钮 + 悬停提示（宽屏） -->
         <aside class="side-tools" @click.stop>
-          <button class="side-tool" :class="{ on: tocVisible && tocTab === 'toc' }" title="章节目录" data-toc-toggle @click="openToc('toc')">
-            <IconList :size="24" :stroke-width="1.5" /><span>目录</span>
-          </button>
-          <button class="side-tool" :class="{ on: tocVisible && tocTab === 'bookmark' }" title="书签（按 B 添加当前位置）" data-toc-toggle @click="openToc('bookmark')">
-            <IconBookmark :size="24" :stroke-width="1.5" /><span>书签</span>
-          </button>
-          <button class="side-tool" title="书籍详情" @click="router.push(`/book/${bookId}`)">
-            <IconBook2 :size="24" :stroke-width="1.5" /><span>书详情</span>
-          </button>
-          <button class="side-tool" :title="nightMode ? '切换到护眼绿' : '切换到夜间'" @click="toggleNight">
-            <component :is="nightMode ? IconSun : IconMoon" :size="24" :stroke-width="1.5" /><span>{{ nightMode ? '日间' : '夜间' }}</span>
-          </button>
-          <button class="side-tool" title="阅读设置" @click="settingsPanelVisible = true">
-            <IconSettings :size="24" :stroke-width="1.5" /><span>设置</span>
-          </button>
+          <el-tooltip content="目录" placement="left" :show-after="300">
+            <button class="side-tool" :class="{ on: tocVisible && tocTab === 'toc' }" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip content="书签（B 添加当前位置）" placement="left" :show-after="300">
+            <button class="side-tool" :class="{ on: tocVisible && tocTab === 'bookmark' }" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip content="书籍详情" placement="left" :show-after="300">
+            <button class="side-tool" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <span class="side-sep" />
+          <el-tooltip :content="nightMode ? '切换到日间（靛青）' : '切换到夜间'" placement="left" :show-after="300">
+            <button class="side-tool" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip content="阅读设置" placement="left" :show-after="300">
+            <button class="side-tool" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
         </aside>
 
         <!-- ── 章节模式 ── -->
@@ -72,6 +77,7 @@
           </div>
           <template v-else>
             <div v-if="!isPdfRender" class="chapter-head">
+              <div class="chapter-eyebrow">第 {{ reader.currentChapterIndex.value + 1 }} {{ unitLabel }}</div>
               <h1 class="chapter-heading">{{ chapterTitle }}</h1>
               <div class="chapter-meta">{{ chapterMeta(reader.currentContent.value) }}</div>
             </div>
@@ -89,9 +95,9 @@
             />
             <!-- 章末导航：上一章 · 目录 · 下一章 -->
             <nav class="chapter-end" @click.stop>
-              <button class="end-btn" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一{{ unitLabel }}</button>
-              <button class="end-btn" data-toc-toggle @click="openToc('toc')">目录</button>
-              <button class="end-btn" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}</button>
+              <button class="end-btn" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter"><IconChevronLeft :size="18" :stroke-width="1.75" />上一{{ unitLabel }}</button>
+              <button class="end-btn" @click="openToc('toc')"><IconList :size="18" :stroke-width="1.75" />目录</button>
+              <button class="end-btn primary" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}<IconChevronRight :size="18" :stroke-width="1.75" /></button>
             </nav>
           </template>
         </template>
@@ -105,6 +111,7 @@
             class="waterfall-chapter"
           >
             <div v-if="!isPdfRender" class="chapter-head">
+              <div class="chapter-eyebrow">第 {{ ch.index + 1 }} {{ unitLabel }}</div>
               <h1 class="chapter-heading">{{ ch.title }}</h1>
               <div class="chapter-meta">{{ chapterMeta(ch.content) }}</div>
             </div>
@@ -208,24 +215,25 @@
       </div>
     </el-drawer>
 
-    <!-- 目录面板（docs/reader-toc-spec.md）：与纸张同宽、正好盖住正文区，无遮罩；点外部 / Esc 关闭 -->
+    <!-- 目录抽屉：从左侧滑出，浅色遮罩；点遮罩 / Esc / 选章关闭 -->
     <Transition name="toc">
-      <div v-if="tocVisible" class="toc-layer">
-        <div class="toc-panel" ref="tocPanelRef">
+      <div v-if="tocVisible" class="toc-layer" @click.self="tocVisible = false">
+        <aside class="toc-panel">
           <div class="toc-head">
-            <button class="toc-tab" :class="{ active: tocTab === 'toc' }" @click="switchTocTab('toc')">目录</button>
-            <span v-if="tocTab === 'toc'" class="toc-status">{{ tocStatus }}</span>
-            <button class="toc-tab" :class="{ active: tocTab === 'bookmark' }" @click="switchTocTab('bookmark')">书签</button>
-            <div class="toc-actions">
-              <button v-if="tocTab === 'toc'" class="toc-action" @click="tocReversed = !tocReversed">
-                <IconArrowsSort :size="16" :stroke-width="1.75" />{{ tocReversed ? '正序' : '倒序' }}
-              </button>
-              <button v-else class="toc-action" @click="handleAddBookmark">
-                <IconBookmarkPlus :size="16" :stroke-width="1.75" />添加当前位置
-              </button>
-              <!-- 窄屏面板占满屏幕、没有「外部」可点，提供关闭按钮 -->
-              <button class="toc-action toc-close" title="关闭" @click="tocVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
+            <div class="toc-seg">
+              <button :class="{ active: tocTab === 'toc' }" @click="switchTocTab('toc')">目录</button>
+              <button :class="{ active: tocTab === 'bookmark' }" @click="switchTocTab('bookmark')">书签</button>
             </div>
+            <button class="toc-icon-btn" title="关闭（Esc）" @click="tocVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
+          </div>
+          <div class="toc-sub">
+            <span class="toc-status">{{ tocTab === 'toc' ? tocStatus : `${reader.bookmarks.value.length} 个书签` }}</span>
+            <button v-if="tocTab === 'toc'" class="toc-action" @click="tocReversed = !tocReversed">
+              <IconArrowsSort :size="15" :stroke-width="1.75" />{{ tocReversed ? '正序' : '倒序' }}
+            </button>
+            <button v-else class="toc-action" @click="handleAddBookmark">
+              <IconBookmarkPlus :size="15" :stroke-width="1.75" />添加当前位置
+            </button>
           </div>
           <div class="toc-body" ref="tocBodyRef">
             <ul v-if="tocTab === 'toc'" class="toc-list">
@@ -239,22 +247,21 @@
               </li>
             </ul>
             <template v-else>
-              <div v-if="reader.bookmarks.value.length === 0" class="toc-empty">还没有书签，阅读时按 B 或点右上角「添加当前位置」</div>
+              <div v-if="reader.bookmarks.value.length === 0" class="toc-empty">还没有书签<br>阅读时按 B 或点上方「添加当前位置」</div>
               <ul v-else class="toc-list">
                 <li v-for="bm in reader.bookmarks.value" :key="bm.id">
-                  <a class="toc-link" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
+                  <a class="toc-link bookmark" @click="jumpToBookmark(bm.chapter_index, bm.scroll_top)">
                     <span class="toc-title">
                       {{ reader.chapters.value[bm.chapter_index]?.title || `第 ${bm.chapter_index + 1} ${unitLabel}` }}
-                      <small v-if="bm.note" class="toc-note">{{ bm.note }}</small>
+                      <small class="toc-extra">{{ formatServerTime(bm.created_at) }}<template v-if="bm.note"> · {{ bm.note }}</template></small>
                     </span>
-                    <span class="toc-extra">{{ formatServerTime(bm.created_at) }}</span>
                     <button class="toc-del" title="删除书签" @click.stop="reader.deleteBookmark(bm.id)"><IconTrash :size="16" :stroke-width="1.75" /></button>
                   </a>
                 </li>
               </ul>
             </template>
           </div>
-        </div>
+        </aside>
       </div>
     </Transition>
 
@@ -276,7 +283,7 @@ import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconList, IconMoon, IconSettings, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconMoon, IconSettings, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -293,9 +300,7 @@ const settingsPanelVisible = ref(false)
 const tocVisible = ref(false)
 const tocTab = ref<'toc' | 'bookmark'>('toc')
 const tocReversed = ref(false)
-const tocPanelRef = ref<HTMLElement | null>(null)
 const tocBodyRef = ref<HTMLElement | null>(null)
-let tocClosedAt = 0
 
 // ── PDF native rendering ─────────────────────────────────────
 // isPdf: true 表示使用浏览器原生 iframe 打开（插件未启用时的默认行为）
@@ -355,8 +360,8 @@ async function loadPdfDocument() {
 // ── Computed styles ──────────────────────────────────────────
 // 阅读配色以 CSS 变量提供（--reader-page-bg / --reader-paper-bg / --reader-text …），便于切换阅读主题
 const readerStyle = computed(() => ({
-  // 纸张宽度：「页面宽度」百分比，最宽 1280px，并给右侧工具栏留出位置；目录面板与工具栏定位共用
-  '--paper-w': `min(${readerStore.settings.pageWidth}%, 1280px, calc(100% - 176px))`,
+  // 纸张宽度：「页面宽度」百分比，最宽 1120px，并给右侧工具栏留出位置；顶栏与工具栏定位共用
+  '--paper-w': `min(${readerStore.settings.pageWidth}%, 1120px, calc(100% - 152px))`,
   ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor),
   color: 'var(--reader-text)',
 }))
@@ -466,8 +471,6 @@ async function initWaterfall() {
 
 // ── 顶部导航显隐：下滑隐藏、上滑显示，回到顶部时总是显示；点击正文切换 ──
 function toggleToolbar() {
-  // 点面板外部关闭目录时，同一次点击不再切换导航
-  if (Date.now() - tocClosedAt < 400) return
   toolbarVisible.value = !toolbarVisible.value
 }
 
@@ -746,6 +749,10 @@ async function jumpToBookmark(chapterIndex: number, scrollTop: number) {
   })
 }
 
+const bookProgress = computed(() => {
+  const total = reader.chapters.value.length
+  return total ? `${((reader.currentChapterIndex.value + 1) / total) * 100}%` : '0%'
+})
 const tocChapters = computed(() => tocReversed.value ? [...reader.chapters.value].reverse() : reader.chapters.value)
 const tocStatus = computed(() =>
   [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
@@ -777,17 +784,7 @@ function scrollTocToCurrent() {
   })
 }
 
-// 点面板外部关闭（工具栏上的目录 / 书签按钮自己切换，不算外部）
-function handleTocOutside(e: PointerEvent) {
-  if (!tocVisible.value) return
-  const target = e.target as HTMLElement | null
-  if (!target || tocPanelRef.value?.contains(target) || target.closest('[data-toc-toggle]')) return
-  if (target.closest('.el-overlay, .el-popper, .el-message-box')) return
-  tocVisible.value = false
-  tocClosedAt = Date.now()
-}
-
-// 「夜间」按钮：浅色主题切到夜间，深色主题切回护眼绿
+// 「夜间」按钮：浅色主题切到夜间，深色主题切回靛青
 const nightMode = computed(() => isDarkReaderTheme(readerStore.settings.theme))
 function toggleNight() {
   readerStore.applyTheme(nightToggleTheme(readerStore.settings.theme))
@@ -902,7 +899,6 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
-  document.addEventListener('pointerdown', handleTocOutside, true)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
   await readerStore.loadPrefs()
@@ -944,7 +940,6 @@ onBeforeUnmount(() => {
 onUnmounted(() => {
   cancelAnimationFrame(scrollRaf)
   window.removeEventListener('keydown', handleKeydown)
-  document.removeEventListener('pointerdown', handleTocOutside, true)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
   pdfDoc.value?.loadingTask.destroy()
@@ -961,17 +956,7 @@ onUnmounted(() => {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* ── 阅读区（docs/reader-style-spec.md）：外围底色 + 居中纸张 ── */
-/* 全屏极淡斜纹，营造纸面质感 */
-.reader-page::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  background: repeating-linear-gradient(45deg, rgba(150,150,150,.02) 5px, transparent 30px, transparent 80px);
-}
-
+/* ── 阅读区：浅灰底 + 居中白色卡片（与网站靛青主题一致）── */
 .reader-content {
   flex: 1;
   overflow-y: auto;
@@ -984,43 +969,31 @@ onUnmounted(() => {
 .reader-content::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 22%, transparent); }
 .reader-content::-webkit-scrollbar-thumb:hover { background: var(--reader-text-secondary); }
 
-/* 纸张：细微噪点纹理平铺 */
-.paper,
-.reader-nav,
-.side-tool,
-.toc-panel {
-  background-color: var(--reader-paper-bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-.paper {
-  position: relative;
-  margin: 0 auto;
-  min-height: 100%;
-  padding: 0 64px 64px;
-  transition: width 0.2s ease;
-}
-
-/* 顶部导航：吸顶，下滑隐藏、上滑显示 */
+/* 顶栏：横跨全屏的毛玻璃条，吸顶；下滑隐藏、上滑显示 */
 .reader-nav {
   position: sticky;
   top: 0;
   z-index: 10;
-  height: 64px;
-  margin: 0 -64px;
-  padding: 0 24px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  background: color-mix(in srgb, var(--reader-paper-bg) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--reader-divider);
   font-family: var(--font-sans);
-  transition: transform 350ms ease;
+  transition: transform 300ms ease;
 }
 .reader-nav.hidden { transform: translateY(-100%); }
+.nav-inner {
+  width: var(--paper-w);
+  height: 56px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .nav-title {
   flex: 1;
   min-width: 0;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--reader-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1028,8 +1001,23 @@ onUnmounted(() => {
 }
 .nav-progress {
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   color: var(--reader-text-secondary);
   white-space: nowrap;
+}
+/* 全书进度细条 */
+.nav-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+}
+.nav-bar i {
+  display: block;
+  height: 100%;
+  background: var(--reader-accent);
+  transition: width 0.3s ease;
 }
 .nav-actions { display: none; gap: 2px; }
 .nav-btn,
@@ -1040,111 +1028,142 @@ onUnmounted(() => {
   color: var(--reader-text-secondary);
   cursor: pointer;
   font-family: var(--font-sans);
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 .nav-btn {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
-.nav-btn:hover { color: var(--reader-text); }
+.nav-btn:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
 
-/* 右侧悬浮工具栏：固定在纸张右外侧、垂直居中；64×64 竖排按钮 */
+/* 纸张：白色卡片，细边框 + 柔和阴影 */
+.paper {
+  position: relative;
+  margin: 28px auto 64px;
+  min-height: calc(100% - 120px);
+  padding: 48px 72px 56px;
+  background: var(--reader-paper-bg);
+  border: 1px solid var(--reader-divider);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(26, 36, 64, 0.04), 0 4px 16px rgba(26, 36, 64, 0.05);
+  transition: width 0.2s ease, background-color 0.3s ease;
+}
+
+/* 右侧工具栏：纸张右外侧的竖向胶囊，垂直居中 */
 .side-tools {
   position: fixed;
   top: 50%;
-  left: calc(50% + var(--paper-w) / 2 + 12px);
+  left: calc(50% + var(--paper-w) / 2 + 16px);
   transform: translateY(-50%);
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  background: var(--reader-panel-bg);
+  border: 1px solid var(--reader-divider);
+  border-radius: 14px;
+  box-shadow: var(--reader-panel-shadow);
 }
 .side-tool {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  background-color: var(--reader-toc-bg);
-  box-shadow: var(--reader-toc-shadow);
-  display: flex;
-  flex-direction: column;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.side-tool span {
-  margin-top: 2px;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--reader-text-secondary);
-  transition: color 0.15s ease;
+.side-tool:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
+.side-tool.on { color: var(--reader-accent); background: var(--reader-accent-weak); }
+.side-sep {
+  width: 20px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--reader-divider);
 }
-.side-tool:hover,
-.side-tool:hover span,
-.side-tool.on,
-.side-tool.on span { color: var(--reader-accent); }
 
-/* 章节标题区 */
-.chapter-head { text-align: center; }
+/* 章节标题区：左对齐，上方强调色小标「第 N 章」，下方分隔线 */
+.chapter-head {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--reader-divider);
+}
+.chapter-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--reader-accent);
+}
 .chapter-heading {
-  margin: 20px 0 0;
+  margin: 8px 0 0;
   font-family: var(--reader-font);
-  font-size: 36px;
-  line-height: 44px;
-  font-weight: 500;
+  font-size: 30px;
+  line-height: 1.35;
+  font-weight: 700;
   color: var(--reader-text);
 }
 .chapter-meta {
-  margin-top: 8px;
+  margin-top: 10px;
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   color: var(--reader-text-secondary);
 }
 
 /* 正文：段距用 em，随字号同比缩放 */
 .chapter-content {
-  margin-top: 1.5em;
-  font-weight: 400;
+  margin-top: 1.2em;
   color: var(--reader-text);
   transition: font-size 0.2s ease, line-height 0.2s ease;
 }
 .chapter-content :deep(p) {
-  margin: 0.8em 0 0;
+  margin: 0.9em 0 0;
   text-indent: 2em;
 }
 
-/* 章末导航 */
+/* 章末导航：上一章 / 目录 为描边按钮，下一章为主色按钮 */
 .chapter-end {
   display: flex;
   justify-content: center;
   gap: 12px;
   margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px solid var(--reader-divider);
 }
 .end-btn {
-  min-width: 96px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   height: 40px;
-  padding: 0 20px;
+  padding: 0 18px;
   border: 1px solid var(--reader-divider);
-  border-radius: 20px;
+  border-radius: 10px;
   font-size: 14px;
+  font-weight: 500;
+  color: var(--reader-text-2);
 }
-.end-btn:hover:not(:disabled) {
-  color: var(--reader-text);
-  border-color: var(--reader-text-secondary);
+.end-btn:hover:not(:disabled) { color: var(--reader-accent); border-color: var(--reader-accent); }
+.end-btn.primary {
+  border-color: var(--reader-accent);
+  background: var(--reader-accent);
+  color: #fff;
 }
-.end-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.end-btn.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+.end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* PDF 逐页渲染：失败提示居中显示 */
-.pdf-chapter { margin-top: 24px; }
+.pdf-chapter { margin-top: 0; }
 .pdf-chapter .pdf-error { padding: 80px 0; }
 
 /* ── 瀑布流：章节之间用分隔线，第一章不加 ── */
 .waterfall-chapter + .waterfall-chapter {
-  margin-top: 56px;
-  padding-top: 8px;
+  margin-top: 64px;
+  padding-top: 48px;
   border-top: 1px solid var(--reader-divider);
 }
 .waterfall-loading,
@@ -1159,128 +1178,151 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* ── 目录面板（docs/reader-toc-spec.md）── */
+/* ── 目录抽屉：左侧滑出 ── */
 .toc-layer {
   position: fixed;
-  /* 右侧让出阅读区滚动条（6px），面板与纸张按同一宽度居中、正好重合 */
-  inset: 0 6px 0 0;
-  z-index: 20;
-  pointer-events: none;
+  inset: 0;
+  z-index: 40;
+  background: rgba(15, 23, 42, 0.18);
 }
 .toc-panel {
-  pointer-events: auto;
-  width: var(--paper-w);
-  height: 100%;
-  margin: 0 auto;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(400px, 100%);
   display: flex;
   flex-direction: column;
-  background-color: var(--reader-toc-bg);
-  box-shadow: var(--reader-toc-shadow);
+  background: var(--reader-panel-bg);
+  box-shadow: var(--reader-panel-shadow);
   color: var(--reader-text);
   font-family: var(--font-sans);
 }
 .toc-enter-active,
-.toc-leave-active { transition: opacity 180ms ease, transform 180ms ease; }
+.toc-leave-active { transition: opacity 200ms ease; }
+.toc-enter-active .toc-panel,
+.toc-leave-active .toc-panel { transition: transform 200ms ease; }
 .toc-enter-from,
-.toc-leave-to { opacity: 0; transform: translateY(8px); }
+.toc-leave-to { opacity: 0; }
+.toc-enter-from .toc-panel,
+.toc-leave-to .toc-panel { transform: translateX(-24px); }
 
 .toc-head {
-  margin-top: 36px;
-  padding: 0 32px 0 22px;
   display: flex;
-  align-items: flex-end;
-  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 16px 0 20px;
 }
-.toc-tab {
-  padding: 6px 10px;
+/* 分段切换：目录 / 书签 */
+.toc-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--reader-active-bg);
+}
+.toc-seg button {
+  min-width: 72px;
+  height: 32px;
+  padding: 0 14px;
   border: none;
   border-radius: 8px;
   background: transparent;
   font-family: inherit;
-  font-size: 24px;
-  line-height: 32px;
-  font-weight: 400;
-  color: var(--reader-text-2);
-  cursor: pointer;
-}
-.toc-tab.active { font-weight: 500; color: var(--reader-text); }
-.toc-tab:hover { background: var(--reader-hover-bg); }
-.toc-tab:active { background: var(--reader-active-bg); }
-/* 状态文字紧跟「目录」Tab */
-.toc-status {
-  margin-left: calc(8px - 18px);
-  padding-bottom: 10px;
   font-size: 14px;
   font-weight: 500;
   color: var(--reader-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.toc-seg button.active {
+  background: var(--reader-panel-bg);
+  color: var(--reader-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.toc-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--reader-text-secondary);
+  cursor: pointer;
+}
+.toc-icon-btn:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
+.toc-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px 20px;
+  border-bottom: 1px solid var(--reader-divider);
+}
+.toc-status {
+  font-size: 13px;
+  color: var(--reader-text-secondary);
   white-space: nowrap;
 }
-.toc-actions { margin-left: auto; padding-bottom: 6px; display: flex; align-items: center; }
-.toc-action.toc-close { display: none; }
 .toc-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border: none;
   border-radius: 8px;
   background: transparent;
   font-family: inherit;
-  font-size: 14px;
-  color: var(--reader-text-secondary);
+  font-size: 13px;
+  color: var(--reader-text-2);
   cursor: pointer;
   white-space: nowrap;
 }
 .toc-action:hover { color: var(--reader-accent); background: var(--reader-hover-bg); }
 
-/* 列表滚动区：细滚动条 */
 .toc-body {
-  margin-top: 24px;
-  padding: 0 16px 32px;
   flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  padding: 8px 10px 24px;
 }
 .toc-body::-webkit-scrollbar { width: 6px; }
 .toc-body::-webkit-scrollbar-track { background: transparent; }
-.toc-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 18%, transparent); border-radius: 3px; }
+.toc-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 16%, transparent); border-radius: 3px; }
 
-/* 两列章节列表，每项底部分隔线两端内缩 16px */
-.toc-list {
-  list-style: none;
-  margin: 8px 0 20px;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.toc-list li { position: relative; min-width: 0; }
-.toc-list li::after {
-  content: '';
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 0;
-  height: 1px;
-  background: var(--reader-divider);
-}
+/* 单列列表；当前章节：强调色浅底 + 左侧竖条（同网站侧栏选中样式） */
+.toc-list { list-style: none; margin: 0; padding: 0; }
 .toc-link {
+  position: relative;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 9px 12px;
   border-radius: 8px;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--reader-text);
   cursor: pointer;
 }
 .toc-link:hover { background: var(--reader-hover-bg); }
 .toc-link:active { background: var(--reader-active-bg); }
-.toc-link.current { color: var(--reader-accent); }
-/* 已读：当前阅读章节之前的章节标题变浅灰 */
 .toc-link.read { color: var(--reader-text-secondary); }
+.toc-link.current {
+  color: var(--reader-accent);
+  background: var(--reader-accent-weak);
+  font-weight: 600;
+}
+.toc-link.current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--reader-accent);
+}
 .toc-title {
   flex: 1;
   min-width: 0;
@@ -1288,14 +1330,22 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.toc-note { margin-left: 8px; font-size: 13px; color: var(--reader-text-secondary); }
-.toc-extra { flex-shrink: 0; font-size: 13px; color: var(--reader-text-secondary); }
+.toc-link.bookmark .toc-title { white-space: normal; }
+.toc-extra {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--reader-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .toc-del {
   flex-shrink: 0;
   display: inline-flex;
-  padding: 4px;
+  padding: 5px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--reader-text-secondary);
   cursor: pointer;
@@ -1304,42 +1354,37 @@ onUnmounted(() => {
 }
 .toc-link:hover .toc-del,
 .toc-del:focus-visible { opacity: 1; }
-.toc-del:hover { color: var(--reader-accent); background: var(--reader-active-bg); }
+.toc-del:hover { color: #e5484d; background: var(--reader-active-bg); }
 .toc-empty {
-  padding: 64px 0;
+  padding: 64px 16px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.8;
   color: var(--reader-text-secondary);
 }
 
-/* 窄屏：纸张与目录面板占满宽度，右侧工具栏收进顶部导航 */
+/* 窄屏：纸张占满宽度，工具栏收进顶栏 */
 @media (max-width: 768px) {
-  .paper,
-  .toc-panel { width: 100% !important; }
+  .reader-content { --paper-w: 100%; }
+  .paper { width: 100% !important; }
   .side-tools { display: none; }
   .nav-actions { display: flex; }
-  .toc-action.toc-close { display: inline-flex; }
+  .nav-inner { padding: 0 8px; }
 }
-/* 手机（<640px） */
+/* 手机（<640px）：纸张去掉卡片外框 */
 @media (max-width: 639px) {
-  .paper { padding: 0 20px 48px; }
-  .reader-nav {
-    height: 56px;
-    margin: 0 -20px;
-    padding: 0 8px;
-    gap: 4px;
+  .paper {
+    margin: 0;
+    min-height: calc(100% - 56px);
+    padding: 28px 20px 48px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
-  .chapter-heading { font-size: 28px; line-height: 36px; }
+  .nav-inner { gap: 4px; }
+  .chapter-heading { font-size: 24px; }
   /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
-  .paper.pdf-wrapper { padding: 0 6px 16px; }
-  .paper.pdf-wrapper .reader-nav { margin: 0 -6px; }
-  /* 目录：单列，头部收紧，删除按钮常显（触屏无悬停） */
-  .toc-head { margin-top: 20px; padding: 0 12px 0 6px; gap: 6px; }
-  .toc-tab { font-size: 20px; line-height: 28px; }
-  .toc-status { margin-left: 0; }
-  .toc-body { margin-top: 12px; padding: 0 4px 24px; }
-  .toc-list { grid-template-columns: 1fr; }
-  .toc-extra { display: none; }
+  .paper.pdf-wrapper { padding: 12px 6px 16px; }
   .toc-del { opacity: 1; }
 }
 
