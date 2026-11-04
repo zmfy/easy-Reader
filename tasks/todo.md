@@ -117,3 +117,9 @@
 - [x] 方案：阅读时把首个标题之前的可见文字并入第 0 章；章节列表与序号不变；指纹改用 getChapterContentForFingerprint（从标题开始），保持不变、无需重扫
 - [x] 验证：新增 4 个单测（28 suites / 213 tests）；真实书库 6 本 TXT 新旧代码指纹与章节数全部一致、文件未改动；4 本书第 0 章补回前言；接口实测
 - [ ] 备注：前言常含盗版站广告（原文件内容），如需过滤可另做
+
+# 漫画 EPUB 封面空白
+
+- [x] 根因：rewriteEpubAssetUrls 只改写 `<img src>`，SVG 封面 `<image xlink:href="../Images/...">` 保持相对路径，浏览器请求到 SPA 的 index.html
+- [x] 改写函数移到 utils/epub-asset-url.ts（便于单测），新增 `<image xlink:href / href>` 与单引号属性；绝对 / data: / # 地址不动
+- [x] 验证：新增 4 个单测（29 suites / 217 tests）、tsc；全书库 25,333 章新旧对比，仅 132 章的 139 处 `<image>` 变化且均指向 EPUB 内存在的资源；Chrome 柯南第 1 页封面正常显示

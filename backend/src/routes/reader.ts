@@ -8,6 +8,7 @@ import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { resolveRealPathInsideRoot } from '../utils/path-safe';
+import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 
@@ -32,29 +33,6 @@ const window = new JSDOM('').window;
 const purify = DOMPurify(window);
 
 // Resolve a relative path (src) against a base file path (chapterHref)
-function resolveEpubPath(chapterHref: string, src: string): string {
-  const dir = chapterHref.split('/').slice(0, -1);
-  const parts = [...dir, ...src.split('/')];
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === '..') out.pop();
-    else if (p !== '.') out.push(p);
-  }
-  return out.join('/');
-}
-
-// Replace relative img src with API asset URLs so the browser can load them
-function rewriteEpubAssetUrls(content: string, bookId: string, chapterHref: string): string {
-  return content.replace(
-    /(<img\b[^>]*?\s)src="([^"]+)"([^>]*>)/gi,
-    (_match, pre, src, post) => {
-      if (/^(https?:|data:|\/)/i.test(src)) return _match;
-      const resolved = resolveEpubPath(chapterHref, src);
-      return `${pre}src="/api/reader/${bookId}/asset/${resolved}"${post}`;
-    }
-  );
-}
-
 // GET /api/reader/:bookId/chapters
 router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
