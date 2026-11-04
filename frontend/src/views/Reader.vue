@@ -44,9 +44,14 @@
     >
       <!-- ── 章节模式 ── -->
       <template v-if="readerStore.settings.pageMode === 'scroll'">
-        <div class="content-wrapper" :style="wrapperStyle">
+        <div class="content-wrapper" :class="{ 'pdf-wrapper': isPdfRender }" :style="wrapperStyle">
           <div v-if="loading" class="content-loading">
             <el-skeleton :rows="20" animated />
+          </div>
+          <div v-else-if="isPdfRender" class="chapter-content pdf-chapter">
+            <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="reader.currentChapterIndex.value + 1" />
+            <div v-else-if="pdfDocFailed" class="pdf-error">PDF 加载失败，请检查文件是否完整</div>
+            <el-skeleton v-else :rows="20" animated />
           </div>
           <div
             v-else
@@ -60,7 +65,7 @@
 
       <!-- ── 瀑布流模式 ── -->
       <template v-else>
-        <div class="content-wrapper" :style="wrapperStyle">
+        <div class="content-wrapper" :class="{ 'pdf-wrapper': isPdfRender }" :style="wrapperStyle">
           <div
             v-for="ch in waterfallChapters"
             :key="ch.index"
@@ -70,7 +75,10 @@
             <div class="waterfall-chapter-divider">
               <span>{{ ch.title }}</span>
             </div>
-            <div class="chapter-content" v-html="ch.content" :style="contentStyle" @click.capture="handleContentClick" />
+            <div v-if="isPdfRender" class="chapter-content pdf-chapter">
+              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
+            </div>
+            <div v-else class="chapter-content" v-html="ch.content" :style="contentStyle" @click.capture="handleContentClick" />
           </div>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
@@ -85,15 +93,15 @@
     <!-- Toolbar Bottom -->
     <div class="reader-toolbar bottom" :class="{ visible: toolbarVisible }">
       <template v-if="readerStore.settings.pageMode === 'scroll'">
-        <el-button :icon="ArrowLeft" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一章</el-button>
+        <el-button :icon="ArrowLeft" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一{{ unitLabel }}</el-button>
         <div class="progress-info">
           {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}
         </div>
-        <el-button :icon="ArrowRight" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一章</el-button>
+        <el-button :icon="ArrowRight" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}</el-button>
       </template>
       <template v-else>
         <div class="progress-info">
-          {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }} 章 · 瀑布流
+          {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }} {{ unitLabel }} · 瀑布流
         </div>
       </template>
     </div>
@@ -234,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Star, Setting, List, Loading, Delete } from '@element-plus/icons-vue'
@@ -242,6 +250,8 @@ const Bookmark = Star
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
+import type { PDFDocumentProxy } from '@/utils/pdf'
+import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 
 const route = useRoute()
@@ -272,6 +282,24 @@ async function loadPdfBlob() {
     pdfBlobUrl.value = URL.createObjectURL(blob)
   } finally {
     pdfLoading.value = false
+  }
+}
+
+// ── PDF 逐页渲染（插件模式）────────────────────────────────
+// 每页作为一章，沿用章节翻页 / 瀑布流 / 进度 / 书签；正文用 pdf.js 按原版画出，保留图片与版式
+const isPdfRender = computed(() => reader.bookFormat.value === 'pdf' && reader.pdfUsePlugin.value)
+const unitLabel = computed(() => isPdfRender.value ? '页' : '章')
+const pdfDoc = shallowRef<PDFDocumentProxy | null>(null)
+const pdfDocFailed = ref(false)
+
+async function loadPdfDocument() {
+  try {
+    // pdf.js 体积较大，只在打开 PDF 时按需加载，不影响其他格式的阅读页
+    const [resp, { openPdfDocument }] = await Promise.all([readerApi.getRaw(bookId), import('@/utils/pdf')])
+    pdfDoc.value = await openPdfDocument(resp.data as ArrayBuffer)
+  } catch (err) {
+    console.error('[pdf] load document failed', err)
+    pdfDocFailed.value = true
   }
 }
 
@@ -702,6 +730,8 @@ onMounted(async () => {
     await loadPdfBlob()
     return
   }
+  // 文件下载与进度读取并行，页面在文档就绪后自动渲染
+  if (isPdfRender.value) loadPdfDocument()
 
   await reader.loadProgress()
   reader.loadBookmarks()
@@ -735,6 +765,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
+  pdfDoc.value?.loadingTask.destroy()
 })
 </script>
 
@@ -798,6 +829,15 @@ onUnmounted(() => {
     width: 100% !important;
     padding: 24px 16px;
   }
+  /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
+  .content-wrapper.pdf-wrapper {
+    padding: 16px 6px;
+  }
+}
+
+/* PDF 逐页渲染：页面在深色背景上居中，失败提示居中显示 */
+.pdf-chapter .pdf-error {
+  padding: 80px 0;
 }
 
 .chapter-content {

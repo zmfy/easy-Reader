@@ -132,3 +132,15 @@
 - [x] 验证：新增 8 个单测（30 suites / 225 tests）、tsc；真实 PDF 195 页无空页，1522 段中页内误断约 39 处（多因原文破折号/省略号非文字）；Chrome 插件模式显示正常
 - [ ] 已知残留：封面大标题的假粗体副本被切成不同片段时无法去重（全书仅 1 处）；页眉页脚广告为原文内容，未过滤
 - 指纹（size + 头部 sha1）不依赖提取文字，无需重扫
+
+# PDF 插件模式改为按原版逐页渲染（pdf.js）
+
+- [x] 前端引入 pdfjs-dist@6.4.299（legacy 构建，兼容较旧手机浏览器）
+- [x] vite 内联插件：开发时提供、构建时复制 cmaps / standard_fonts / wasm 到 /pdfjs/
+- [x] utils/pdf.ts：加载文档（worker、cMap、字体、wasm 地址）
+- [x] components/PdfPage.vue：按容器宽度 × devicePixelRatio 渲染 canvas，宽度变化重绘，切页取消旧渲染，先占位防跳动
+- [x] Reader.vue：插件模式下章节翻页 / 瀑布流用 PdfPage 代替文字；按钮显示「上一页 / 下一页」；进度、书签、目录沿用
+- [x] 设置页文案更新、更新日志；pdf.js 改为打开 PDF 时按需加载（阅读页 JS 592KB → 51KB）
+- [x] 验证：typecheck、vitest、build（dist 含 pdfjs 资源）；Chrome 电脑 + 手机视口：封面图片、翻页、瀑布流、进度恢复、书签
+  - 结果：vue-tsc、vitest 7 passed、build 含 200 个 pdfjs 资源；开发与生产预览下封面图片 / 原版排版正常，翻页、瀑布流加载与裁剪、刷新后进度恢复（页 + 页内位置）、书签跳转均正常；手机视口 390px 按 2 倍清晰度重绘
+- [ ] 备注：本书字体已嵌入，未实际触发 cmaps 加载（资源可访问已确认）；原生模式在安卓手机浏览器中通常无法内嵌显示 PDF，可考虑把逐页显示设为默认
