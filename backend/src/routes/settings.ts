@@ -80,7 +80,7 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
 
 // GET /api/settings/ai-plugins
 router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
-  const plugins = aiPlugins.map(p => ({ name: p.name, label: p.label, fields: p.fields, placeholders: p.placeholders || {} }));
+  const plugins = aiPlugins.map(p => ({ name: p.name, label: p.label, fields: p.fields, placeholders: p.placeholders || {}, options: p.options || {} }));
   successResponse(res, plugins);
 });
 

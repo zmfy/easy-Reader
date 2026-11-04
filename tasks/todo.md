@@ -150,3 +150,20 @@
 - [x] reader.ts / settings.ts：pdf_use_plugin 仅为 'false' 时走浏览器原生，未设置默认逐页显示；已手动关闭的保持原样
 - [x] 验证：临时库中 未设置 / 'false' / 'true' 三种状态的 chapters 与 reader-plugins 接口结果正确；Chrome 未设置时直接逐页显示、设置页开关为开；30 suites / 225 tests、tsc
 - [ ] 备注：逐页显示仍由后端 pdf-parse 解析全书取得页数（本书 195 页约 0.5 秒），提取出的文字已不再显示；大 PDF 可考虑改为只取页数
+
+# MiniMax AI 填充报错
+
+- [x] 第一次：402 insufficient_balance (1008) —— 按量付费 key 所在账户无余额，与代码无关（新旧域名、新旧模型均同样结果）
+- [x] 换为订阅 key（sk-cp-）后：默认模型 MiniMax-M2 返回 404「no longer available (2069)」；MiniMax-M3.1-Flash 正常
+- [x] 修复 minmax.ts：默认模型 → MiniMax-M3.1-Flash，接口 → api.minimax.cn（官方文档），提示文字更新，去掉已被忽略的 temperature；新增 2 个单测
+- [x] 验证：tests/ai 18 passed、tsc；应用内单本 AI 填充成功；《三国演义》约 11 秒、结果正确
+- [ ] 备注：书名与内容矛盾的文件（测试库「理智与情感」实为《凡人修仙传》）耗时 77 秒且结果编造；reasoning_effort=low 可快约 40%，结果相同，未采用
+- [ ] 备注：已在设置中手动填写 MiniMax-M2 / M2.x 模型的需改为新模型
+
+# MiniMax 推理强度可在设置页配置
+
+- [x] 实测：MiniMax-M3 收到 reasoning_effort 会忽略不报错；非法值返回 400（允许 low/medium/high/xhigh/max）
+- [x] AiPlugin 新增可选 options（固定取值字段）；/settings/ai-plugins 返回 options
+- [x] minmax：新增 reasoningEffort 字段与选项（空 = 默认 max，不传）；请求体统一由 requestBody 生成；新增 2 个单测
+- [x] 设置页：有 options 的字段显示为下拉框并附说明；下拉字段选「默认」时提交空值以清除；「已测试通过的配置」MiniMax-M2 → M3.1-Flash；更新说明补一条
+- [x] 验证：31 suites / 229 tests、前后端 tsc；Chrome 选 low 保存 → 库中为 low、刷新后正确回显、《三国演义》AI 填充 7.2 秒且结果正确 → 切回默认保存 → 库中清空；API Key 始终未被覆盖

@@ -159,7 +159,7 @@
               </div>
               <div class="ai-tip-item">
                 <span class="ai-tip-name">MiniMax</span>
-                <span class="ai-tip-desc">模型：<code>MiniMax-M2</code></span>
+                <span class="ai-tip-desc">模型：<code>MiniMax-M3.1-Flash</code></span>
               </div>
             </div>
             <div class="form-field" style="margin-bottom: 20px">
@@ -180,12 +180,27 @@
                 class="form-field"
               >
                 <label>{{ fieldLabels[field] || field }}</label>
+                <el-select
+                  v-if="currentAiPlugin.options?.[field]"
+                  v-model="aiForm[field]"
+                  :placeholder="getFieldPlaceholder(field)"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="opt in currentAiPlugin.options[field]"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
                 <el-input
+                  v-else
                   v-model="aiForm[field]"
                   :type="field === 'apiKey' ? 'password' : 'text'"
                   :placeholder="field === 'apiKey' ? (aiApiKeySet ? '已设置（输入新 Key 以修改）' : getFieldPlaceholder(field)) : getFieldPlaceholder(field)"
                   :show-password="field === 'apiKey'"
                 />
+                <div v-if="fieldHints[field]" class="field-hint">{{ fieldHints[field] }}</div>
               </div>
             </div>
             <div class="form-field" style="margin-top: 16px">
@@ -485,7 +500,7 @@ const inviteEmail = ref('')
 const smtpConfigured = ref(false)
 const smtpPassSet = ref(false)
 const users = ref<Array<{ id: string; username: string; role: string; created_at: string }>>([])
-const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string> }>>([])
+const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string>; options?: Record<string, Array<{ value: string; label: string }>> }>>([])
 const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
 const aiSummaryLength = ref<number>(100)
@@ -587,6 +602,8 @@ const changelog: ChangelogRelease[] = [
       { tag: 'reader', text: 'PDF 「阅读器逐页显示」模式（原「插件解析」）改为按原版逐页显示，封面图片、字体与排版和原文件一致；支持章节翻页 / 瀑布流、阅读进度与书签，手机上按屏幕宽度自适应' },
       { tag: 'reader', text: 'PDF 默认改为「阅读器逐页显示」（安卓等手机浏览器无法内嵌显示 PDF）；管理员在设置中手动关闭过的保持浏览器原生打开' },
       { tag: 'epub', text: '修复部分漫画 EPUB 第一页封面空白的问题（SVG 方式引用的图片此前未能加载）' },
+      { tag: 'ai', text: 'MiniMax 跟进官方接口变更：默认模型改为 MiniMax-M3.1-Flash（MiniMax-M2 已下线，未填写模型时 AI 填充会失败），接口地址改为 api.minimax.cn' },
+      { tag: 'ai', text: 'MiniMax 新增「推理强度」设置（仅 MiniMax-M3.1-Flash 生效）：调低可明显加快 AI 填充并减少消耗' },
       { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
     ],
   },
@@ -694,6 +711,11 @@ const fieldLabels: Record<string, string> = {
   apiKey: 'API Key',
   model: '模型',
   baseUrl: '接口地址',
+  reasoningEffort: '推理强度',
+}
+
+const fieldHints: Record<string, string> = {
+  reasoningEffort: '仅对 MiniMax-M3.1-Flash 生效；越低越快、消耗越少，书名与内容明确时 low 已足够',
 }
 
 const fieldPlaceholders: Record<string, string> = {
@@ -818,8 +840,9 @@ async function saveSettings(tab: string) {
       payload['ai_summary_length'] = String(aiSummaryLength.value)
       payload['ai_fill_concurrency'] = String(aiFillConcurrency.value)
       for (const field of currentAiPlugin.value.fields) {
-        if (aiForm[field]) {
-          payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field]
+        // 下拉字段选「默认」时也要提交空值，以清除之前保存的设置
+        if (aiForm[field] || currentAiPlugin.value.options?.[field]) {
+          payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field] ?? ''
         }
       }
     }

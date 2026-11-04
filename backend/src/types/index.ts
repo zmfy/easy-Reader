@@ -109,6 +109,8 @@ export interface AiPlugin {
   label: string;
   fields: string[];
   placeholders?: Record<string, string>;
+  /** 取值固定的字段：设置页显示为下拉框（value 为空表示不设置、使用接口默认值） */
+  options?: Record<string, Array<{ value: string; label: string }>>;
   fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>>;
   classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string>;
   /**

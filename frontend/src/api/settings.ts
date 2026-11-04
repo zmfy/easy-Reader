@@ -12,7 +12,7 @@ export const settingsApi = {
     http.put<ApiResponse<null>>('/settings', settings),
 
   getAiPlugins: () =>
-    http.get<ApiResponse<Array<{ name: string; label: string; fields: string[] }>>>('/settings/ai-plugins'),
+    http.get<ApiResponse<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string>; options?: Record<string, Array<{ value: string; label: string }>> }>>>('/settings/ai-plugins'),
 
   getAiStatus: () =>
     http.get<ApiResponse<{ configured: boolean; active_plugin: string | null }>>('/settings/ai-status'),
