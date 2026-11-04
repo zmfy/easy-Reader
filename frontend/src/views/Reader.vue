@@ -176,6 +176,12 @@
           <el-slider v-model="readerStore.settings.lineHeight" :min="1.4" :max="2.5" :step="0.1" @change="saveSettings" />
         </div>
 
+        <!-- 字间距 -->
+        <div class="setting-group">
+          <div class="setting-label">字间距 {{ readerStore.settings.letterSpacing }}px</div>
+          <el-slider v-model="readerStore.settings.letterSpacing" :min="0" :max="5" :step="0.5" @change="saveSettings" />
+        </div>
+
         <!-- 页面宽度 -->
         <div class="setting-group">
           <div class="setting-label">页面宽度 {{ readerStore.settings.pageWidth }}%</div>
