@@ -226,7 +226,7 @@
               <li v-for="ch in tocChapters" :key="ch.index">
                 <a
                   class="toc-link"
-                  :class="{ current: ch.index === reader.currentChapterIndex.value }"
+                  :class="{ current: ch.index === reader.currentChapterIndex.value, read: ch.index < reader.currentChapterIndex.value }"
                   :title="ch.title || `第 ${ch.index + 1} ${unitLabel}`"
                   @click="jumpToChapter(ch.index)"
                 ><span class="toc-title">{{ ch.title || `第 ${ch.index + 1} ${unitLabel}` }}</span></a>
@@ -1273,6 +1273,8 @@ onUnmounted(() => {
 .toc-link:hover { background: var(--reader-hover-bg); }
 .toc-link:active { background: var(--reader-active-bg); }
 .toc-link.current { color: var(--reader-accent); }
+/* 已读：当前阅读章节之前的章节标题变浅灰 */
+.toc-link.read { color: var(--reader-text-secondary); }
 .toc-title {
   flex: 1;
   min-width: 0;
