@@ -99,7 +99,10 @@
 - [x] zod 3 → 4：z.record 补 key 类型（2 处）、ZodError.errors → issues（1 处）；核对 default / pipe / catch 等 v4 语义变化不受影响
 - [x] nodemailer 6 → 10：逐个核对 7/8/9/10 的 BREAKING（SES、错误码改名、远程内容 TLS 校验、Node 20+）均不涉及；@types/nodemailer → 8
 - [x] 验证：28 suites / 203 tests、生产构建、18 项接口校验实测、本地调试 SMTP 实际收发邀请邮件并核对转义
-- [ ] 剩余：adm-zip / epub2 暂无修复版本
+- [x] adm-zip 0.6.1 已修复（≤0.6.0 的 8 个 high 漏洞）；epub2 3.0.2 仍锁 ^0.5.10 → backend package.json 加 overrides 强制 ^0.6.1
+  - 核对 epub2 用到的 API（构造、getEntries、getEntry、readFileAsync 回调 (data, err)）在 0.6.1 中签名不变
+  - 验证：书库 34 本 EPUB 升级前后章节列表 / 全部章节内容 / 全部资源哈希完全一致；28 suites / 213 tests、tsc；npm audit --omit=dev 0 漏洞
+  - 剩余开发依赖 23 个 low/moderate（jest 链路 minimatch 等），不进生产镜像，未处理
 
 # 审核模式反复产生待审核批次
 
