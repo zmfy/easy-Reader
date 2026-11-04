@@ -89,6 +89,13 @@ describe('applyAiFill field and lock rules', () => {
     expect(locks()).toEqual(['author']);
   });
 
+  it('ignores whitespace-only differences from the current value (no write, no lock)', async () => {
+    setupDb({ summary: '旧简介\n', manually_edited_fields: '[]' });
+    await applyAiFill('b1', input({ summary: '旧简介', suggested: {} }));
+    expect(row().summary).toBe('旧简介\n');
+    expect(locks()).toEqual([]);
+  });
+
   it('writes is_finished when provided', async () => {
     await applyAiFill('b1', input({ is_finished: true }));
     expect(row().is_finished).toBe(1);

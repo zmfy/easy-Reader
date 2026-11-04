@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getDb } from '../db';
 import { Book } from '../types';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
@@ -29,6 +30,49 @@ export interface AiFillApplyInput {
   coverTitle?: string;
   /** 预览返回的 AI 建议原样回传，用于区分「接受 AI 结果」与「手动修改」 */
   suggested: { author?: string; summary?: string; category?: string };
+}
+
+const similarWorkSchema = z.object({
+  title: z.string().trim().min(1).max(100),
+  author: z.string().trim().max(100).optional(),
+  reason: z.string().trim().max(500).optional(),
+});
+
+// 上限按「已有内容 / AI 结果可能达到的长度」放宽（导入的简介常超过 5000 字）
+const aiFillApplySchema = z.object({
+  author: z.string().trim().max(200).optional(),
+  summary: z.string().trim().max(20000).optional(),
+  category: z.string().trim().max(50).optional(),
+  is_finished: z.boolean().optional(),
+  recommended_tags: z.array(z.string().trim().min(1).max(30)).max(20),
+  similar_works: z.array(similarWorkSchema).max(20),
+  cover: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('keep') }),
+    z.object({ type: z.literal('douban'), pic: z.string().max(500) }),
+    z.object({ type: z.literal('default') }),
+  ]),
+  ratingSubjectUrl: z.string().max(500).optional(),
+  coverTitle: z.string().trim().max(200).optional(),
+  suggested: z.object({
+    author: z.string().optional(),
+    summary: z.string().optional(),
+    category: z.string().optional(),
+  }),
+});
+
+const FIELD_LABELS: Record<string, string> = {
+  author: '作者', summary: '简介', category: '分类', is_finished: '连载状态',
+  recommended_tags: '推荐标签', similar_works: '类似作品', cover: '封面', coverTitle: '封面书名',
+};
+
+/** 校验应用请求体；失败时给出具体字段，方便用户在预览中修改 */
+export function parseAiFillApplyBody(body: unknown):
+  { ok: true; data: AiFillApplyInput } | { ok: false; message: string } {
+  const parsed = aiFillApplySchema.safeParse(body);
+  if (parsed.success) return { ok: true, data: parsed.data };
+  const field = String(parsed.error.issues[0]?.path[0] ?? '');
+  const label = FIELD_LABELS[field];
+  return { ok: false, message: label ? `「${label}」内容过长或格式不正确` : '参数校验失败' };
 }
 
 export class AiFillApplyError extends Error {
@@ -74,13 +118,14 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
   for (const field of LOCKABLE) {
     const value = input[field];
     if (value === undefined) continue;
-    const current = (book[field] as string | null | undefined) ?? '';
-    const suggestion = input.suggested[field];
-    if (suggestion && value === suggestion) {
+    // 只比较去掉首尾空白后的内容：现有值可能带换行（导入 / 手动保存），提交值经过 trim
+    const current = ((book[field] as string | null | undefined) ?? '').trim();
+    const suggestion = input.suggested[field]?.trim();
+    if (suggestion && value.trim() === suggestion) {
       // 接受 AI 结果：内容已是 AI 的，解除锁定
-      if (value !== current) { updates.push(`${field} = ?`); values.push(value); }
+      if (value.trim() !== current) { updates.push(`${field} = ?`); values.push(value); }
       toUnlock.push(field);
-    } else if (value !== current) {
+    } else if (value.trim() !== current) {
       // 手动修改：写入并锁定，避免之后被批量填充覆盖
       updates.push(`${field} = ?`); values.push(value);
       toLock.push(field);

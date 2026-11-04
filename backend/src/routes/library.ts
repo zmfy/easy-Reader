@@ -26,7 +26,7 @@ import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { getMetadata } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
 import { buildAiFillPreview, BookNotFoundError, cleanBookTitle } from '../services/ai-fill-preview';
-import { applyAiFill, AiFillApplyError } from '../services/ai-fill-apply';
+import { applyAiFill, AiFillApplyError, parseAiFillApplyBody } from '../services/ai-fill-apply';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
 import { hideFilePathForNonAdmin } from '../utils/book-view';
 
@@ -438,37 +438,10 @@ router.post('/:id/ai-fill/preview', authMiddleware, adminMiddleware, async (req:
   }
 });
 
-const similarWorkSchema = z.object({
-  title: z.string().trim().min(1).max(100),
-  author: z.string().trim().max(100).optional(),
-  reason: z.string().trim().max(300).optional(),
-});
-
-const aiFillApplySchema = z.object({
-  author: z.string().trim().max(200).optional(),
-  summary: z.string().trim().max(5000).optional(),
-  category: z.string().trim().max(50).optional(),
-  is_finished: z.boolean().optional(),
-  recommended_tags: z.array(z.string().trim().min(1).max(30)).max(20),
-  similar_works: z.array(similarWorkSchema).max(20),
-  cover: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('keep') }),
-    z.object({ type: z.literal('douban'), pic: z.string().max(500) }),
-    z.object({ type: z.literal('default') }),
-  ]),
-  ratingSubjectUrl: z.string().max(500).optional(),
-  coverTitle: z.string().trim().max(200).optional(),
-  suggested: z.object({
-    author: z.string().optional(),
-    summary: z.string().optional(),
-    category: z.string().optional(),
-  }),
-});
-
 // POST /api/library/:id/ai-fill/apply — 写入用户在预览中确认的结果
 router.post('/:id/ai-fill/apply', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
-  const parsed = aiFillApplySchema.safeParse(req.body);
-  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const parsed = parseAiFillApplyBody(req.body);
+  if (!parsed.ok) { errorResponse(res, 422, 'VALIDATION_ERROR', parsed.message); return; }
   try {
     const book = await applyAiFill(req.params.id, parsed.data, getActivePluginName(getDb()) ?? undefined);
     successResponse(res, book, 'AI 信息已应用');

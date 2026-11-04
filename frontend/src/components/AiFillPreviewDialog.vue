@@ -69,6 +69,7 @@
           :type="f.key === 'summary' ? 'textarea' : 'text'"
           :autosize="f.key === 'summary' ? { minRows: 3, maxRows: 10 } : undefined"
           :placeholder="f.label"
+          :maxlength="f.max"
         />
         <div v-if="isLocked(f.key) && preview.suggested[f.key]" class="hint other-value">
           {{ form.useAi[f.key] ? '原内容' : 'AI 建议' }}：{{ clip(form.useAi[f.key] ? preview.current[f.key] : preview.suggested[f.key]) }}
@@ -147,10 +148,11 @@ const newTag = ref('')
 const newSimilar = reactive({ title: '', author: '' })
 const defaultCoverUrl = ref('')
 
-const textFields: Array<{ key: AiFillLockableField; label: string }> = [
-  { key: 'author', label: '作者' },
-  { key: 'category', label: '分类' },
-  { key: 'summary', label: '简介' },
+// 长度上限与后端 parseAiFillApplyBody 一致
+const textFields: Array<{ key: AiFillLockableField; label: string; max: number }> = [
+  { key: 'author', label: '作者', max: 200 },
+  { key: 'category', label: '分类', max: 50 },
+  { key: 'summary', label: '简介', max: 20000 },
 ]
 
 watch(() => props.preview, (p) => {
