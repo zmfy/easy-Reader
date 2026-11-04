@@ -48,41 +48,41 @@
                 <el-input v-model="editForm.title" placeholder="书名" />
                 <el-input v-model="editForm.author" placeholder="作者" />
               </div>
-              <div class="edit-actions">
-                <template v-if="authStore.isAdmin">
-                  <el-button v-if="!editing" size="small" @click="startEdit">编辑</el-button>
-                  <template v-else>
-                    <el-button size="small" type="primary" @click="saveEdit" :loading="saving">保存</el-button>
-                    <el-button size="small" @click="cancelEdit">取消</el-button>
-                  </template>
-                  <el-tooltip
-                    placement="top"
-                    :content="aiConfigured ? 'AI 搜索完成后先弹出预览，确认后才保存；手动修改过的字段默认保留。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
-                  >
-                    <el-button
-                      size="small"
-                      :loading="aiFilling"
-                      :disabled="!aiConfigured"
-                      @click="handleAiFill"
+              <div class="header-side">
+                <div class="edit-actions">
+                  <template v-if="authStore.isAdmin">
+                    <el-button v-if="!editing" size="small" @click="startEdit">编辑</el-button>
+                    <template v-else>
+                      <el-button size="small" type="primary" @click="saveEdit" :loading="saving">保存</el-button>
+                      <el-button size="small" @click="cancelEdit">取消</el-button>
+                    </template>
+                    <el-tooltip
+                      placement="top"
+                      :content="aiConfigured ? 'AI 搜索完成后先弹出预览，确认后才保存；手动修改过的字段默认保留。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
                     >
-                      <el-icon><MagicStick /></el-icon>
-                      AI 填充
-                    </el-button>
-                  </el-tooltip>
-                </template>
+                      <el-button
+                        size="small"
+                        :loading="aiFilling"
+                        :disabled="!aiConfigured"
+                        @click="handleAiFill"
+                      >
+                        <el-icon><MagicStick /></el-icon>
+                        AI 填充
+                      </el-button>
+                    </el-tooltip>
+                  </template>
+                </div>
+                <el-tooltip
+                  v-if="authStore.isAdmin && editedFieldsList.length > 0"
+                  placement="bottom-end"
+                  content="手动编辑过的字段已锁定：AI 填充预览中默认保留现有内容，可在预览中改用 AI 结果。"
+                >
+                  <div class="locked-hint">
+                    <el-icon><Lock /></el-icon>
+                    <span>已锁定：{{ editedFieldsList.join('、') }}</span>
+                  </div>
+                </el-tooltip>
               </div>
-              <el-alert
-                v-if="authStore.isAdmin && editedFieldsList.length > 0"
-                type="info"
-                show-icon
-                :closable="false"
-                class="ai-protect-alert"
-              >
-                <template #title>已手动编辑的字段：{{ editedFieldsList.join('、') }}</template>
-                <template #default>
-                  AI 填充会先弹出预览，锁定字段默认保留现有内容，可在预览中改用 AI 结果。
-                </template>
-              </el-alert>
             </div>
 
             <div class="info-tags">
@@ -163,7 +163,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, VideoPlay, Plus, MagicStick } from '@element-plus/icons-vue'
+import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
@@ -547,6 +547,21 @@ watch(() => route.params.bookId, () => { fetchBook() })
   gap: 8px;
 }
 
+.header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+/* 窄屏标题与按钮上下排列：按钮与锁定提示左对齐（需写在上面规则之后才能覆盖） */
+@media (max-width: 640px) {
+  .header-side {
+    width: 100%;
+    align-items: flex-start;
+  }
+}
+
 .edit-actions {
   display: flex;
   gap: 6px;
@@ -611,9 +626,14 @@ watch(() => route.params.bookId, () => { fetchBook() })
   padding: 40px;
 }
 
-.ai-protect-alert {
-  margin-top: 12px;
-  width: 100%;
+.locked-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: help;
 }
 
 .ai-meta-section {
