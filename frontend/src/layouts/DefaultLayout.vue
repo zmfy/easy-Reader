@@ -8,7 +8,7 @@
     <!-- Sidebar -->
     <nav class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-logo">
-        <span class="logo-icon">📖</span>
+        <el-icon class="logo-icon"><Reading /></el-icon>
         <span class="logo-text">{{ siteName }}</span>
       </div>
       <div class="sidebar-nav">
@@ -166,7 +166,7 @@ async function handleLogout() {
   border-bottom: 1px solid rgba(124, 92, 255, 0.08);
 }
 
-.logo-icon { font-size: 24px; }
+.logo-icon { font-size: 24px; color: var(--accent); }
 
 .logo-text {
   font-size: 18px;

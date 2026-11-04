@@ -11,7 +11,7 @@
       </div>
 
       <div v-else-if="items.length === 0" class="empty-state">
-        <div class="empty-icon">🔖</div>
+        <el-icon class="empty-icon"><CollectionTag /></el-icon>
         <div class="empty-title">书架还是空的</div>
         <div class="empty-desc">去书库添加你喜欢的书吧</div>
         <el-button type="primary" @click="router.push('/library')">前往书库</el-button>
@@ -81,6 +81,7 @@
 </template>
 
 <script setup lang="ts">
+import { CollectionTag } from '@element-plus/icons-vue'
 import { ref, computed, onMounted } from 'vue'
 import { parseServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'

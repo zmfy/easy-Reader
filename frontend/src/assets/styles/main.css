@@ -154,6 +154,25 @@ body::before {
   transform: translateY(-8px);
 }
 
+/* 深色主题下 Element Plus 使用暗色变量（html.dark，见 utils/theme.ts），再映射到当前主题配色 */
+html.dark {
+  --el-bg-color: var(--bg-1);
+  --el-bg-color-overlay: var(--bg-1);
+  --el-bg-color-page: var(--bg-0);
+  --el-fill-color-blank: var(--bg-2);
+  --el-fill-color: var(--bg-2);
+  --el-fill-color-light: var(--bg-2);
+  --el-fill-color-lighter: var(--bg-1);
+  --el-text-color-primary: var(--text-0);
+  --el-text-color-regular: var(--text-1);
+  --el-text-color-secondary: var(--text-2);
+  --el-text-color-placeholder: var(--text-2);
+  --el-border-color: rgba(128, 128, 128, 0.28);
+  --el-border-color-light: rgba(128, 128, 128, 0.2);
+  --el-border-color-lighter: rgba(128, 128, 128, 0.14);
+  --el-color-primary: var(--accent);
+}
+
 /* Element Plus override — uses CSS vars so all themes apply automatically */
 .el-button--primary {
   --el-button-bg-color: var(--accent);

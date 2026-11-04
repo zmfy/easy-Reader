@@ -4,7 +4,7 @@
       <div class="stack-layer layer-2"></div>
       <div class="stack-layer layer-1"></div>
       <img v-if="series.cover_url" :src="series.cover_url" class="cover" alt="" />
-      <div v-else class="cover placeholder">📚</div>
+      <div v-else class="cover placeholder"><el-icon><Collection /></el-icon></div>
       <el-tag class="series-tag" type="primary" size="small">系列</el-tag>
     </div>
     <div class="info">
@@ -15,6 +15,7 @@
 </template>
 
 <script setup lang="ts">
+import { Collection } from '@element-plus/icons-vue'
 import type { Series } from '@/types'
 defineProps<{ series: Series }>()
 defineEmits<{ click: [Series] }>()
@@ -56,6 +57,7 @@ defineEmits<{ click: [Series] }>()
   align-items: center;
   justify-content: center;
   font-size: 48px;
+  color: var(--text-1);
   background: linear-gradient(160deg, rgba(124, 92, 255, 0.25), rgba(0, 212, 184, 0.15));
 }
 .stack-layer {

@@ -283,7 +283,7 @@
             <h2 class="section-title">插件管理</h2>
             <div class="plugins-grid">
               <div v-for="plugin in readerPlugins" :key="plugin.format" class="plugin-card">
-                <div class="plugin-icon">{{ formatIcon(plugin.format) }}</div>
+                <el-icon class="plugin-icon"><component :is="formatIcon(plugin.format)" /></el-icon>
                 <div class="plugin-info">
                   <div class="plugin-name">{{ plugin.label }}</div>
                   <div class="plugin-desc">{{ plugin.description }}</div>
@@ -433,12 +433,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, type Component } from 'vue'
 import { formatServerTime } from '@/utils/time'
-import { Setting, User, MagicStick, Cpu, Message, CopyDocument } from '@element-plus/icons-vue'
+import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebook, Tickets, Collection, Files } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { settingsApi } from '@/api/settings'
+import { applySiteTheme } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -749,8 +750,8 @@ const inviteUrl = computed(() => {
 })
 
 function formatIcon(format: string) {
-  const icons: Record<string, string> = { txt: '📄', epub: '📕', pdf: '📰', umd: '📚' }
-  return icons[format] || '📁'
+  const icons: Record<string, Component> = { txt: Document, epub: Notebook, pdf: Tickets, umd: Collection }
+  return icons[format] || Files
 }
 
 async function togglePdfPlugin(val: boolean) {
@@ -859,7 +860,7 @@ async function saveSettings(tab: string) {
     }
     if (tab === 'system') {
       if (sysForm.site_name) document.title = sysForm.site_name
-      document.documentElement.dataset.theme = sysForm.site_theme
+      applySiteTheme(sysForm.site_theme)
     }
     ElMessage.success('设置已保存')
   } finally {
@@ -1143,6 +1144,7 @@ onMounted(async () => {
 
 .plugin-icon {
   font-size: 24px;
+  color: var(--accent);
 }
 
 .plugin-info {

@@ -16,7 +16,6 @@
       </template>
       <!-- 无封面 / 加载失败 -->
       <div v-else class="cover-placeholder" :style="{ background: placeholderGradient }">
-        <span class="cover-format">{{ book.file_format?.toUpperCase() }}</span>
         <span class="cover-title">{{ book.title }}</span>
       </div>
       <!-- 状态徽章（重复 / 乱码） -->
@@ -24,9 +23,15 @@
         {{ badge.label }}
       </el-tag>
       <span v-if="book.rating" class="rating-badge">★ {{ book.rating.toFixed(1) }}</span>
-      <el-tag v-if="aiFillBadge" :type="aiFillBadge.type" size="small" class="ai-fill-badge">
-        {{ aiFillBadge.label }}
-      </el-tag>
+      <!-- AI 填充状态：小圆点（绿 = 已填充，橙 = 失败），悬停显示文字 -->
+      <span
+        v-if="aiFillBadge"
+        class="ai-fill-dot"
+        :class="aiFillBadge.type"
+        :title="aiFillBadge.label"
+        :aria-label="aiFillBadge.label"
+        role="img"
+      />
       <!-- 悬停操作层 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" @click.stop="$emit('read')">
@@ -188,14 +193,6 @@ const placeholderGradient = computed(() => {
   gap: 10px;
 }
 
-.cover-format {
-  font-size: 10px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
-
 .cover-title {
   font-size: 15px;
   font-weight: 600;
@@ -286,12 +283,18 @@ const placeholderGradient = computed(() => {
   z-index: 4;
 }
 
-.ai-fill-badge {
+.ai-fill-dot {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
-  z-index: 2;
+  bottom: 8px;
+  right: 8px;
+  z-index: 5;           /* 高于悬停操作层，悬停圆点时仍能看到提示 */
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.75);   /* 深色描边，浅色封面上也清晰 */
 }
+.ai-fill-dot.success { background: #22c55e; }
+.ai-fill-dot.warning { background: #f59e0b; }
 
 .rating-badge {
   position: absolute;

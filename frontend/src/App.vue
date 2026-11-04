@@ -10,6 +10,7 @@
 import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { settingsApi } from '@/api/settings'
+import { applySiteTheme } from '@/utils/theme'
 
 const authStore = useAuthStore()
 
@@ -18,7 +19,7 @@ async function applySiteTitle() {
     const resp = await settingsApi.getPublic()
     const { site_name, site_theme } = resp.data.data || {}
     if (site_name) document.title = site_name
-    if (site_theme) document.documentElement.dataset.theme = site_theme
+    if (site_theme) applySiteTheme(site_theme)
   } catch {
     // keep defaults
   }

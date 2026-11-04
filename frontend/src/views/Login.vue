@@ -9,7 +9,7 @@
     <div class="login-container">
       <div class="login-card" :class="{ 'shake': hasError }">
         <div class="card-header">
-          <div class="brand-icon">📖</div>
+          <el-icon class="brand-icon"><Reading /></el-icon>
           <h1 class="brand-title">{{ siteName }}</h1>
           <p class="brand-subtitle">{{ siteSubtitle }}</p>
         </div>
@@ -58,7 +58,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { User, Lock, Warning } from '@element-plus/icons-vue'
+import { User, Lock, Warning, Reading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

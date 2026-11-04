@@ -19,47 +19,74 @@
           <span class="book-count">{{ pagination.total }} 本</span>
         </div>
         <div class="header-actions">
-          <el-popover placement="bottom-start" :width="460" trigger="click">
-            <template #reference>
-              <el-icon class="search-help" title="搜索帮助"><QuestionFilled /></el-icon>
-            </template>
-            <div class="search-help-pop">
-              <div class="help-title">搜索框用法</div>
-              <ul>
-                <li><strong>书名 / 作者</strong>：直接输入关键词，模糊匹配</li>
-                <li>清空搜索框：显示全部书籍</li>
-                <template v-if="authStore.isAdmin">
-                  <li><strong>重复</strong>：显示所有重复的书（含审核后保留的正常本）</li>
-                  <li><strong>ai填充</strong> / <strong>已填充</strong>：只看已 AI 填充的书</li>
-                  <li><strong>填充失败</strong>：只看 AI 填充失败的书</li>
-                </template>
-              </ul>
-              <div v-if="authStore.isAdmin" class="help-note">
-                「重复 / ai填充 / 填充失败」为精确触发的筛选词，输入其它内容均按书名/作者搜索。
-              </div>
-            </div>
-          </el-popover>
           <el-input
             v-model="searchQuery"
-            placeholder="搜索书名/作者；输入「重复」「ai填充」「填充失败」"
+            placeholder="搜索书名、作者"
             :prefix-icon="Search"
             clearable
             class="search-input"
             @input="debouncedSearch"
-          />
-          <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="onCategoryChange">
-            <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
-          </el-select>
-          <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
-            <el-option label="入库时间（最新）" value="imported_at" />
-            <el-option label="书名（A→Z）" value="title" />
-            <el-option label="网络评分（高→低）" value="rating" />
-          </el-select>
-          <el-button v-if="authStore.isAdmin" type="primary" :loading="scanStore.isRunning" @click="handleScan">
-            <el-icon><Refresh /></el-icon>
-            扫描导入
-          </el-button>
+          >
+            <template #suffix>
+              <el-popover placement="bottom-end" :width="320" trigger="click">
+                <template #reference>
+                  <el-icon class="search-help" title="搜索帮助"><QuestionFilled /></el-icon>
+                </template>
+                <div class="search-help-pop">
+                  <div class="help-title">搜索框用法</div>
+                  <ul>
+                    <li><strong>书名 / 作者</strong>：直接输入关键词，模糊匹配</li>
+                    <li>清空搜索框：显示全部书籍</li>
+                    <template v-if="authStore.isAdmin">
+                      <li><strong>重复</strong>：显示所有重复的书（含审核后保留的正常本）</li>
+                      <li><strong>ai填充</strong> / <strong>已填充</strong>：只看已 AI 填充的书</li>
+                      <li><strong>填充失败</strong>：只看 AI 填充失败的书</li>
+                    </template>
+                  </ul>
+                  <div v-if="authStore.isAdmin" class="help-note">
+                    「重复 / ai填充 / 填充失败」为精确触发的筛选词，输入其它内容均按书名/作者搜索。
+                  </div>
+                </div>
+              </el-popover>
+            </template>
+          </el-input>
+          <!-- 宽屏：分类与排序直接显示 -->
+          <div class="filters-inline">
+            <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="onCategoryChange">
+              <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
+            </el-select>
+            <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
+              <el-option v-for="o in sortOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+          </div>
+          <!-- 窄屏：收进「筛选」弹出层；选了分类时按钮高亮 -->
+          <el-popover placement="bottom-end" :width="240" trigger="click">
+            <template #reference>
+              <el-button class="filter-btn" :type="selectedCategory ? 'primary' : 'default'" :icon="Filter" title="筛选与排序" />
+            </template>
+            <div class="filters-pop">
+              <div class="filters-pop-label">分类</div>
+              <el-select v-model="selectedCategory" placeholder="全部分类" clearable teleported style="width: 100%" @change="onCategoryChange">
+                <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
+              </el-select>
+              <div class="filters-pop-label">排序</div>
+              <el-select v-model="sortBy" teleported style="width: 100%" @change="fetchBooks">
+                <el-option v-for="o in sortOptions" :key="o.value" :label="o.label" :value="o.value" />
+              </el-select>
+            </div>
+          </el-popover>
         </div>
+        <el-button
+          v-if="authStore.isAdmin"
+          type="primary"
+          class="scan-btn"
+          :loading="scanStore.isRunning"
+          title="扫描导入"
+          @click="handleScan"
+        >
+          <el-icon v-if="!scanStore.isRunning"><Refresh /></el-icon>
+          <span class="btn-text">扫描导入</span>
+        </el-button>
       </div>
 
       <div v-if="loading" class="loading-grid">
@@ -73,7 +100,7 @@
       </div>
 
       <div v-else-if="books.length === 0" class="empty-state">
-        <div class="empty-icon">📚</div>
+        <el-icon class="empty-icon"><Collection /></el-icon>
         <div class="empty-title">书库空空如也</div>
         <div class="empty-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
       </div>
@@ -109,7 +136,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { Search, Refresh, QuestionFilled } from '@element-plus/icons-vue'
+import { Search, Refresh, QuestionFilled, Collection, Filter } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -143,6 +170,11 @@ const books = ref<Book[]>([])
 const loading = ref(false)
 const searchQuery = ref((route.query.search as string) || '')
 const selectedCategory = ref((route.query.category as string) || '')
+const sortOptions: Array<{ value: 'imported_at' | 'title' | 'rating'; label: string }> = [
+  { value: 'imported_at', label: '入库时间（最新）' },
+  { value: 'title', label: '书名（A→Z）' },
+  { value: 'rating', label: '网络评分（高→低）' },
+]
 const sortBy = ref<'imported_at' | 'title' | 'rating'>(
   (route.query.sort as 'imported_at' | 'title' | 'rating') || 'imported_at',
 )
@@ -334,10 +366,11 @@ onMounted(refreshPendingBatch)
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-left: auto;   /* 宽屏：搜索与筛选靠右，紧挨扫描按钮 */
 }
 
 .search-help {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--text-2);
   cursor: pointer;
   transition: color 0.2s;
@@ -376,20 +409,60 @@ onMounted(refreshPendingBatch)
 }
 
 .search-input {
-  width: 340px;
+  width: 300px;
   max-width: 100%;
+}
+
+.filters-inline {
+  display: flex;
+  gap: 12px;
+}
+
+/* 窄屏才显示「筛选」按钮 */
+.filter-btn {
+  display: none;
+}
+
+.filters-pop-label {
+  margin: 8px 0 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.filters-pop-label:first-child {
+  margin-top: 0;
 }
 
 /* 手机：两列卡片，否则 172px 最小宽度只能排一列，每本书几乎占满一屏；
    搜索栏占满整行（flex 子项默认按内容宽度撑开，会超出右侧边距） */
 @media (max-width: 480px) {
+  /* 第一行：标题 + 扫描图标；第二行：搜索框 + 筛选按钮 */
+  .page-header {
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .header-left { order: 1; }
+  .scan-btn {
+    order: 2;
+    margin-left: auto;
+    padding: 8px 10px;
+  }
+  .scan-btn .btn-text { display: none; }
+  .scan-btn .el-icon { font-size: 18px; }
   .header-actions {
+    order: 3;
+    margin-left: 0;
     width: 100%;
     min-width: 0;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
   .search-input {
-    width: 100%;
+    flex: 1;
+    width: auto;
+    min-width: 0;
   }
+  .filters-inline { display: none; }
+  .filter-btn { display: inline-flex; }
   .books-grid,
   .loading-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
