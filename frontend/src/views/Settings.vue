@@ -441,7 +441,7 @@ import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebo
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { settingsApi } from '@/api/settings'
-import { applySiteTheme } from '@/utils/theme'
+import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -516,10 +516,19 @@ const sysForm = reactive({
   site_subtitle: '',
   site_url: '',
   books_dir: '/app/books',
-  site_theme: 'dark',
+  site_theme: DEFAULT_THEME,
 })
 
 const siteThemes = [
+  {
+    key: 'indigo',
+    label: '靛青',
+    desc: '明亮白卡靛蓝（默认）',
+    bg: '#eef1f6',
+    panel: '#ffffff',
+    accent: '#4338ca',
+    text: '#4a5568',
+  },
   {
     key: 'dark',
     label: '暗夜',
@@ -602,6 +611,7 @@ const changelog: ChangelogRelease[] = [
     date: '2026-11-04',
     title: 'PDF 原版显示与 EPUB 修复',
     items: [
+      { tag: 'ui', text: '新增默认主题「靛青」：浅灰底、白色卡片、靛蓝主色，更现代简洁；原有五个主题仍可在「网站主题」中选择（已保存过主题的站点保持原设置）' },
       { tag: 'ui', text: '界面精简：书库「AI已填充」改为封面角小圆点，手机端书库顶部压缩为两行；书页显示干净的书名、书架状态与「继续阅读 · 章节」；书架整行点击继续阅读；深色主题下按钮与下拉框统一为深色；图标不再依赖 emoji' },
       { tag: 'reader', text: '阅读器支持键盘：← / → 翻章，空格翻页，B 加书签；去掉右下角重复的书签按钮' },
       { tag: 'lib', text: '单本 AI 填充改为先预览：可修改简介等信息、增删标签和类似作品，从多张豆瓣封面或按分类风格生成的默认封面中选择，确认后才保存；预览时不再覆盖已锁定的字段' },
@@ -791,7 +801,7 @@ async function loadSettings() {
   sysForm.site_subtitle = data['site_subtitle'] || ''
   sysForm.site_url = data['site_url'] || ''
   sysForm.books_dir = data['books_dir'] || '/app/books'
-  sysForm.site_theme = data['site_theme'] || 'dark'
+  sysForm.site_theme = data['site_theme'] || DEFAULT_THEME
 
   smtpForm.smtp_host = data['smtp_host'] || ''
   smtpForm.smtp_port = data['smtp_port'] || '587'

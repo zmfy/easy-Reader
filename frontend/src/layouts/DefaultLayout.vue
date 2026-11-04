@@ -184,6 +184,7 @@ async function handleLogout() {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -195,8 +196,19 @@ async function handleLogout() {
   font-weight: 500;
   transition: all 0.18s ease;
 }
-.nav-item:hover { background: rgba(124, 92, 255, 0.1); color: var(--text-1); }
-.nav-item.active { background: rgba(124, 92, 255, 0.2); color: var(--accent); }
+/* 悬停 / 选中底色由当前主题强调色派生；选中项左侧加强调色竖条 */
+.nav-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text-1); }
+.nav-item.active { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
 .nav-item .el-icon { font-size: 18px; }
 
 .sidebar-user {

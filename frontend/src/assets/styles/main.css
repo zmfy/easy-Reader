@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600&display=swap');
 
-/* ── 暗夜（默认）── */
+/* ── 暗夜 ──（同时作为各主题未定义变量的基底，如 --card-* / --input-bg）*/
 :root,
 [data-theme="dark"] {
   --bg-0: #0b1020;
@@ -20,6 +20,29 @@
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(8, 12, 24, 0.45);
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+}
+
+/* ── 靛青（默认）：浅灰蓝底 + 白卡片 + 靛蓝主色，细边框与柔和阴影 ── */
+[data-theme="indigo"] {
+  --bg-0: #eef1f6;
+  --bg-1: #ffffff;
+  --bg-2: #f6f8fb;
+  --text-0: #1a2440;
+  --text-1: #4a5568;
+  --text-2: #8a94a6;
+  --accent: #4338ca;
+  --accent-2: #0d9488;
+  --warning: #d97706;
+  --danger: #e5484d;
+  --card-bg: #ffffff;
+  --card-border: #e8ecf4;
+  --card-title: #1a2440;
+  --input-bg: #ffffff;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --shadow-soft: 0 1px 2px rgba(26, 36, 64, 0.04), 0 4px 16px rgba(26, 36, 64, 0.06);
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -205,6 +228,17 @@ html.dark {
   background-color: var(--bg-2) !important;
   border-color: rgba(128, 128, 128, 0.2) !important;
   box-shadow: none !important;
+}
+
+/* 靛青：输入框白底 + 细边框（Element Plus 用内阴影画边框），聚焦时为主色 */
+[data-theme="indigo"] .el-input__wrapper,
+[data-theme="indigo"] .el-textarea__inner {
+  background-color: #ffffff !important;
+  box-shadow: 0 0 0 1px var(--card-border) inset !important;
+}
+[data-theme="indigo"] .el-input__wrapper.is-focus,
+[data-theme="indigo"] .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--accent) inset !important;
 }
 
 .el-input__inner {
