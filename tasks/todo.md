@@ -167,3 +167,10 @@
 - [x] minmax：新增 reasoningEffort 字段与选项（空 = 默认 max，不传）；请求体统一由 requestBody 生成；新增 2 个单测
 - [x] 设置页：有 options 的字段显示为下拉框并附说明；下拉字段选「默认」时提交空值以清除；「已测试通过的配置」MiniMax-M2 → M3.1-Flash；更新说明补一条
 - [x] 验证：31 suites / 229 tests、前后端 tsc；Chrome 选 low 保存 → 库中为 low、刷新后正确回显、《三国演义》AI 填充 7.2 秒且结果正确 → 切回默认保存 → 库中清空；API Key 始终未被覆盖
+
+# DeepSeek 默认模型改为 deepseek-flash，思考模式可设置
+
+- [x] 实测：key 可用模型为 deepseek-flash / deepseek-v4-pro；deepseek-chat 被映射到 deepseek-flash（不思考）；deepseek-flash 默认开启思考，thinking.type=disabled 可关闭
+- [x] deepseek.ts：默认模型 deepseek-flash；新增 thinking 下拉（空 = 关闭并显式传 disabled、保留原 temperature；low/high/max = 开启并设 reasoning_effort、不传 temperature）；请求体统一由 requestBody 生成；新增 5 个单测
+- [x] 设置页：字段名「思考模式」与说明；「已测试通过的配置」deepseek-chat → deepseek-flash；更新说明补一条
+- [x] 验证：32 suites / 234 tests、前后端 tsc；Chrome 默认关闭时《红楼梦》1.3 秒、开启 low 时《三国演义》4.6 秒，结果均正确；保存 low → 库中 low，切回关闭 → 清空；API Key 未被覆盖

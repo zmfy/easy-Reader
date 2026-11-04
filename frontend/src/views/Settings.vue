@@ -155,7 +155,7 @@
               <div class="ai-tip-title">已测试通过的配置</div>
               <div class="ai-tip-item">
                 <span class="ai-tip-name">DeepSeek</span>
-                <span class="ai-tip-desc">模型：<code>deepseek-chat</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
+                <span class="ai-tip-desc">模型：<code>deepseek-flash</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
               </div>
               <div class="ai-tip-item">
                 <span class="ai-tip-name">MiniMax</span>
@@ -604,6 +604,7 @@ const changelog: ChangelogRelease[] = [
       { tag: 'epub', text: '修复部分漫画 EPUB 第一页封面空白的问题（SVG 方式引用的图片此前未能加载）' },
       { tag: 'ai', text: 'MiniMax 跟进官方接口变更：默认模型改为 MiniMax-M3.1-Flash（MiniMax-M2 已下线，未填写模型时 AI 填充会失败），接口地址改为 api.minimax.cn' },
       { tag: 'ai', text: 'MiniMax 新增「推理强度」设置（仅 MiniMax-M3.1-Flash 生效）：调低可明显加快 AI 填充并减少消耗' },
+      { tag: 'ai', text: 'DeepSeek 默认模型改为 deepseek-flash（旧名 deepseek-chat 已不在官方模型列表中），新增「思考模式」设置：默认关闭，速度与费用和之前一致，可按需开启并选择强度' },
       { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
     ],
   },
@@ -712,10 +713,12 @@ const fieldLabels: Record<string, string> = {
   model: '模型',
   baseUrl: '接口地址',
   reasoningEffort: '推理强度',
+  thinking: '思考模式',
 }
 
 const fieldHints: Record<string, string> = {
   reasoningEffort: '仅对 MiniMax-M3.1-Flash 生效；越低越快、消耗越少，书名与内容明确时 low 已足够',
+  thinking: '开启后模型先推理再作答，结果可能更准确，但更慢、费用更高；书名与内容明确时无需开启',
 }
 
 const fieldPlaceholders: Record<string, string> = {
