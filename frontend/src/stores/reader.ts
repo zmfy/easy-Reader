@@ -3,19 +3,23 @@ import { ref } from 'vue'
 import type { ReaderSettings, ReaderTheme } from '@/types'
 import { settingsApi } from '@/api/settings'
 
+// 默认样式见 docs/reader-style-spec.md（护眼绿、思源黑体 20px、行高 1.8、纸张最宽 1280px）
+export const SPEC_FONT_STACK = '"Source Han Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+
 const defaultSettings: ReaderSettings = {
-  fontFamily: 'Noto Serif SC',
-  fontSize: 18,
-  letterSpacing: 1,
-  lineHeight: 1.9,
-  pageWidth: 72,
-  theme: 'night',
-  backgroundColor: '#0b1020',
-  fontColor: '#c9d3ea',
+  fontFamily: SPEC_FONT_STACK,
+  fontSize: 20,
+  letterSpacing: 0,
+  lineHeight: 1.8,
+  pageWidth: 90,
+  theme: 'green-paper',
+  backgroundColor: '#E0EEE1',
+  fontColor: 'rgba(0,0,0,.9)',
   pageMode: 'scroll',
 }
 
 export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: string; label: string }> = {
+  'green-paper': { backgroundColor: '#E0EEE1',  fontColor: 'rgba(0,0,0,.9)', label: '护眼绿' },
   'white':       { backgroundColor: '#FFFFFF',  fontColor: '#333333', label: '白昼' },
   'eye-care':    { backgroundColor: '#FFFDF0',  fontColor: '#4a4a4a', label: '护眼' },
   'night':       { backgroundColor: '#0b1020',  fontColor: '#c9d3ea', label: '夜间' },
@@ -28,6 +32,7 @@ export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: s
 }
 
 export const fontOptions = [
+  { label: '思源黑体（默认）',        value: SPEC_FONT_STACK },
   { label: 'Noto Serif SC（衬线）',   value: 'Noto Serif SC' },
   { label: 'Noto Sans SC（无衬线）',  value: 'Noto Sans SC' },
   { label: '宋体',                    value: 'SimSun, 宋体, serif' },

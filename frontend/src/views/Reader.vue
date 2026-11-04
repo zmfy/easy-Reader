@@ -22,88 +22,101 @@
       </div>
     </template>
 
-    <!-- ── 章节阅读模式 ── -->
+    <!-- ── 章节阅读模式（样式见 docs/reader-style-spec.md）── -->
     <template v-else>
-    <!-- Toolbar Top -->
-    <div class="reader-toolbar top" :class="{ visible: toolbarVisible }">
-      <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
-      <span class="chapter-title">{{ currentChapter ? (currentChapter.title || `第 ${currentChapter.index + 1} 页`) : '加载中...' }}</span>
-      <div class="toolbar-actions">
-        <el-button :icon="Bookmark" circle title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true" />
-        <el-button :icon="Setting" circle title="阅读设置" @click="settingsPanelVisible = true" />
-        <el-button :icon="List" circle title="章节目录" @click="chapterListVisible = true" />
-      </div>
-    </div>
-
-    <!-- Content Area -->
+    <!-- 外围底色 + 居中「纸张」；顶部导航吸顶，下滑隐藏、上滑显示 -->
     <div
       class="reader-content"
       ref="contentRef"
       @click="toggleToolbar"
       @scroll="handleScroll"
     >
-      <!-- ── 章节模式 ── -->
-      <template v-if="readerStore.settings.pageMode === 'scroll'">
-        <div class="content-wrapper" :class="{ 'pdf-wrapper': isPdfRender }" :style="wrapperStyle">
+      <div class="paper" :class="{ 'pdf-wrapper': isPdfRender }" :style="paperStyle">
+        <header class="reader-nav" :class="{ hidden: !toolbarVisible }" @click.stop>
+          <button class="nav-btn" title="返回" @click="router.back()"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
+          <span class="nav-title">{{ bookTitle }}</span>
+          <span class="nav-progress">
+            {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
+          </span>
+          <!-- 窄屏：左侧工具栏放不下，按钮收在导航右侧 -->
+          <div class="nav-actions">
+            <button class="nav-btn" title="章节目录" @click="chapterListVisible = true"><IconList :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
+          </div>
+        </header>
+
+        <!-- 左侧悬浮工具栏：贴在纸张左外侧（宽屏） -->
+        <aside class="side-tools" @click.stop>
+          <div class="side-tools-inner">
+            <button class="side-tool" title="章节目录" @click="chapterListVisible = true">
+              <IconList :size="20" :stroke-width="1.75" /><span>目录</span>
+            </button>
+            <button class="side-tool" title="书签（按 B 添加当前位置）" @click="bookmarkDrawerVisible = true">
+              <IconBookmark :size="20" :stroke-width="1.75" /><span>书签</span>
+            </button>
+            <button class="side-tool" title="阅读设置" @click="settingsPanelVisible = true">
+              <IconSettings :size="20" :stroke-width="1.75" /><span>设置</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- ── 章节模式 ── -->
+        <template v-if="readerStore.settings.pageMode === 'scroll'">
           <div v-if="loading" class="content-loading">
             <el-skeleton :rows="20" animated />
           </div>
-          <div v-else-if="isPdfRender" class="chapter-content pdf-chapter">
-            <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="reader.currentChapterIndex.value + 1" />
-            <div v-else-if="pdfDocFailed" class="pdf-error">PDF 加载失败，请检查文件是否完整</div>
-            <el-skeleton v-else :rows="20" animated />
-          </div>
-          <div
-            v-else
-            class="chapter-content"
-            v-html="reader.currentContent.value"
-            :style="contentStyle"
-            @click.capture="handleContentClick"
-          />
-        </div>
-      </template>
+          <template v-else>
+            <div v-if="!isPdfRender" class="chapter-head">
+              <h1 class="chapter-heading">{{ chapterTitle }}</h1>
+              <div class="chapter-meta">{{ chapterMeta(reader.currentContent.value) }}</div>
+            </div>
+            <div v-if="isPdfRender" class="chapter-content pdf-chapter">
+              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="reader.currentChapterIndex.value + 1" />
+              <div v-else-if="pdfDocFailed" class="pdf-error">PDF 加载失败，请检查文件是否完整</div>
+              <el-skeleton v-else :rows="20" animated />
+            </div>
+            <div
+              v-else
+              class="chapter-content"
+              v-html="hideLeadingTitle(reader.currentContent.value, chapterTitle)"
+              :style="contentStyle"
+              @click.capture="handleContentClick"
+            />
+            <!-- 章末导航：上一章 · 目录 · 下一章 -->
+            <nav class="chapter-end" @click.stop>
+              <button class="end-btn" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一{{ unitLabel }}</button>
+              <button class="end-btn" @click="chapterListVisible = true">目录</button>
+              <button class="end-btn" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}</button>
+            </nav>
+          </template>
+        </template>
 
-      <!-- ── 瀑布流模式 ── -->
-      <template v-else>
-        <div class="content-wrapper" :class="{ 'pdf-wrapper': isPdfRender }" :style="wrapperStyle">
-          <div
+        <!-- ── 瀑布流模式：章节之间用分隔线 ── -->
+        <template v-else>
+          <section
             v-for="ch in waterfallChapters"
             :key="ch.index"
             :data-chapter-index="ch.index"
             class="waterfall-chapter"
           >
-            <div class="waterfall-chapter-divider">
-              <span>{{ ch.title }}</span>
+            <div v-if="!isPdfRender" class="chapter-head">
+              <h1 class="chapter-heading">{{ ch.title }}</h1>
+              <div class="chapter-meta">{{ chapterMeta(ch.content) }}</div>
             </div>
             <div v-if="isPdfRender" class="chapter-content pdf-chapter">
               <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
             </div>
-            <div v-else class="chapter-content" v-html="ch.content" :style="contentStyle" @click.capture="handleContentClick" />
-          </div>
+            <div v-else class="chapter-content" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
+          </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
           </div>
           <div v-else-if="!hasMoreChapters && waterfallChapters.length > 0" class="waterfall-end">
             — 本书完 —
           </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- Toolbar Bottom -->
-    <div class="reader-toolbar bottom" :class="{ visible: toolbarVisible }">
-      <template v-if="readerStore.settings.pageMode === 'scroll'">
-        <el-button :icon="ArrowLeft" :disabled="reader.currentChapterIndex.value === 0" @click="goToPrevChapter">上一{{ unitLabel }}</el-button>
-        <div class="progress-info">
-          {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}
-        </div>
-        <el-button :icon="ArrowRight" :disabled="reader.currentChapterIndex.value >= reader.chapters.value.length - 1" @click="goToNextChapter">下一{{ unitLabel }}</el-button>
-      </template>
-      <template v-else>
-        <div class="progress-info">
-          {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }} {{ unitLabel }} · 瀑布流
-        </div>
-      </template>
+        </template>
+      </div>
     </div>
 
     <!-- Settings Panel -->
@@ -150,7 +163,7 @@
         <!-- 字号 -->
         <div class="setting-group">
           <div class="setting-label">字号 {{ readerStore.settings.fontSize }}px</div>
-          <el-slider v-model="readerStore.settings.fontSize" :min="12" :max="32" @change="saveSettings" />
+          <el-slider v-model="readerStore.settings.fontSize" :min="14" :max="30" @change="saveSettings" />
         </div>
 
         <!-- 行高 -->
@@ -238,11 +251,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, onUnmounted, watchEffect, nextTick } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, Star, Setting, List, Loading, Delete } from '@element-plus/icons-vue'
-const Bookmark = Star
+import { ArrowLeft, Loading, Delete } from '@element-plus/icons-vue'
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
@@ -250,6 +262,9 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
+import { readerPalette, hideLeadingTitle, countChapterChars } from '@/utils/reader-style'
+import { libraryApi } from '@/api/library'
+import { IconBookmark, IconChevronLeft, IconList, IconSettings } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -286,6 +301,24 @@ async function loadPdfBlob() {
 // 每页作为一章，沿用章节翻页 / 瀑布流 / 进度 / 书签；正文用 pdf.js 按原版画出，保留图片与版式
 const isPdfRender = computed(() => reader.bookFormat.value === 'pdf' && reader.pdfUsePlugin.value)
 const unitLabel = computed(() => isPdfRender.value ? '页' : '章')
+
+// 标题区：章节标题 + 元信息（书名 · 作者 · 本章字数）
+const bookTitle = ref('')
+const bookAuthor = ref('')
+const chapterTitle = computed(() => {
+  const ch = reader.currentChapter.value
+  return ch ? (ch.title || `第 ${ch.index + 1} ${unitLabel.value}`) : ''
+})
+function chapterMeta(html: string): string {
+  return [bookTitle.value, bookAuthor.value, `本章 ${countChapterChars(html)} 字`].filter(Boolean).join(' · ')
+}
+async function loadBookInfo() {
+  try {
+    const b = (await libraryApi.get(bookId)).data.data
+    bookTitle.value = b?.display_title || b?.title || ''
+    bookAuthor.value = b?.author || ''
+  } catch { /* 标题区仅作展示，失败不影响阅读 */ }
+}
 const pdfDoc = shallowRef<PDFDocumentProxy | null>(null)
 const pdfDocFailed = ref(false)
 
@@ -301,13 +334,16 @@ async function loadPdfDocument() {
 }
 
 // ── Computed styles ──────────────────────────────────────────
+// 阅读配色以 CSS 变量提供（--reader-page-bg / --reader-paper-bg / --reader-text …），便于切换阅读主题
 const readerStyle = computed(() => ({
-  backgroundColor: readerStore.settings.backgroundColor,
-  color: readerStore.settings.fontColor,
+  ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor),
+  color: 'var(--reader-text)',
 }))
 
-const wrapperStyle = computed(() => ({
-  width: `${readerStore.settings.pageWidth}%`,
+// 纸张宽度：「页面宽度」百分比，最宽 1280px，并给左侧工具栏留出位置
+const paperStyle = computed(() => ({
+  width: `min(${readerStore.settings.pageWidth}%, 1280px, calc(100% - 176px))`,
+  '--reader-font': readerStore.settings.fontFamily,
 }))
 
 const contentStyle = computed(() => ({
@@ -316,8 +352,6 @@ const contentStyle = computed(() => ({
   lineHeight: readerStore.settings.lineHeight,
   letterSpacing: `${readerStore.settings.letterSpacing}px`,
 }))
-
-const currentChapter = computed(() => reader.currentChapter.value)
 
 // ── Waterfall state ──────────────────────────────────────────
 interface WaterfallChapter { index: number; title: string; content: string }
@@ -410,18 +444,21 @@ async function initWaterfall() {
   await fillWaterfallIfNeeded()
 }
 
-// ── Toolbar auto-hide ────────────────────────────────────────
+// ── 顶部导航显隐：下滑隐藏、上滑显示，回到顶部时总是显示；点击正文切换 ──
 function toggleToolbar() {
   toolbarVisible.value = !toolbarVisible.value
 }
 
-let toolbarTimer: ReturnType<typeof setTimeout>
-watchEffect(() => {
-  if (toolbarVisible.value) {
-    clearTimeout(toolbarTimer)
-    toolbarTimer = setTimeout(() => { toolbarVisible.value = false }, 4000)
-  }
-})
+let lastScrollTop = 0
+let keyPagingUntil = 0  // 方向键翻屏期间不弹出导航，避免盖住衔接的行
+function updateToolbarOnScroll(scrollTop: number) {
+  const delta = scrollTop - lastScrollTop
+  lastScrollTop = scrollTop
+  if (Date.now() < keyPagingUntil) return
+  if (scrollTop < 64) toolbarVisible.value = true
+  else if (delta > 6) toolbarVisible.value = false
+  else if (delta < -6) toolbarVisible.value = true
+}
 
 // ── Scroll handler ───────────────────────────────────────────
 let saveTimer: ReturnType<typeof setTimeout>
@@ -522,6 +559,7 @@ function handleVisibilityChange() {
 
 function handleScroll() {
   if (!contentRef.value) return
+  if (!restoringPosition) updateToolbarOnScroll(contentRef.value.scrollTop)
 
   if (readerStore.settings.pageMode === 'waterfall') {
     // 每帧最多处理一次，避免每个 scroll 事件都遍历章节 DOM
@@ -779,8 +817,9 @@ function handleKeydown(e: KeyboardEvent) {
     case 'pageUp': {
       const el = contentRef.value
       if (!el) break
-      // 浮动工具栏会盖住顶部 / 底部正文：翻屏时收起，保证衔接的两行可见
+      // 顶部导航会盖住正文：翻屏时收起，且平滑滚动期间不因上滑重新弹出，保证衔接的行可见
       toolbarVisible.value = false
+      keyPagingUntil = Date.now() + 800
       // 按屏翻页并保留两行正文作为衔接（行高随当前字号 / 行距变化）
       const lineHeightPx = readerStore.settings.fontSize * readerStore.settings.lineHeight
       const distance = action === 'pageDown'
@@ -798,6 +837,7 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  loadBookInfo()
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
@@ -836,7 +876,6 @@ onBeforeUnmount(() => {
 
 onUnmounted(() => {
   cancelAnimationFrame(scrollRaf)
-  clearTimeout(toolbarTimer)
   window.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pdfBlobUrl.value) URL.revokeObjectURL(pdfBlobUrl.value)
@@ -854,103 +893,218 @@ onUnmounted(() => {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-.reader-toolbar {
+/* ── 阅读区（docs/reader-style-spec.md）：外围底色 + 居中纸张 ── */
+/* 全屏极淡斜纹，营造纸面质感 */
+.reader-page::after {
+  content: '';
   position: fixed;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  background: rgba(11, 16, 32, 0.88);
-  backdrop-filter: blur(12px);
-  z-index: 100;
-  opacity: 0;
+  inset: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 50;
+  background: repeating-linear-gradient(45deg, rgba(150,150,150,.02) 5px, transparent 30px, transparent 80px);
 }
-.reader-toolbar.top    { top: 0;    transform: translateY(-100%); }
-.reader-toolbar.bottom { bottom: 0; transform: translateY(100%); }
-.reader-toolbar.visible { opacity: 1; pointer-events: all; transform: translateY(0); }
-
-.chapter-title {
-  flex: 1;
-  text-align: center;
-  font-size: 14px;
-  color: var(--text-1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 12px;
-}
-.toolbar-actions { display: flex; gap: 8px; }
 
 .reader-content {
   flex: 1;
   overflow-y: auto;
-  padding: 60px 0;
   overflow-anchor: none;
+  background: var(--reader-page-bg);
+  transition: background-color 0.3s ease;
 }
+/* 滚动条跟随阅读配色（全站滚动条轨道用的是网站主题底色，会在右侧露出一条异色） */
+.reader-content::-webkit-scrollbar-track { background: var(--reader-page-bg); }
+.reader-content::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--reader-text) 22%, transparent); }
+.reader-content::-webkit-scrollbar-thumb:hover { background: var(--reader-text-secondary); }
 
-.content-wrapper {
+/* 纸张：细微噪点纹理平铺 */
+.paper,
+.reader-nav {
+  background-color: var(--reader-paper-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.paper {
+  position: relative;
   margin: 0 auto;
-  padding: 32px 24px;
+  min-height: 100%;
+  padding: 0 64px 64px;
   transition: width 0.2s ease;
 }
 
-/* 手机 / 窄屏：「页面宽度」百分比再减去内边距会让正文过窄（375px 宽时每行仅约 12 字），改为占满宽度 */
-@media (max-width: 768px) {
-  .content-wrapper {
-    width: 100% !important;
-    padding: 24px 16px;
-  }
-  /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
-  .content-wrapper.pdf-wrapper {
-    padding: 16px 6px;
-  }
-}
-
-/* PDF 逐页渲染：页面在深色背景上居中，失败提示居中显示 */
-.pdf-chapter .pdf-error {
-  padding: 80px 0;
-}
-
-.chapter-content {
-  transition: font-size 0.2s ease, line-height 0.2s ease;
-}
-.chapter-content :deep(p) {
-  margin-bottom: 1.2em;
-  text-indent: 2em;
-}
-
-/* ── Waterfall ── */
-.waterfall-chapter { margin-bottom: 8px; }
-.waterfall-chapter-divider {
+/* 顶部导航：吸顶，下滑隐藏、上滑显示 */
+.reader-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 64px;
+  margin: 0 -64px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 40px 0 24px;
-  color: v-bind('readerStore.settings.fontColor');
-  opacity: 0.5;
-  font-size: 13px;
+  border-bottom: 1px solid var(--reader-divider);
+  font-family: var(--font-sans);
+  transition: transform 350ms ease;
 }
-.waterfall-chapter-divider::before,
-.waterfall-chapter-divider::after {
-  content: '';
+.reader-nav.hidden { transform: translateY(-100%); }
+.nav-title {
   flex: 1;
-  height: 1px;
-  background: currentColor;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--reader-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-progress {
+  font-size: 13px;
+  color: var(--reader-text-secondary);
+  white-space: nowrap;
+}
+.nav-actions { display: none; gap: 2px; }
+.nav-btn,
+.side-tool,
+.end-btn {
+  border: none;
+  background: transparent;
+  color: var(--reader-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.nav-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.nav-btn:hover,
+.side-tool:hover { color: var(--reader-text); }
+
+/* 左侧悬浮工具栏：贴在纸张左外侧的竖向窄条，随滚动保持可见 */
+.side-tools {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  margin-right: 16px;
+  width: 52px;
+}
+.side-tools-inner {
+  position: sticky;
+  top: 80px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  background: var(--reader-paper-bg);
+}
+.side-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+}
+.side-tool span {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+/* 章节标题区 */
+.chapter-head { text-align: center; }
+.chapter-heading {
+  margin: 20px 0 0;
+  font-family: var(--reader-font);
+  font-size: 36px;
+  line-height: 44px;
+  font-weight: 500;
+  color: var(--reader-text);
+}
+.chapter-meta {
+  margin-top: 8px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--reader-text-secondary);
+}
+
+/* 正文：段距用 em，随字号同比缩放 */
+.chapter-content {
+  margin-top: 1.5em;
+  font-weight: 400;
+  color: var(--reader-text);
+  transition: font-size 0.2s ease, line-height 0.2s ease;
+}
+.chapter-content :deep(p) {
+  margin: 0.8em 0 0;
+  text-indent: 2em;
+}
+
+/* 章末导航 */
+.chapter-end {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 56px;
+}
+.end-btn {
+  min-width: 96px;
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid var(--reader-divider);
+  border-radius: 20px;
+  font-size: 14px;
+}
+.end-btn:hover:not(:disabled) {
+  color: var(--reader-text);
+  border-color: var(--reader-text-secondary);
+}
+.end-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* PDF 逐页渲染：失败提示居中显示 */
+.pdf-chapter { margin-top: 24px; }
+.pdf-chapter .pdf-error { padding: 80px 0; }
+
+/* ── 瀑布流：章节之间用分隔线，第一章不加 ── */
+.waterfall-chapter + .waterfall-chapter {
+  margin-top: 56px;
+  padding-top: 8px;
+  border-top: 1px solid var(--reader-divider);
 }
 .waterfall-loading,
 .waterfall-end {
   text-align: center;
   padding: 32px 0;
   font-size: 13px;
-  opacity: 0.5;
+  color: var(--reader-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+
+/* 窄屏：纸张占满宽度，左侧工具栏收进顶部导航 */
+@media (max-width: 768px) {
+  .paper { width: 100% !important; }
+  .side-tools { display: none; }
+  .nav-actions { display: flex; }
+}
+/* 手机（<640px） */
+@media (max-width: 639px) {
+  .paper { padding: 0 20px 48px; }
+  .reader-nav {
+    height: 56px;
+    margin: 0 -20px;
+    padding: 0 8px;
+    gap: 4px;
+  }
+  .chapter-heading { font-size: 28px; line-height: 36px; }
+  /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
+  .paper.pdf-wrapper { padding: 0 6px 16px; }
+  .paper.pdf-wrapper .reader-nav { margin: 0 -6px; }
 }
 
 /* ── Settings panel ── */

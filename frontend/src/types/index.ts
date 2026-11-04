@@ -106,7 +106,7 @@ export interface PaginatedResponse<T> {
   }
 }
 
-export type ReaderTheme = 'white' | 'eye-care' | 'night' | 'dark' | 'light-green' | 'light-blue' | 'light-gray' | 'light-yellow' | 'light-brown'
+export type ReaderTheme = 'green-paper' | 'white' | 'eye-care' | 'night' | 'dark' | 'light-green' | 'light-blue' | 'light-gray' | 'light-yellow' | 'light-brown'
 
 export interface ReaderSettings {
   fontFamily: string
