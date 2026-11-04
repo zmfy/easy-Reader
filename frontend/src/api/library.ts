@@ -56,8 +56,8 @@ export const libraryApi = {
 
 
   // AI 填充预览：AI 与豆瓣检索可能需要一分多钟，超时单独放宽到 3 分钟
-  aiFillPreview: (id: string) =>
-    http.post<ApiResponse<import('@/types').AiFillPreview>>(`/library/${id}/ai-fill/preview`, {}, { timeout: 180000 }),
+  aiFillPreview: (id: string, signal?: AbortSignal) =>
+    http.post<ApiResponse<import('@/types').AiFillPreview>>(`/library/${id}/ai-fill/preview`, {}, { timeout: 180000, signal }),
 
   aiFillApply: (id: string, payload: import('@/types').AiFillApplyInput) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill/apply`, payload),

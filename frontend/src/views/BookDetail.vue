@@ -68,7 +68,7 @@
                     >
                       <el-button
                         size="small"
-                        :loading="aiFilling"
+                        :loading="aiPreviewLoading"
                         :disabled="!aiConfigured"
                         @click="handleAiFill"
                       >
@@ -156,6 +156,7 @@
       v-if="book"
       v-model="aiPreviewVisible"
       :preview="aiPreview"
+      :loading="aiPreviewLoading"
       :book-id="book.id"
       @applied="onAiApplied"
     />
@@ -163,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -188,7 +189,8 @@ const similarLinks = ref<Map<string, string>>(new Map())
 const loading = ref(false)
 const editing = ref(false)
 const saving = ref(false)
-const aiFilling = ref(false)
+const aiPreviewLoading = ref(false)
+let aiPreviewAbort: AbortController | null = null
 const aiPreview = ref<AiFillPreview | null>(null)
 const aiPreviewVisible = ref(false)
 const aiConfigured = ref(true)
@@ -289,19 +291,41 @@ async function saveEdit() {
   }
 }
 
+// 点击后立即打开预览弹窗显示加载状态（AI 检索可能需要几秒到一分钟），
+// 关闭弹窗或离开页面即取消请求（预览只读，取消无副作用）
 async function handleAiFill() {
-  aiFilling.value = true
+  cancelAiPreview()
+  const controller = new AbortController()
+  aiPreviewAbort = controller
+  aiPreview.value = null
+  aiPreviewLoading.value = true
+  aiPreviewVisible.value = true
   try {
     // 先预览：AI 与豆瓣检索结果在弹窗中确认 / 修改后才写入
-    const resp = await libraryApi.aiFillPreview(route.params.bookId as string)
+    const resp = await libraryApi.aiFillPreview(route.params.bookId as string, controller.signal)
+    if (controller.signal.aborted) return
     aiPreview.value = resp.data.data ?? null
-    aiPreviewVisible.value = !!aiPreview.value
+    if (!aiPreview.value) aiPreviewVisible.value = false
   } catch (err: unknown) {
+    if (controller.signal.aborted) return
+    aiPreviewVisible.value = false
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
-    aiFilling.value = false
+    if (aiPreviewAbort === controller) {
+      aiPreviewAbort = null
+      aiPreviewLoading.value = false
+    }
   }
 }
+
+function cancelAiPreview() {
+  aiPreviewAbort?.abort()
+  aiPreviewAbort = null
+  aiPreviewLoading.value = false
+}
+
+watch(aiPreviewVisible, (visible) => { if (!visible) cancelAiPreview() })
+onBeforeUnmount(cancelAiPreview)
 
 async function onAiApplied() {
   // 重新加载书籍、AI 元数据与类似作品的书库链接

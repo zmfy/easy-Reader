@@ -154,6 +154,17 @@ body::before {
   transform: translateY(-8px);
 }
 
+/* Element Plus 主色跟随当前主题强调色（浅色主题；深色主题在下方 html.dark 中同样映射） */
+:root {
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 70%, var(--bg-1));
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 50%, var(--bg-1));
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, var(--bg-1));
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, var(--bg-1));
+  --el-color-primary-light-9: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--accent) 80%, #000);
+}
+
 /* 深色主题下 Element Plus 使用暗色变量（html.dark，见 utils/theme.ts），再映射到当前主题配色 */
 html.dark {
   --el-bg-color: var(--bg-1);

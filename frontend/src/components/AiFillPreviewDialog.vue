@@ -2,13 +2,20 @@
   <el-dialog
     :model-value="modelValue"
     title="AI 填充预览"
-    width="640px"
+    width="880px"
+    align-center
     :fullscreen="isNarrow"
     :close-on-click-modal="false"
     class="ai-fill-preview"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <div v-if="preview && form" class="preview-body">
+    <!-- 检索中：明显的加载状态 + 已用时间，可随时取消 -->
+    <div v-if="loading" class="preview-loading">
+      <el-icon class="is-loading loading-icon"><Loading /></el-icon>
+      <div class="loading-title">AI 正在查找书籍信息…</div>
+      <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要几秒到一分钟，可随时取消</div>
+    </div>
+    <div v-else-if="preview && form" class="preview-body">
       <!-- 封面 -->
       <section class="block">
         <div class="block-title">封面 <span class="hint">左右滑动，点选一张</span></div>
@@ -49,8 +56,10 @@
         <div v-if="preview.coverCandidates.length === 0" class="hint">豆瓣没有找到候选封面</div>
       </section>
 
+      <!-- 宽屏两栏：左侧 作者 / 分类 / 连载 / 标签，右侧 简介 / 类似作品 -->
+      <div class="preview-grid">
       <!-- 作者 / 分类 / 简介（锁定字段可切换为 AI 结果） -->
-      <section v-for="f in textFields" :key="f.key" class="block">
+      <section v-for="f in textFields" :key="f.key" class="block" :class="`area-${f.key}`">
         <div class="block-title">
           {{ f.label }}
           <template v-if="isLocked(f.key)">
@@ -67,7 +76,7 @@
         <el-input
           v-model="form[f.key]"
           :type="f.key === 'summary' ? 'textarea' : 'text'"
-          :autosize="f.key === 'summary' ? { minRows: 3, maxRows: 10 } : undefined"
+          :autosize="f.key === 'summary' ? { minRows: 6, maxRows: 12 } : undefined"
           :placeholder="f.label"
           :maxlength="f.max"
         />
@@ -76,7 +85,7 @@
         </div>
       </section>
 
-      <section class="block">
+      <section class="block area-status">
         <div class="block-title">连载状态</div>
         <!-- 未知（null）时两项都不选中 -->
         <el-radio-group
@@ -89,7 +98,7 @@
       </section>
 
       <!-- 推荐标签 -->
-      <section class="block">
+      <section class="block area-tags">
         <div class="block-title">推荐标签</div>
         <div class="tag-list">
           <el-tag v-for="(t, i) in form.tags" :key="t" closable @close="form.tags.splice(i, 1)">{{ t }}</el-tag>
@@ -105,7 +114,7 @@
       </section>
 
       <!-- 类似作品 -->
-      <section class="block">
+      <section class="block area-similar">
         <div class="block-title">类似作品</div>
         <div v-for="(s, i) in form.similar" :key="`${s.title}-${i}`" class="similar-item">
           <div class="similar-text">
@@ -120,11 +129,12 @@
           <el-button size="small" :disabled="!newSimilar.title.trim()" @click="addSimilar">添加</el-button>
         </div>
       </section>
+      </div>
     </div>
 
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="applying" :disabled="!form" @click="apply">应用</el-button>
+      <el-button type="primary" :loading="applying" :disabled="loading || !form" @click="apply">应用</el-button>
     </template>
   </el-dialog>
 </template>
@@ -138,7 +148,7 @@ import { libraryApi } from '@/api/library'
 import { initialForm, buildApplyPayload, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, Book } from '@/types'
 
-const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string }>()
+const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; applied: [book: Book] }>()
 
 const isNarrow = useMediaQuery('(max-width: 768px)')
@@ -147,6 +157,15 @@ const applying = ref(false)
 const newTag = ref('')
 const newSimilar = reactive({ title: '', author: '' })
 const defaultCoverUrl = ref('')
+
+// 加载计时：让用户知道仍在进行
+const elapsed = ref(0)
+let elapsedTimer: ReturnType<typeof setInterval> | undefined
+watch(() => props.loading, (loading) => {
+  clearInterval(elapsedTimer)
+  elapsed.value = 0
+  if (loading) elapsedTimer = setInterval(() => { elapsed.value++ }, 1000)
+}, { immediate: true })
 
 // 长度上限与后端 parseAiFillApplyBody 一致
 const textFields: Array<{ key: AiFillLockableField; label: string; max: number }> = [
@@ -233,12 +252,63 @@ async function apply() {
 }
 
 onBeforeUnmount(() => {
+  clearInterval(elapsedTimer)
   clearTimeout(coverTimer)
   setDefaultCoverUrl('')
 })
 </script>
 
 <style scoped>
+.preview-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 320px;
+  text-align: center;
+}
+.loading-icon {
+  font-size: 44px;
+  color: var(--el-color-primary);
+}
+.loading-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.loading-hint {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  grid-template-areas:
+    "author summary"
+    "category summary"
+    "status summary"
+    "tags similar";
+  column-gap: 24px;
+  row-gap: 16px;
+  align-items: start;
+}
+.area-author { grid-area: author; }
+.area-category { grid-area: category; }
+.area-summary { grid-area: summary; }
+.area-status { grid-area: status; }
+.area-tags { grid-area: tags; }
+.area-similar { grid-area: similar; }
+
+/* 窄屏（全屏弹窗）单列 */
+@media (max-width: 768px) {
+  .preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "author" "category" "summary" "status" "tags" "similar";
+  }
+}
+
 .preview-body {
   display: flex;
   flex-direction: column;
@@ -353,5 +423,24 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 6px;
   margin-top: 8px;
+}
+</style>
+
+<style>
+/* 弹窗内容超出时只滚动中间区域，标题与「取消 / 应用」按钮始终可见 */
+.ai-fill-preview {
+  max-width: calc(100vw - 32px);
+}
+.ai-fill-preview:not(.is-fullscreen) .el-dialog__body {
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+}
+.ai-fill-preview.is-fullscreen {
+  display: flex;
+  flex-direction: column;
+}
+.ai-fill-preview.is-fullscreen .el-dialog__body {
+  flex: 1;
+  overflow-y: auto;
 }
 </style>
