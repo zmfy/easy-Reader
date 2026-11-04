@@ -20,12 +20,37 @@ function requestBody(prompt: string, config: Record<string, string>): string {
 const minmaxPlugin: AiPlugin = {
   name: 'minmax',
   label: 'MiniMax',
-  fields: ['apiKey', 'model', 'reasoningEffort'],
+  // 听书（ttsEnabled / ttsModel / ttsVoice）：语音合成见 services/tts.ts，与当前选中的 AI 插件无关
+  fields: ['apiKey', 'model', 'reasoningEffort', 'ttsEnabled', 'ttsModel', 'ttsVoice'],
   placeholders: {
     model: 'MiniMax-M3.1-Flash / MiniMax-M3',
     reasoningEffort: '默认（max）',
+    ttsEnabled: '关闭',
+    ttsModel: 'speech-2.8-turbo',
+    ttsVoice: '电台男主播',
   },
   options: {
+    ttsEnabled: [
+      { value: '', label: '关闭' },
+      { value: 'on', label: '开启（阅读器显示「听书」）' },
+    ],
+    ttsModel: [
+      { value: '', label: 'speech-2.8-turbo（约 2 元 / 万字符）' },
+      { value: 'speech-2.8-hd', label: 'speech-2.8-hd（音质更好，约 3.5 元 / 万字符）' },
+    ],
+    ttsVoice: [
+      { value: '', label: '电台男主播（默认）' },
+      { value: 'Chinese (Mandarin)_Gentleman', label: '温润男声' },
+      { value: 'Chinese (Mandarin)_Male_Announcer', label: '播报男声' },
+      { value: 'Chinese (Mandarin)_Sincere_Adult', label: '真诚青年' },
+      { value: 'Chinese (Mandarin)_Lyrical_Voice', label: '抒情男声' },
+      { value: 'Chinese (Mandarin)_Reliable_Executive', label: '沉稳高管' },
+      { value: 'Chinese (Mandarin)_Gentle_Senior', label: '温柔学姐' },
+      { value: 'Chinese (Mandarin)_News_Anchor', label: '新闻女声' },
+      { value: 'Chinese (Mandarin)_Wise_Women', label: '阅历姐姐' },
+      { value: 'Chinese (Mandarin)_Warm_Girl', label: '温暖少女' },
+      { value: 'female-chengshu', label: '成熟女性' },
+    ],
     reasoningEffort: [
       { value: '', label: '默认（max）' },
       { value: 'low', label: 'low（最快、消耗最少）' },

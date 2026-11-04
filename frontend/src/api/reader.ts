@@ -41,6 +41,10 @@ export const readerApi = {
   ask: (bookId: string, body: { question: string; chapterIndex: number; paragraphIndex: number; history: Array<{ q: string; a: string }> }) =>
     http.post<ApiResponse<AiAnswer>>(`/reader/${bookId}/ask`, body, { timeout: 180000 }),
 
+  // 听书：合成一段文字的语音（mp3），后端按文本缓存
+  tts: (bookId: string, text: string) =>
+    http.post<Blob>(`/reader/${bookId}/tts`, { text }, { responseType: 'blob', timeout: 60000 }),
+
   deleteBookmark: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/bookmarks/${id}`),
 }

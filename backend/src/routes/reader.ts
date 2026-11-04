@@ -9,6 +9,7 @@ import { Book, ReadingProgress, Bookmark } from '../types';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
+import { getTtsConfig, getSpeech, TTS_MAX_TEXT } from '../services/tts';
 import { resolveRealPathInsideRoot } from '../utils/path-safe';
 import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
 import DOMPurify from 'dompurify';
@@ -256,6 +257,22 @@ router.post('/:bookId/ask', authMiddleware, async (req: Request, res: Response) 
   } catch (err) {
     console.error(`[reader:ask] book=${book.id}`, err);
     errorResponse(res, 500, 'INTERNAL_ERROR', '问书失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
+});
+
+// POST /api/reader/:bookId/tts — 听书：合成一段文字的语音（mp3），按文本缓存
+router.post('/:bookId/tts', authMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({ text: z.string().trim().min(1).max(TTS_MAX_TEXT) }).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!getTtsConfig(db).enabled) { errorResponse(res, 400, 'TTS_DISABLED', '听书功能未开启，请在「AI 插件设置 → MiniMax」中开启'); return; }
+  if (!db.prepare('SELECT 1 FROM books WHERE id = ?').get(req.params.bookId)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  try {
+    const audio = await getSpeech(db, req.params.bookId, parsed.data.text);
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, max-age=86400' }).send(audio);
+  } catch (err) {
+    console.error(`[reader:tts] book=${req.params.bookId}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '语音合成失败: ' + (err instanceof Error ? err.message : '未知错误'));
   }
 });
 

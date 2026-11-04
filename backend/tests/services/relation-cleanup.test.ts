@@ -1,4 +1,7 @@
 import Database from 'better-sqlite3';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { deleteBookRelations, deleteUserData } from '../../src/services/relation-cleanup';
 
 function makeDb() {
@@ -36,6 +39,21 @@ describe('deleteBookRelations', () => {
     for (const t of ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps']) {
       expect(count(d, t, "book_id IN ('b1','b2')")).toBe(0);
       expect(count(d, t, "book_id = 'b3'")).toBeGreaterThan(0);
+    }
+  });
+
+  it("also removes the deleted books' listening cache", () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'data-'));
+    const old = process.env.DATA_DIR;
+    process.env.DATA_DIR = dataDir;
+    try {
+      for (const b of ['b1', 'b3']) fs.mkdirSync(path.join(dataDir, 'tts-cache', b), { recursive: true });
+      deleteBookRelations(makeDb(), ['b1']);
+      expect(fs.existsSync(path.join(dataDir, 'tts-cache', 'b1'))).toBe(false);
+      expect(fs.existsSync(path.join(dataDir, 'tts-cache', 'b3'))).toBe(true);
+    } finally {
+      process.env.DATA_DIR = old;
+      fs.rmSync(dataDir, { recursive: true, force: true });
     }
   });
 

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { deleteTtsCache } from './tts';
 
 // Tables holding per-book data keyed by book_id. manual_overrides (admin
 // decisions) and audit_log (audit trail) are intentionally kept.
@@ -14,6 +15,8 @@ export function deleteBookRelations(db: Database.Database, bookIds: string[]): v
   for (const table of BOOK_RELATION_TABLES) {
     db.prepare(`DELETE FROM ${table} WHERE book_id IN (${placeholders})`).run(...bookIds);
   }
+  // 听书音频缓存（文件）：只是缓存，事务回滚时丢了也无妨
+  deleteTtsCache(bookIds);
 }
 
 /** Delete a user's personal reading data (shelf, progress, bookmarks, reader prefs). */

@@ -15,7 +15,7 @@ export const settingsApi = {
     http.get<ApiResponse<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string>; options?: Record<string, Array<{ value: string; label: string }>> }>>>('/settings/ai-plugins'),
 
   getAiStatus: () =>
-    http.get<ApiResponse<{ configured: boolean; active_plugin: string | null }>>('/settings/ai-status'),
+    http.get<ApiResponse<{ configured: boolean; active_plugin: string | null; tts_enabled?: boolean }>>('/settings/ai-status'),
 
   getReaderPlugins: () =>
     http.get<ApiResponse<Array<{ format: string; label: string; description: string }>>>('/settings/reader-plugins'),

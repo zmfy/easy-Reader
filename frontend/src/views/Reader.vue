@@ -43,6 +43,7 @@
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
+            <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" title="听书" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </div>
         </div>
@@ -50,33 +51,36 @@
         <div class="nav-bar"><i :style="{ width: bookProgress }" /></div>
       </header>
 
-      <div class="paper" :class="{ 'pdf-wrapper': isPdfRender }" :style="paperStyle">
+      <div class="paper" :class="{ 'pdf-wrapper': isPdfRender, listening: listenActive }" :style="paperStyle">
         <!-- 右侧悬浮工具栏：纸张右外侧的竖向胶囊，图标按钮 + 悬停提示（宽屏） -->
         <aside class="side-tools" @click.stop>
           <el-tooltip content="目录" placement="left" :show-after="300">
-            <button class="side-tool" :class="{ on: tocVisible && tocTab === 'toc' }" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
+            <button class="side-tool" aria-label="目录" :class="{ on: tocVisible && tocTab === 'toc' }" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="书签（B 添加当前位置）" placement="left" :show-after="300">
-            <button class="side-tool" :class="{ on: tocVisible && tocTab === 'bookmark' }" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button class="side-tool" aria-label="书签（B 添加当前位置）" :class="{ on: tocVisible && tocTab === 'bookmark' }" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
-            <button class="side-tool" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
+            <button class="side-tool" aria-label="书籍详情" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip v-if="listenAvailable" :content="listenActive ? '关闭听书' : '听书'" placement="left" :show-after="300">
+            <button class="side-tool" :aria-label="listenActive ? '关闭听书' : '听书'" :class="{ on: listenActive }" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <template v-if="aiReady">
             <span class="side-sep" />
             <el-tooltip content="前情提要（AI）" placement="left" :show-after="300">
-              <button class="side-tool" :class="{ on: recapVisible }" @click="toggleRecap"><IconHistory :size="20" :stroke-width="1.75" /></button>
+              <button class="side-tool" aria-label="前情提要（AI）" :class="{ on: recapVisible }" @click="toggleRecap"><IconHistory :size="20" :stroke-width="1.75" /></button>
             </el-tooltip>
             <el-tooltip content="问书（AI）" placement="left" :show-after="300">
-              <button class="side-tool" :class="{ on: askVisible }" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
+              <button class="side-tool" aria-label="问书（AI）" :class="{ on: askVisible }" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
             </el-tooltip>
           </template>
           <span class="side-sep" />
           <el-tooltip :content="nightMode ? '切换到日间（靛青）' : '切换到夜间'" placement="left" :show-after="300">
-            <button class="side-tool" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="20" :stroke-width="1.75" /></button>
+            <button class="side-tool" :aria-label="nightMode ? '切换到日间（靛青）' : '切换到夜间'" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="阅读设置" placement="left" :show-after="300">
-            <button class="side-tool" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
+            <button class="side-tool" aria-label="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
         </aside>
 
@@ -225,6 +229,51 @@
       </div>
     </el-drawer>
 
+    <!-- 听书播放条：底部悬浮；锁屏 / 后台继续播放 -->
+    <Transition name="player">
+      <div v-if="listenActive" class="listen-bar" @click.stop>
+        <div class="listen-info">
+          <IconHeadphones :size="18" :stroke-width="1.75" class="listen-icon" />
+          <div class="listen-text">
+            <div class="listen-title">{{ chapterTitle }}</div>
+            <div class="listen-status" :class="{ error: !!listenError }">{{ listenStatus }}</div>
+          </div>
+        </div>
+        <div class="listen-controls">
+          <button class="listen-btn" title="上一段" @click="listen.prev()"><IconPlayerSkipBack :size="20" :stroke-width="1.75" /></button>
+          <button class="listen-btn main" :title="listenPlaying ? '暂停' : '播放'" @click="listen.toggle()">
+            <el-icon v-if="listenLoading" class="is-loading"><Loading /></el-icon>
+            <IconPlayerPauseFilled v-else-if="listenPlaying" :size="20" />
+            <IconPlayerPlayFilled v-else :size="20" />
+          </button>
+          <button class="listen-btn" title="下一段" @click="listen.next()"><IconPlayerSkipForward :size="20" :stroke-width="1.75" /></button>
+        </div>
+        <div class="listen-extra">
+          <el-dropdown trigger="click" placement="top" @command="(r: number) => listen.setRate(r)">
+            <button class="listen-chip" title="语速">{{ listenRate }}x</button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="r in LISTEN_RATES" :key="r" :command="r">{{ r }}x</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-dropdown trigger="click" placement="top" @command="(m: SleepMode) => listen.setSleep(m)">
+            <button class="listen-chip" :class="{ on: !!listenSleepMode }" title="定时停止"><IconClock :size="15" :stroke-width="1.75" />{{ sleepLabel }}</button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="0">不定时</el-dropdown-item>
+                <el-dropdown-item :command="15">15 分钟后停止</el-dropdown-item>
+                <el-dropdown-item :command="30">30 分钟后停止</el-dropdown-item>
+                <el-dropdown-item :command="60">60 分钟后停止</el-dropdown-item>
+                <el-dropdown-item command="chapter">本章结束后停止</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <button class="listen-btn" title="关闭听书" @click="listen.stop()"><IconX :size="18" :stroke-width="1.75" /></button>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 前情提要卡片：隔几天再打开时自动出现，工具栏随时调出；点按钮才调用 AI -->
     <Transition name="recap">
       <div v-if="recapVisible" class="recap-card" @click.stop>
@@ -345,7 +394,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Loading } from '@element-plus/icons-vue'
@@ -360,7 +409,8 @@ import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, 
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconHistory, IconMoon, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -405,6 +455,7 @@ const unitLabel = computed(() => isPdfRender.value ? '页' : '章')
 const bookTitle = ref('')
 const bookAuthor = ref('')
 const bookFinished = ref(false)
+const bookCover = ref('')
 const chapterTitle = computed(() => {
   const ch = reader.currentChapter.value
   return ch ? (ch.title || `第 ${ch.index + 1} ${unitLabel.value}`) : ''
@@ -417,6 +468,7 @@ async function loadBookInfo() {
     const b = (await libraryApi.get(bookId)).data.data
     bookTitle.value = b?.display_title || b?.title || ''
     bookAuthor.value = b?.author || ''
+    bookCover.value = b?.cover_url ? new URL(b.cover_url, location.origin).href : ''
     bookFinished.value = !!b?.is_finished
   } catch { /* 标题区仅作展示，失败不影响阅读 */ }
 }
@@ -983,6 +1035,62 @@ function onAskEnter(e: KeyboardEvent) {
   sendAsk()
 }
 
+// ── 听书（MiniMax 语音合成；在 AI 插件设置 → MiniMax 中开启）────
+const ttsReady = ref(false)
+const listenAvailable = computed(() => ttsReady.value && !isPdfRender.value)
+
+// 当前章节的段落元素（与阅读位置同一套段落）；瀑布流取当前章节的区块
+function listenChapter() {
+  const idx = reader.currentChapterIndex.value
+  const content = readerStore.settings.pageMode === 'scroll'
+    ? contentRef.value?.querySelector<HTMLElement>('.chapter-content')
+    : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${idx}"] .chapter-content`)
+  if (!content) return null
+  const blocks = Array.from(content.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR))
+  return { title: reader.chapters.value[idx]?.title || chapterTitle.value, blocks: blocks.length ? blocks : [content] }
+}
+
+const listen = useListen({
+  bookId,
+  chapter: listenChapter,
+  startBlock: () => currentReadingPosition().paragraphIndex,
+  nextChapter: async () => {
+    const next = reader.currentChapterIndex.value + 1
+    if (next >= reader.chapters.value.length) return false
+    await jumpToChapter(next)
+    await nextTick()
+    return true
+  },
+  meta: () => ({ title: chapterTitle.value, artist: [bookTitle.value, bookAuthor.value].filter(Boolean).join(' · '), artwork: bookCover.value || undefined }),
+})
+const {
+  active: listenActive, playing: listenPlaying, loading: listenLoading, error: listenError,
+  rate: listenRate, sleepMode: listenSleepMode, sleepLeft: listenSleepLeft,
+} = listen
+
+const sleepLabel = computed(() => {
+  if (listenSleepMode.value === 'chapter') return '本章结束'
+  return listenSleepMode.value ? listenSleepLeft.value : '定时'
+})
+const listenStatus = computed(() => {
+  if (listenError.value) return listenError.value
+  if (listenLoading.value) return '正在合成语音…'
+  if (!listenPlaying.value) return '已暂停'
+  if (listenSleepMode.value === 'chapter') return '正在朗读 · 本章结束后停止'
+  return listenSleepMode.value ? `正在朗读 · ${listenSleepLeft.value} 后停止` : '正在朗读'
+})
+
+function toggleListen() {
+  if (listenActive.value) listen.stop()
+  else listen.start()
+}
+
+// 章节翻页模式下手动换章：从新章节开头接着念（听书自己换章时跳过）
+watch(() => reader.currentContent.value, () => {
+  if (readerStore.settings.pageMode !== 'scroll' || !listenActive.value || listen.isAdvancing()) return
+  nextTick(() => listen.restartFromChapterTop())
+})
+
 // 「夜间」按钮：浅色主题切到夜间，深色主题切回靛青
 const nightMode = computed(() => isDarkReaderTheme(readerStore.settings.theme))
 function toggleNight() {
@@ -996,6 +1104,7 @@ function saveSettings() {
 
 async function setPageMode(mode: 'scroll' | 'waterfall') {
   resetChapterPositionTracking()
+  listen.stop()
   readerStore.updateSettings({ pageMode: mode })
   if (mode === 'waterfall') {
     await initWaterfall()
@@ -1101,7 +1210,10 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
-  const aiStatus = settingsApi.getAiStatus().then(r => { aiReady.value = !!r.data.data?.configured }).catch(() => {})
+  const aiStatus = settingsApi.getAiStatus().then(r => {
+    aiReady.value = !!r.data.data?.configured
+    ttsReady.value = !!r.data.data?.tts_enabled
+  }).catch(() => {})
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
@@ -1572,6 +1684,99 @@ onUnmounted(() => {
   color: var(--reader-text-secondary);
 }
 
+/* ── 听书 ── */
+/* 正在朗读的段落 */
+.chapter-content :deep(.tts-reading) {
+  background: var(--reader-accent-weak);
+  border-radius: 6px;
+  box-shadow: 0 0 0 6px var(--reader-accent-weak);
+  transition: background-color 0.2s ease;
+}
+/* 播放条出现时给正文底部留出空间 */
+.paper.listening { padding-bottom: 140px; }
+.listen-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 35;
+  width: min(720px, calc(100% - 24px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  background: var(--reader-panel-bg);
+  border: 1px solid var(--reader-divider);
+  border-radius: 16px;
+  box-shadow: var(--reader-panel-shadow);
+  font-family: var(--font-sans);
+  color: var(--reader-text);
+}
+.player-enter-active,
+.player-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
+.player-enter-from,
+.player-leave-to { opacity: 0; transform: translate(-50%, 12px); }
+.listen-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.listen-icon { flex-shrink: 0; color: var(--reader-accent); }
+.listen-text { min-width: 0; }
+.listen-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listen-status {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--reader-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listen-status.error { color: #e5484d; }
+.listen-controls,
+.listen-extra { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.listen-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--reader-text-2);
+  cursor: pointer;
+}
+.listen-btn:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
+.listen-btn.main {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--reader-accent);
+  color: #fff;
+}
+.listen-btn.main:hover { color: #fff; background: var(--reader-accent); filter: brightness(1.08); }
+.listen-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--reader-divider);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--reader-text-2);
+  cursor: pointer;
+}
+.listen-chip:hover,
+.listen-chip.on { color: var(--reader-accent); border-color: var(--reader-accent); }
+.nav-btn.on { color: var(--reader-accent); }
+
 /* ── 前情提要卡片：悬浮在顶栏下方，不随正文滚动 ── */
 .recap-card {
   position: fixed;
@@ -1743,6 +1948,14 @@ onUnmounted(() => {
   /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
   .paper.pdf-wrapper { padding: 12px 6px 16px; }
   .toc-del { opacity: 1; }
+  /* 顶栏按钮多，进度数字收起（顶栏底部的进度条仍在） */
+  .nav-progress { display: none; }
+  /* 播放条：信息一行，按钮一行 */
+  .listen-bar { flex-wrap: wrap; gap: 8px; bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .listen-info { flex-basis: 100%; }
+  .listen-controls { order: 2; }
+  .listen-extra { order: 3; margin-left: auto; }
+  .paper.listening { padding-bottom: 180px; }
 }
 
 /* ── Settings panel ── */
