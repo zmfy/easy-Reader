@@ -2,13 +2,15 @@ export type ReaderKeyAction = 'prevChapter' | 'nextChapter' | 'pageDown' | 'page
 
 type KeyLike = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>
 
-/** 阅读器键盘快捷键：← / → 翻章，空格 / PageDown 下翻一屏（Shift+空格 / PageUp 上翻），B 加书签 */
+/** 阅读器键盘快捷键：← / → 翻章；↓ / 空格 / PageDown 下翻一屏（↑ / Shift+空格 / PageUp 上翻）；B 加书签 */
 export function readerKeyAction(e: KeyLike): ReaderKeyAction | null {
   // 带 Ctrl / Alt / Meta 的组合键留给浏览器（如 Alt+← 后退）
   if (e.ctrlKey || e.altKey || e.metaKey) return null
   switch (e.key) {
     case 'ArrowLeft': return 'prevChapter'
     case 'ArrowRight': return 'nextChapter'
+    case 'ArrowDown': return 'pageDown'
+    case 'ArrowUp': return 'pageUp'
     case ' ': return e.shiftKey ? 'pageUp' : 'pageDown'
     case 'PageDown': return 'pageDown'
     case 'PageUp': return 'pageUp'
@@ -16,4 +18,21 @@ export function readerKeyAction(e: KeyLike): ReaderKeyAction | null {
     case 'B': return 'bookmark'
     default: return null
   }
+}
+
+/**
+ * 按屏翻页的滚动距离：一屏高度减去两行正文，翻页后上一屏最后两行出现在新一屏顶部，阅读不脱节。
+ * 视口很小时至少滚动半屏，避免几乎不动。
+ */
+export function pageScrollDistance(viewportHeight: number, lineHeightPx: number): number {
+  return Math.max(viewportHeight - lineHeightPx * 2, viewportHeight / 2)
+}
+
+/**
+ * 按行对齐的下翻距离：把「距屏幕底部约两行」的那一行滚到屏幕顶部（留 8px 边距），
+ * 保证翻页后至少两整行与上一屏重叠、顶部不出现被切掉半截的行。限制在半屏到一屏之间。
+ */
+export function alignedPageDistance(targetLineTop: number, viewportTop: number, viewportHeight: number): number {
+  const distance = targetLineTop - viewportTop - 8
+  return Math.min(Math.max(distance, viewportHeight / 2), viewportHeight)
 }

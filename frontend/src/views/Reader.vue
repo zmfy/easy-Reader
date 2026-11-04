@@ -181,7 +181,7 @@
         <!-- 重置 -->
         <el-button size="small" @click="readerStore.resetSettings()" style="margin-top:8px">恢复默认</el-button>
 
-        <div class="shortcut-hint">快捷键：← → 翻章 · 空格 翻页 · B 加书签</div>
+        <div class="shortcut-hint">快捷键：← → 翻章 · ↑ ↓ / 空格 翻屏 · B 加书签</div>
       </div>
     </el-drawer>
 
@@ -249,7 +249,7 @@ import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
-import { readerKeyAction } from '@/utils/reader-keys'
+import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 
 const route = useRoute()
 const router = useRouter()
@@ -712,6 +712,51 @@ async function setPageMode(mode: 'scroll' | 'waterfall') {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────
+// 取屏幕坐标处文字所在行的顶部（Chrome / Safari 用 caretRangeFromPoint，Firefox 用 caretPositionFromPoint）
+function lineTopAtPoint(x: number, y: number, container: Element): number | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+  }
+  let node: Node | null = null
+  let offset = 0
+  if (doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(x, y)
+    if (pos) { node = pos.offsetNode; offset = pos.offset }
+  } else if (document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(x, y)
+    if (r) { node = r.startContainer; offset = r.startOffset }
+  }
+  if (!node || node.nodeType !== Node.TEXT_NODE || !container.contains(node)) return null
+  const len = node.textContent?.length ?? 0
+  if (len === 0) return null
+  const range = document.createRange()
+  const start = Math.min(offset, len - 1)
+  range.setStart(node, start)
+  range.setEnd(node, start + 1)
+  const rect = range.getClientRects()[0]
+  return rect && rect.height > 0 ? rect.top : null
+}
+
+// 下翻：把距屏幕底部约两行的那一行对齐到顶部；找不到文字（如 PDF 页面图）时按固定距离
+function textAlignedPageDistance(el: HTMLElement, lineHeightPx: number): number {
+  const fallback = pageScrollDistance(el.clientHeight, lineHeightPx)
+  const box = el.getBoundingClientRect()
+  const contents = [...el.querySelectorAll<HTMLElement>('.chapter-content')]
+  const target = box.bottom - lineHeightPx * 1.5
+  // 测量点可能落在段落间距里，浏览器会返回远处的文字：在目标附近多试几个点，
+  // 只接受确实位于「底部倒数第二行」附近的行，否则按固定距离翻
+  for (const dy of [0, -lineHeightPx / 2, lineHeightPx / 2, -lineHeightPx]) {
+    const y = target + dy
+    const content = contents.find(c => { const r = c.getBoundingClientRect(); return r.top <= y && r.bottom >= y })
+    if (!content) continue
+    const lineTop = lineTopAtPoint(content.getBoundingClientRect().left + lineHeightPx, y, content)
+    if (lineTop != null && lineTop >= target - lineHeightPx * 1.5 && lineTop <= target + lineHeightPx * 0.5) {
+      return alignedPageDistance(lineTop, box.top, el.clientHeight)
+    }
+  }
+  return fallback
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if ((e.target as HTMLElement | null)?.isContentEditable) return
@@ -733,8 +778,15 @@ function handleKeydown(e: KeyboardEvent) {
     case 'pageDown':
     case 'pageUp': {
       const el = contentRef.value
-      // 每次滚动 90% 屏高，保留一行上下文
-      if (el) el.scrollBy({ top: (action === 'pageDown' ? 1 : -1) * el.clientHeight * 0.9, behavior: 'smooth' })
+      if (!el) break
+      // 浮动工具栏会盖住顶部 / 底部正文：翻屏时收起，保证衔接的两行可见
+      toolbarVisible.value = false
+      // 按屏翻页并保留两行正文作为衔接（行高随当前字号 / 行距变化）
+      const lineHeightPx = readerStore.settings.fontSize * readerStore.settings.lineHeight
+      const distance = action === 'pageDown'
+        ? textAlignedPageDistance(el, lineHeightPx)
+        : pageScrollDistance(el.clientHeight, lineHeightPx)
+      el.scrollBy({ top: action === 'pageDown' ? distance : -distance, behavior: 'smooth' })
       break
     }
     case 'bookmark':

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readerKeyAction } from './reader-keys'
+import { readerKeyAction, pageScrollDistance, alignedPageDistance } from './reader-keys'
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
   ({ key: k, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
@@ -28,8 +28,43 @@ describe('readerKeyAction', () => {
     expect(readerKeyAction(key(' ', { metaKey: true }))).toBeNull()
   })
 
+  it('maps up / down arrows to scrolling one screen', () => {
+    expect(readerKeyAction(key('ArrowDown'))).toBe('pageDown')
+    expect(readerKeyAction(key('ArrowUp'))).toBe('pageUp')
+  })
+
   it('ignores other keys', () => {
     expect(readerKeyAction(key('a'))).toBeNull()
-    expect(readerKeyAction(key('ArrowDown'))).toBeNull()
+    expect(readerKeyAction(key('Home'))).toBeNull()
+  })
+})
+
+describe('pageScrollDistance', () => {
+  it('keeps the last two lines of the previous screen visible', () => {
+    // 字号 18px、行高 1.8 → 一行 32.4px，保留两行
+    expect(pageScrollDistance(856, 18 * 1.8)).toBeCloseTo(856 - 64.8)
+  })
+
+  it('keeps more overlap for larger text', () => {
+    expect(pageScrollDistance(856, 32 * 2.5)).toBe(856 - 160)
+  })
+
+  it('never scrolls less than half a screen on tiny viewports', () => {
+    expect(pageScrollDistance(200, 80)).toBe(100)
+  })
+})
+
+describe('alignedPageDistance', () => {
+  // 视口顶部 y=56、高 900；目标行（距底部约两行）顶部在 y=860
+  it('scrolls so the target line starts just below the top edge', () => {
+    expect(alignedPageDistance(860, 56, 900)).toBe(860 - 56 - 8)
+  })
+
+  it('never scrolls less than half a screen', () => {
+    expect(alignedPageDistance(200, 56, 900)).toBe(450)
+  })
+
+  it('never scrolls more than a full screen', () => {
+    expect(alignedPageDistance(2000, 56, 900)).toBe(900)
   })
 })
