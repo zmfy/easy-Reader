@@ -12,20 +12,26 @@
         <div class="detail-main">
           <div class="cover-section">
             <div class="book-cover-large">
-              <img v-if="book.cover_url" :src="book.cover_url" :alt="book.title" />
+              <img v-if="book.cover_url" :src="book.cover_url" :alt="displayTitle" />
               <div v-else class="cover-placeholder-large">
-                <span class="format-label">{{ book.file_format?.toUpperCase() }}</span>
-                <span class="title-label">{{ book.title }}</span>
+                <span class="title-label">{{ displayTitle }}</span>
               </div>
             </div>
             <div class="cover-actions">
-              <el-button type="primary" size="large" @click="router.push(`/reader/${book.id}`)">
+              <el-button type="primary" size="large" class="read-btn" :title="readLabel" @click="router.push(`/reader/${book.id}`)">
                 <el-icon><VideoPlay /></el-icon>
-                开始阅读
+                <span class="btn-label">{{ readLabel }}</span>
               </el-button>
-              <el-button size="large" @click="handleAddToShelf" :loading="addingShelf">
-                <el-icon><Plus /></el-icon>
-                加入书架
+              <!-- 已在书架时显示状态，再点一次移出书架 -->
+              <el-button
+                size="large"
+                :class="{ 'on-shelf': onShelf }"
+                :loading="addingShelf"
+                :title="onShelf ? '点击移出书架' : '加入书架'"
+                @click="toggleShelf"
+              >
+                <el-icon><component :is="onShelf ? Check : Plus" /></el-icon>
+                {{ onShelf ? '已在书架' : '加入书架' }}
               </el-button>
             </div>
           </div>
@@ -33,7 +39,7 @@
           <div class="info-section">
             <div class="info-header">
               <div v-if="!editing">
-                <h1 class="book-title">{{ book.title }}</h1>
+                <h1 class="book-title" :title="displayTitle !== book.title ? `文件名：${book.title}` : undefined">{{ displayTitle }}</h1>
                 <p class="book-author">
                   <a v-if="book.author" class="author-link" @click="router.push({ path: '/library', query: { search: book.author } })">{{ book.author }}</a>
                   <span v-else>未知作者</span>
@@ -87,12 +93,12 @@
 
             <div class="info-tags">
               <el-tag v-if="book.category">{{ book.category }}</el-tag>
-              <el-tag type="info">{{ book.file_format?.toUpperCase() }}</el-tag>
+              <el-tag type="info">{{ book.file_format?.toUpperCase() }}<template v-if="book.file_size"> · {{ formatSize(book.file_size) }}</template></el-tag>
               <el-tag v-if="book.is_finished" type="success">完结</el-tag>
               <el-tag v-else type="warning">连载中</el-tag>
             </div>
 
-            <div class="info-meta">
+            <div v-if="book.publish_date || book.finish_date" class="info-meta">
               <div v-if="book.publish_date" class="meta-item">
                 <span class="meta-label">发布时间</span>
                 <span class="meta-value">{{ book.publish_date }}</span>
@@ -100,10 +106,6 @@
               <div v-if="book.finish_date" class="meta-item">
                 <span class="meta-label">完结时间</span>
                 <span class="meta-value">{{ book.finish_date }}</span>
-              </div>
-              <div v-if="book.file_size" class="meta-item">
-                <span class="meta-label">文件大小</span>
-                <span class="meta-value">{{ formatSize(book.file_size) }}</span>
               </div>
             </div>
 
@@ -163,15 +165,17 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock } from '@element-plus/icons-vue'
+import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
 import { libraryApi } from '@/api/library'
 import { shelfApi } from '@/api/shelf'
+import { readerApi } from '@/api/reader'
+import { readButtonLabel } from '@/utils/reading-label'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
-import type { AiFillPreview, Book, BookAiMetadata } from '@/types'
+import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -189,6 +193,10 @@ const aiPreview = ref<AiFillPreview | null>(null)
 const aiPreviewVisible = ref(false)
 const aiConfigured = ref(true)
 const addingShelf = ref(false)
+const onShelf = ref(false)
+const progress = ref<ReadingProgress | null>(null)
+const readLabel = computed(() => readButtonLabel(progress.value))
+const displayTitle = computed(() => book.value?.display_title || book.value?.title || '')
 
 const editForm = reactive({
   title: '',
@@ -219,12 +227,16 @@ async function fetchBook() {
   loading.value = true
   try {
     const id = route.params.bookId as string
-    const [bookResp, metaResp] = await Promise.all([
+    const [bookResp, metaResp, shelfResp, progressResp] = await Promise.all([
       libraryApi.get(id),
       libraryApi.getAiMetadata(id).catch(() => null),
+      shelfApi.list().catch(() => null),
+      readerApi.getProgress(id).catch(() => null),
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
+    onShelf.value = !!shelfResp?.data.data?.some(item => item.book_id === id)
+    progress.value = progressResp?.data.data ?? null
 
     // Gate the AI-fill button on whether AI is configured (admin-only feature).
     if (authStore.isAdmin) {
@@ -296,18 +308,25 @@ async function onAiApplied() {
   await fetchBook()
 }
 
-async function handleAddToShelf() {
+async function toggleShelf() {
   if (!book.value) return
   addingShelf.value = true
   try {
-    await shelfApi.add(book.value.id)
-    ElMessage.success('已加入书架')
+    if (onShelf.value) {
+      await shelfApi.remove(book.value.id)
+      onShelf.value = false
+      ElMessage.success('已移出书架')
+    } else {
+      await shelfApi.add(book.value.id)
+      onShelf.value = true
+      ElMessage.success('已加入书架')
+    }
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
     if (msg?.includes('已在书架')) {
-      ElMessage.info('该书已在书架中')
+      onShelf.value = true
     } else {
-      ElMessage.error('添加失败')
+      ElMessage.error(onShelf.value ? '移出失败' : '添加失败')
     }
   } finally {
     addingShelf.value = false
@@ -375,10 +394,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
   .cover-placeholder-large {
     gap: 8px;
     padding: 10px 6px;
-  }
-
-  .format-label {
-    font-size: 11px;
   }
 
   .title-label {
@@ -470,13 +485,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
   gap: 12px;
 }
 
-.format-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 2px;
-}
-
 .title-label {
   font-size: 16px;
   color: var(--text-1);
@@ -494,6 +502,24 @@ watch(() => route.params.bookId, () => { fetchBook() })
 .cover-actions :deep(.el-button) {
   width: 100%;
   margin-left: 0 !important;
+}
+
+/* 「继续阅读 · 章节名」过长时省略，完整内容见悬停提示 */
+.read-btn .btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.read-btn :deep(> span) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 已在书架：弱化为状态显示，悬停提示可移出 */
+.cover-actions .on-shelf {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 .info-header {

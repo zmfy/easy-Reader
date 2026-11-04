@@ -164,13 +164,14 @@ router.get('/:bookId/progress', authMiddleware, (req: Request, res: Response) =>
   const row = db.prepare('SELECT * FROM reading_progress WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId) as ReadingProgress | undefined;
   successResponse(res, row
     ? {
+      hasProgress: true,
       chapterIndex: row.chapter_index,
       chapterTitle: row.chapter_title || '',
       scrollTop: row.scroll_top,
       paragraphIndex: row.paragraph_index ?? 0,
       paragraphOffset: row.paragraph_offset ?? 0,
     }
-    : { chapterIndex: 0, chapterTitle: '', scrollTop: 0, paragraphIndex: 0, paragraphOffset: 0 }
+    : { hasProgress: false, chapterIndex: 0, chapterTitle: '', scrollTop: 0, paragraphIndex: 0, paragraphOffset: 0 }
   );
 });
 

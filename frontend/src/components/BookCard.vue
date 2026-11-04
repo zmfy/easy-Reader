@@ -6,7 +6,7 @@
         <div class="img-skeleton" :class="{ hidden: imgLoaded }" />
         <img
           :src="book.cover_url"
-          :alt="book.title"
+          :alt="displayTitle"
           loading="lazy"
           decoding="async"
           :class="{ loaded: imgLoaded }"
@@ -16,7 +16,7 @@
       </template>
       <!-- 无封面 / 加载失败 -->
       <div v-else class="cover-placeholder" :style="{ background: placeholderGradient }">
-        <span class="cover-title">{{ book.title }}</span>
+        <span class="cover-title">{{ displayTitle }}</span>
       </div>
       <!-- 状态徽章（重复 / 乱码） -->
       <el-tag v-if="badge" :type="badge.type" size="small" class="status-badge">
@@ -53,7 +53,7 @@
       <div v-if="!imgError && book.cover_url" class="cover-bottom-fade" />
     </div>
     <div class="book-info">
-      <div class="book-title" :title="book.title">{{ book.title }}</div>
+      <div class="book-title" :title="book.title">{{ displayTitle }}</div>
       <div class="book-author">{{ book.author || '未知作者' }}</div>
       <div class="book-meta">
         <span v-if="book.category" class="tag category">{{ book.category }}</span>
@@ -86,6 +86,8 @@ const aiFillBadge = computed<{ type: 'success' | 'warning'; label: string } | nu
   if (props.book.ai_fill_status === 'failed') return { type: 'warning', label: 'AI填充失败' }
   return null
 })
+
+const displayTitle = computed(() => props.book.display_title || props.book.title)
 
 const imgLoaded = ref(false)
 const imgError = ref(false)

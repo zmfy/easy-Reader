@@ -8,6 +8,8 @@ export interface User {
 export interface Book {
   id: string
   title: string
+  /** 清洗掉版本标记、作者等后的书名，仅用于显示 */
+  display_title?: string
   author?: string
   file_path: string
   file_format: string
@@ -51,6 +53,8 @@ export interface ShelfItem {
 }
 
 export interface ReadingProgress {
+  /** 是否读过（无进度记录时为 false） */
+  hasProgress?: boolean
   chapterIndex: number
   chapterTitle?: string
   scrollTop: number

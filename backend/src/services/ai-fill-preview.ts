@@ -5,6 +5,9 @@ import { readTxtPreview } from '../plugins/parser-txt';
 import { DoubanCandidate, doubanSuggestList, fetchCoverThumbnailDataUri } from '../utils/cover';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { parseEditedFields } from './ai-batch-fill';
+import { cleanBookTitle } from '../utils/book-title';
+
+export { cleanBookTitle };
 
 /**
  * 单本 AI 填充预览：只读，不写库、不落盘封面、不抓评分。
@@ -35,18 +38,6 @@ export class BookNotFoundError extends Error {
 }
 
 const LOCKABLE: LockableField[] = ['author', 'summary', 'category'];
-
-/** 去掉文件名中的版本标记、括号说明、作者等，得到用于检索的书名 */
-export function cleanBookTitle(raw: string): string {
-  return raw
-    .replace(/[《《][^》》]{0,40}[》》]/g, (m) => m.slice(1, -1))  // 《xxx》 → xxx
-    .replace(/作者[：:][^\s，,。]{0,30}/g, '')                                  // 作者：xxx
-    .replace(/[(（][^)）]{0,30}[)）]/g, '')                          // (xxx) （xxx）
-    .replace(/[[【][^\]】]{0,30}[\]】]/g, '')                        // [xxx] 【xxx】
-    .replace(/[-_\s]*(完本|精校版?|全本|完整版|最新版|修订版|番外|特别版|典藏版)[-_\s]*/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim() || raw;
-}
 
 const FINISHED_KEYWORDS = /完本|完结|全集|全本|完整版|精校版|完稿/;
 

@@ -1,3 +1,4 @@
+import { cleanBookTitle } from './book-title';
 import { Request } from 'express';
 
 /**
@@ -14,4 +15,18 @@ export function hideFilePathForNonAdmin<T extends object>(req: Request, data: T 
     return rest as T;
   };
   return Array.isArray(data) ? data.map(strip) : strip(data);
+}
+
+/**
+ * 给书籍附加 display_title（清洗掉版本标记、作者等后的书名），供界面显示；
+ * 原 title 保持不变（搜索、排序、文件识别仍用它）。
+ */
+export function withDisplayTitle<T extends object>(data: T[]): Array<T & { display_title?: string }>;
+export function withDisplayTitle<T extends object>(data: T): T & { display_title?: string };
+export function withDisplayTitle<T extends object>(data: T | T[]): (T & { display_title?: string }) | Array<T & { display_title?: string }> {
+  const add = (row: T) => {
+    const title = (row as { title?: unknown }).title;
+    return typeof title === 'string' ? { ...row, display_title: cleanBookTitle(title) } : row;
+  };
+  return Array.isArray(data) ? data.map(add) : add(data);
 }
