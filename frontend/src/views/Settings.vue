@@ -585,6 +585,7 @@ const changelog: ChangelogRelease[] = [
     title: 'PDF 原版显示与 EPUB 修复',
     items: [
       { tag: 'reader', text: 'PDF 「阅读器逐页显示」模式（原「插件解析」）改为按原版逐页显示，封面图片、字体与排版和原文件一致；支持章节翻页 / 瀑布流、阅读进度与书签，手机上按屏幕宽度自适应' },
+      { tag: 'reader', text: 'PDF 默认改为「阅读器逐页显示」（安卓等手机浏览器无法内嵌显示 PDF）；管理员在设置中手动关闭过的保持浏览器原生打开' },
       { tag: 'epub', text: '修复部分漫画 EPUB 第一页封面空白的问题（SVG 方式引用的图片此前未能加载）' },
       { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
     ],

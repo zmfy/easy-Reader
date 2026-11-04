@@ -144,3 +144,9 @@
 - [x] 验证：typecheck、vitest、build（dist 含 pdfjs 资源）；Chrome 电脑 + 手机视口：封面图片、翻页、瀑布流、进度恢复、书签
   - 结果：vue-tsc、vitest 7 passed、build 含 200 个 pdfjs 资源；开发与生产预览下封面图片 / 原版排版正常，翻页、瀑布流加载与裁剪、刷新后进度恢复（页 + 页内位置）、书签跳转均正常；手机视口 390px 按 2 倍清晰度重绘
 - [ ] 备注：本书字体已嵌入，未实际触发 cmaps 加载（资源可访问已确认）；原生模式在安卓手机浏览器中通常无法内嵌显示 PDF，可考虑把逐页显示设为默认
+
+# PDF 默认模式改为逐页显示
+
+- [x] reader.ts / settings.ts：pdf_use_plugin 仅为 'false' 时走浏览器原生，未设置默认逐页显示；已手动关闭的保持原样
+- [x] 验证：临时库中 未设置 / 'false' / 'true' 三种状态的 chapters 与 reader-plugins 接口结果正确；Chrome 未设置时直接逐页显示、设置页开关为开；30 suites / 225 tests、tsc
+- [ ] 备注：逐页显示仍由后端 pdf-parse 解析全书取得页数（本书 195 页约 0.5 秒），提取出的文字已不再显示；大 PDF 可考虑改为只取页数
