@@ -392,4 +392,4 @@
 - [x] 前端：/change-password 页（强制时不能离开）、路由守卫与 403 拦截跳转、侧栏「修改密码」；密码规则抽成 utils/password-policy（设置页共用，测试先行）
 - [x] 文档：api.md、README、.env.example、docker-compose、CLAUDE.md；更新说明
 - [x] 验证：jest 49 suites / 430（新增 22）、vitest 94、前后端 tsc；接口实测默认密码登录 mustChangePassword=true、书库 403、当前密码错 / 弱密码 / 同密码 422、改后旧令牌 401 新令牌 200；临时后端 TRUST_PROXY=1 时 IP A 第 21 次失败 429、IP B 仍 401，未设置时 B 也 429（复现原问题），成功登录 25 次不计数；Chrome 登录后进改密码页、访问书架被拦回、错误密码提示不掉线、改后进书库、侧栏入口与「返回」、已登录会话被标记后下一次请求转改密码页、手机 390 宽无横向滚动
-- [ ] 已知（未改）：「晴空」「素纸」主题没有定义 --card-bg 等卡片变量，登录 / 注册页卡片显示为暗夜主题的深色；改密码页改用 --bg-1 避开
+- [x] 修复（用户要求）：「晴空」「素纸」主题补上 --card-bg / --card-border / --card-title / --input-bg（原来退回暗夜主题的值：登录 / 注册卡片深色，设置页与输入框边框紫色）；改密码页改回用 --card-*；theme.test 检查每个主题都定义了这些变量（修复前 sky / paper 失败）；vitest 100、vue-tsc；Chrome 晴空 / 素纸 / 靛青登录卡片白色、暗夜不变

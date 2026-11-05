@@ -108,9 +108,8 @@ async function logout() {
 .pwd-card {
   width: 100%;
   max-width: 440px;
-  /* --bg-1 / --text-2 每个主题都有定义（--card-* 只有部分主题定义） */
-  background: var(--bg-1);
-  border: 1px solid color-mix(in srgb, var(--text-2) 22%, transparent);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
   padding: 32px;

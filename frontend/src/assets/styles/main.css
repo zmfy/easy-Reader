@@ -105,6 +105,10 @@
   --accent-2: #06b6d4;
   --warning: #d97706;
   --danger: #dc2626;
+  --card-bg: #ffffff;
+  --card-border: #dde5f7;
+  --card-title: #1a2340;
+  --input-bg: #ffffff;
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(60, 80, 160, 0.12);
@@ -124,6 +128,10 @@
   --accent-2: #7a9a50;
   --warning: #b45309;
   --danger: #b91c1c;
+  --card-bg: #ffffff;
+  --card-border: #e8dfd0;
+  --card-title: #2a2018;
+  --input-bg: #ffffff;
   --radius-lg: 18px;
   --radius-md: 12px;
   --shadow-soft: 0 12px 40px rgba(80, 60, 20, 0.12);
