@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBookMap, pruneEmpty, toMarkdown, safeFileName, type MapNode } from './book-map'
+import { buildBookMap, pruneEmpty, toMarkdown, safeFileName, findMapNode, countMindDescendants, type MapNode } from './book-map'
 import type { Highlight, MindNode } from '../types'
 
 const mind = (id: string, over: Partial<MindNode> = {}): MindNode => ({
@@ -134,5 +134,16 @@ describe('book-map', () => {
   it('safeFileName strips illegal characters', () => {
     expect(safeFileName(' a/b\\c:d*e?f"g<h>i|j ')).toBe('abcdefghij')
     expect(safeFileName(' /: ')).toBe('学习导图')
+  })
+
+  it('finds a node by id and counts mind descendants', () => {
+    const nodes = [mind('a'), mind('b', { parent_id: 'a' }), mind('c', { parent_id: 'b' }), mind('d', { chapter_index: 1 })]
+    const root = buildBookMap({ bookTitle: '书', chapters: flat, nodes, highlights: [] })
+    expect(findMapNode(root, 'b')?.label).toBe('b')
+    expect(findMapNode(root, 'nope')).toBeNull()
+    expect(countMindDescendants(findMapNode(root, 'a')!)).toBe(2)
+    expect(countMindDescendants(findMapNode(root, 'c')!)).toBe(0)
+    // 骨架节点本身不计数，只数下面的 mind 节点
+    expect(countMindDescendants(root)).toBe(4)
   })
 })

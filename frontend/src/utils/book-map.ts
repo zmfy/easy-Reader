@@ -131,3 +131,18 @@ export function toMarkdown(root: MapNode): string {
 export function safeFileName(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '').trim() || '学习导图'
 }
+
+/** 按 id 在树中查找节点，找不到返回 null */
+export function findMapNode(root: MapNode, id: string): MapNode | null {
+  if (root.id === id) return root
+  for (const c of root.children) {
+    const f = findMapNode(c, id)
+    if (f) return f
+  }
+  return null
+}
+
+/** 子树中（不含自身）mind 节点的个数，用于删除确认 */
+export function countMindDescendants(n: MapNode): number {
+  return n.children.reduce((sum, c) => sum + (c.type === 'mind' ? 1 : 0) + countMindDescendants(c), 0)
+}
