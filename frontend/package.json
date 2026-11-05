@@ -10,26 +10,27 @@
     "test": "vitest"
   },
   "dependencies": {
-    "vue": "^3.5.44",
-    "vue-router": "^4.3.3",
-    "pinia": "^2.1.7",
+    "@element-plus/icons-vue": "^2.3.1",
+    "@tabler/icons-vue": "3.49.0",
+    "@vueuse/core": "^10.11.0",
     "axios": "^1.7.2",
     "element-plus": "^2.7.5",
-    "@element-plus/icons-vue": "^2.3.1",
-    "@vueuse/core": "^10.11.0",
     "pdfjs-dist": "6.4.299",
-    "@tabler/icons-vue": "3.49.0"
+    "pinia": "^2.1.7",
+    "vue": "^3.5.44",
+    "vue-router": "^4.3.3"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.5",
-    "vite": "^5.3.1",
-    "typescript": "^5.4.5",
-    "vue-tsc": "^2.0.21",
     "@types/node": "^20.14.0",
-    "vitest": "^1.6.0",
+    "@vitejs/plugin-vue": "^5.0.5",
     "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.19",
+    "happy-dom": "21.0.4",
     "postcss": "^8.4.38",
-    "unplugin-vue-components": "^0.27.5"
+    "typescript": "^5.4.5",
+    "unplugin-vue-components": "^0.27.5",
+    "vite": "^5.3.1",
+    "vitest": "^1.6.0",
+    "vue-tsc": "^2.0.21"
   }
 }
