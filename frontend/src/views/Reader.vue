@@ -6,6 +6,7 @@
       <div class="pdf-topbar">
         <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
         <span class="pdf-topbar-title">PDF 阅读</span>
+        <el-button class="pdf-topbar-map" text @click="openBookMap"><IconSitemap :size="18" :stroke-width="1.75" />&nbsp;学习导图</el-button>
       </div>
       <div class="pdf-viewer-area">
         <div v-if="pdfLoading" class="pdf-loading">
@@ -43,6 +44,7 @@
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
             <button v-if="highlightable" class="nav-btn" title="笔记" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" title="学习导图" @click="openBookMap"><IconSitemap :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" :class="{ on: onShelf }" :title="shelfLabel" :aria-label="shelfLabel" :aria-pressed="onShelf" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
             <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" :title="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
@@ -64,6 +66,9 @@
           </el-tooltip>
           <el-tooltip v-if="highlightable" content="笔记" placement="left" :show-after="300">
             <button class="side-tool" aria-label="笔记" :class="{ on: tocVisible && tocTab === 'note' }" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip content="学习导图" placement="left" :show-after="300">
+            <button class="side-tool" aria-label="学习导图" @click="openBookMap"><IconSitemap :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书籍详情" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
@@ -495,7 +500,7 @@ import { settingsApi } from '@/api/settings'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHighlight, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHighlight, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSitemap, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1650,6 +1655,54 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
+function openBookMap() {
+  router.push(`/book/${bookId}/map`)
+}
+
+// ── 学习导图跳转参数 ─────────────────────────────────────────
+// ?chapter=<i>[&find=<label>]：跳到该章（并查找闪烁知识点）；?highlight=<id>：跳到划线
+// 只在打开时读取一次；处理后从地址栏去掉，刷新不会重复跳转
+const JUMP_QUERY_KEYS = ['chapter', 'find', 'highlight'] as const
+type JumpTarget =
+  | { kind: 'chapter'; chapterIndex: number; find: string }
+  | { kind: 'highlight'; highlight: Highlight }
+
+function queryString(key: string): string {
+  const v = route.query[key]
+  return typeof v === 'string' ? v : ''
+}
+
+function hasJumpQuery(): boolean {
+  return JUMP_QUERY_KEYS.some(k => route.query[k] !== undefined)
+}
+
+/** 解析跳转目标；章越界、划线不存在等无效时返回 null（需在目录与划线加载后调用） */
+function resolveJumpTarget(): JumpTarget | null {
+  const chapterCount = reader.chapters.value.length
+  const highlightId = queryString('highlight')
+  if (highlightId) {
+    const h = reader.highlights.value.find(x => x.id === highlightId)
+    return h && h.chapter_index >= 0 && h.chapter_index < chapterCount ? { kind: 'highlight', highlight: h } : null
+  }
+  const raw = queryString('chapter')
+  if (!/^\d+$/.test(raw)) return null
+  const chapterIndex = Number(raw)
+  if (chapterIndex >= chapterCount) return null
+  return { kind: 'chapter', chapterIndex, find: queryString('find').trim() }
+}
+
+function clearJumpQuery() {
+  const query = { ...route.query }
+  for (const k of JUMP_QUERY_KEYS) delete query[k]
+  router.replace({ query })
+}
+
+async function runJumpTarget(t: JumpTarget) {
+  if (t.kind === 'highlight') await jumpToHighlight(t.highlight)
+  else if (t.find) await onMindJump({ chapterIndex: t.chapterIndex, label: t.find })
+  else await jumpToChapter(t.chapterIndex)
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -1662,7 +1715,10 @@ onMounted(async () => {
   await readerStore.loadPrefs()
   await reader.loadChapters()
 
+  const wantJump = hasJumpQuery()
   if (isPdf.value) {
+    // 浏览器原生打开的 PDF 没有章节，无法定位，只去掉参数
+    if (wantJump) clearJumpQuery()
     await loadPdfBlob()
     return
   }
@@ -1671,7 +1727,17 @@ onMounted(async () => {
 
   await reader.loadProgress()
   reader.loadBookmarks()
-  if (!isPdfRender.value) reader.loadHighlights().catch(() => ElMessage.error('划线加载失败'))
+  const highlightsLoaded = isPdfRender.value
+    ? Promise.resolve()
+    : reader.loadHighlights().catch(() => ElMessage.error('划线加载失败'))
+  // 带跳转参数：等划线加载完再定位（划线目标要查找；查找闪烁要在划线绘制之后）
+  let jumpTarget: JumpTarget | null = null
+  if (wantJump) {
+    await highlightsLoaded
+    jumpTarget = resolveJumpTarget()
+    clearJumpQuery()
+    if (!jumpTarget) ElMessage.warning('原文位置已失效')
+  }
   // 隔了几天再打开：提示前情提要（不自动调用 AI）
   aiStatus.then(() => {
     const p = reader.progress.value
@@ -1680,6 +1746,12 @@ onMounted(async () => {
       recapVisible.value = true
     }
   })
+
+  // 有效的跳转目标代替恢复进度（跳章时照常保存新进度）
+  if (jumpTarget) {
+    await runJumpTarget(jumpTarget)
+    return
+  }
 
   if (readerStore.settings.pageMode === 'waterfall') {
     await initWaterfall()
@@ -2606,6 +2678,10 @@ onUnmounted(() => {
 .pdf-topbar-title {
   font-size: 14px;
   color: var(--text-1);
+}
+
+.pdf-topbar-map {
+  margin-left: auto;
 }
 
 .pdf-viewer-area {

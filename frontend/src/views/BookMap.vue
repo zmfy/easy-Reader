@@ -105,6 +105,7 @@ const NOTE_MAX = 2000
 
 const route = useRoute()
 const router = useRouter()
+// App 的 <router-view> 以 route.path 为 key：/book/a/map → /book/b/map 会重建本页，bookId 只需读一次
 const bookId = route.params.bookId as string
 const isNarrow = useMediaQuery('(max-width: 768px)')
 
@@ -141,6 +142,8 @@ watch(() => selected.value?.id, () => { noteDraft.value = selected.value?.node?.
 
 // 筛选开关会大幅改变树的形状，切换后重新适应窗口；编辑后的刷新不 fit，保留缩放/平移
 watch(onlyNotes, async () => {
+  // 选中的节点被筛掉了就清空选中，否则手机抽屉会在它重新显示时突然弹出
+  if (selectedId.value && !selected.value) selectedId.value = null
   await nextTick()
   canvasRef.value?.fit()
 })
@@ -270,7 +273,7 @@ function readChapter(n: MapNode) {
 function sourceText(n: MapNode): string {
   const m = n.node
   if (!m) return ''
-  if (m.kind === 'highlight') return m.highlight_id ? '📖 去原文' : ''
+  if (m.kind === 'highlight') return n.highlight ? '📖 去原文' : ''
   if (m.source_chapter === null) return ''
   return m.source_later ? `📖 后文·${chapterTitle(m.source_chapter)}` : '📖 去原文'
 }
@@ -279,7 +282,7 @@ async function goSource(n: MapNode) {
   const m = n.node
   if (!m) return
   if (m.kind === 'highlight') {
-    if (m.highlight_id) router.push({ path: `/reader/${bookId}`, query: { highlight: m.highlight_id } })
+    if (n.highlight && m.highlight_id) router.push({ path: `/reader/${bookId}`, query: { highlight: m.highlight_id } })
     return
   }
   if (m.source_chapter === null) return

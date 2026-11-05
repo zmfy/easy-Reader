@@ -22,6 +22,10 @@
                 <el-icon><VideoPlay /></el-icon>
                 <span class="btn-label">{{ readLabel }}</span>
               </el-button>
+              <el-button size="large" @click="router.push(`/book/${book.id}/map`)">
+                <el-icon><IconSitemap :stroke-width="1.75" /></el-icon>
+                学习导图
+              </el-button>
               <!-- 已在书架时显示状态，再点一次移出书架 -->
               <el-button
                 size="large"
@@ -168,6 +172,7 @@ import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { IconSitemap } from '@tabler/icons-vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
 import { libraryApi } from '@/api/library'

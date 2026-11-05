@@ -58,10 +58,11 @@ easyReader/
 │   ├── stores/             # Pinia：auth / reader / scan-task
 │   ├── types/              # DTO 类型定义
 │   ├── utils/              # 纯函数：阅读样式、快捷键、AI 文本处理、TTS 分段、浏览器语音等
-│   └── views/              # 13 个页面视图
+│   └── views/              # 15 个页面视图
 │       ├── Login.vue / Register.vue
 │       ├── Library.vue / Bookshelf.vue / BookDetail.vue
-│       ├── Reader.vue / Settings.vue
+│       ├── Reader.vue / Settings.vue / ChangePassword.vue
+│       ├── BookMap.vue                               # 学习导图（/book/:bookId/map）
 │       ├── ScanBatchList.vue / ScanBatchReview.vue   # 扫描批次审核
 │       ├── ProblemBooks.vue                          # 重复 / 乱码书籍
 │       ├── SeriesDetail.vue
@@ -214,6 +215,9 @@ easyReader/
 | POST | `/:bookId/mind-nodes` | 手动添加导图节点（`parentId` 或 `chapterIndex` 二选一） |
 | PATCH | `/:bookId/mind-nodes/:id` | 改导图节点名称 / 批注（划线根节点不能改名） |
 | DELETE | `/:bookId/mind-nodes/:id` | 删除导图节点及其子树 |
+
+**学习导图**（前端 `BookMap.vue`，路由 `/book/:bookId/map`）：以书的目录为骨架（`utils/book-map.ts` 组装，骨架不入库），划线根节点挂在所在章节下、手动节点挂在所选位置；可平移缩放折叠，导出 PNG / Markdown 大纲。入口在书籍详情页与阅读器顶栏 / 侧边工具栏（PDF 也显示）。
+导图跳原文用阅读器查询参数：`/reader/:bookId?chapter=<i>` 跳到该章，加 `&find=<label>` 在该章查找并闪烁知识点，`?highlight=<id>` 跳到划线；这些参数代替本次的进度恢复，处理后用 `router.replace` 去掉；目标无效（章越界、划线已删除）时照常恢复进度并提示「原文位置已失效」。
 
 ### 设置 `/api/settings`
 
