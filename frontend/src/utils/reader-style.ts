@@ -101,3 +101,8 @@ export function hideLeadingTitle(html: string, title: string): string {
 export function countChapterChars(html: string): number {
   return Array.from(normalize(plainText(html))).length
 }
+
+/** 只有图片、没有文字的页（漫画 EPUB 每页一张图）：阅读器按一屏完整显示 */
+export function isImagePage(html: string): boolean {
+  return /<(img|svg|image)\b/i.test(html) && countChapterChars(html) === 0
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, migrateReaderTheme } from './reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, migrateReaderTheme, isImagePage } from './reader-style'
 
 describe('readerPalette', () => {
   it('uses fixed 靛青 colours matching the site theme, accent follows the site accent', () => {
@@ -102,5 +102,18 @@ describe('migrateReaderTheme', () => {
   it('keeps a known theme untouched', () => {
     const s = { theme: 'night', backgroundColor: '#0b1020', fontColor: '#c9d3ea' }
     expect(migrateReaderTheme(s, themes)).toBe(s)
+  })
+})
+
+describe('isImagePage', () => {
+  it('is true for a page that only holds images (manga EPUB)', () => {
+    expect(isImagePage('<div>\n  <img style="width:1200px;height:1629px" src="/a.jpeg" width="745" height="1200">\n</div>')).toBe(true)
+    expect(isImagePage('<svg viewBox="0 0 745 1200"><image xlink:href="/c.jpg"></image></svg>')).toBe(true)
+  })
+
+  it('is false when the page has text, or no image at all', () => {
+    expect(isImagePage('<p>第一章 开端</p><img src="/a.jpg">')).toBe(false)
+    expect(isImagePage('<p>正文</p>')).toBe(false)
+    expect(isImagePage('')).toBe(false)
   })
 })

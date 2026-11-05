@@ -90,7 +90,7 @@
             <el-skeleton :rows="20" animated />
           </div>
           <template v-else>
-            <div v-if="!isPdfRender" class="chapter-head">
+            <div v-if="!isPdfRender && !(isImagePage(reader.currentContent.value) && !reader.chapters.value[reader.currentChapterIndex.value]?.title)" class="chapter-head">
               <div class="chapter-eyebrow">第 {{ reader.currentChapterIndex.value + 1 }} {{ unitLabel }}</div>
               <h1 class="chapter-heading">{{ chapterTitle }}</h1>
               <div class="chapter-meta">{{ chapterMeta(reader.currentContent.value) }}</div>
@@ -103,6 +103,7 @@
             <div
               v-else
               class="chapter-content"
+              :class="{ 'image-page': isImagePage(reader.currentContent.value) }"
               v-html="hideLeadingTitle(reader.currentContent.value, chapterTitle)"
               :style="contentStyle"
               @click.capture="handleContentClick"
@@ -124,7 +125,7 @@
             :data-chapter-index="ch.index"
             class="waterfall-chapter"
           >
-            <div v-if="!isPdfRender" class="chapter-head">
+            <div v-if="!isPdfRender && !(isImagePage(ch.content) && !reader.chapters.value[ch.index]?.title)" class="chapter-head">
               <div class="chapter-eyebrow">第 {{ ch.index + 1 }} {{ unitLabel }}</div>
               <h1 class="chapter-heading">{{ ch.title }}</h1>
               <div class="chapter-meta">{{ chapterMeta(ch.content) }}</div>
@@ -132,7 +133,7 @@
             <div v-if="isPdfRender" class="chapter-content pdf-chapter">
               <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
             </div>
-            <div v-else class="chapter-content" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
+            <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content) }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
           </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
@@ -420,7 +421,7 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
-import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme } from '@/utils/reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
@@ -1505,6 +1506,26 @@ onUnmounted(() => {
   margin: 0.9em 0 0;
   text-indent: 2em;
 }
+/* 正文图片不超出纸张：EPUB 常写死内联宽高（如 width:1200px），这里覆盖 */
+.chapter-content :deep(img) {
+  max-width: 100% !important;
+  height: auto !important;
+}
+.chapter-content :deep(svg) {
+  max-width: 100%;
+  height: auto;
+}
+/* 纯图片页（漫画）：整页缩放到一屏内居中显示，去掉内联外边距与缩进 */
+.chapter-content.image-page { margin-top: 0; }
+.chapter-content.image-page :deep(p) { margin: 0; text-indent: 0; }
+.chapter-content.image-page :deep(img),
+.chapter-content.image-page :deep(svg) {
+  display: block;
+  width: auto !important;
+  max-height: calc(100vh - 96px) !important;
+  margin: 0 auto !important;
+}
+.chapter-content.image-page :deep(svg) { width: 100% !important; }
 
 /* 章末导航：上一章 / 目录 为描边按钮，下一章为主色按钮 */
 .chapter-end {
@@ -1545,6 +1566,12 @@ onUnmounted(() => {
   margin-top: 64px;
   padding-top: 48px;
   border-top: 1px solid var(--reader-divider);
+}
+/* 漫画连续两页之间只留窄缝，不加分隔线 */
+.waterfall-chapter:has(> .image-page) + .waterfall-chapter:has(> .image-page:first-child) {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top: none;
 }
 .waterfall-loading,
 .waterfall-end {
