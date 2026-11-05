@@ -52,6 +52,11 @@ export function listMindNodes(db: Database.Database, userId: string, bookId: str
     .all(userId, bookId) as MindNode[];
 }
 
+function nextSort(db: Database.Database, userId: string, bookId: string): number {
+  return (db.prepare('SELECT COALESCE(MAX(sort), -1) + 1 AS n FROM mind_nodes WHERE user_id = ? AND book_id = ?')
+    .get(userId, bookId) as { n: number }).n;
+}
+
 /**
  * 找到或创建划线根节点，再沿 chain 逐级「同父同 label」找或建；返回整条链（含根）。
  * 划线不存在或非本人 → null
@@ -86,8 +91,7 @@ export function keepChain(
       let node = findStmt.get(userId, bookId, highlightId, item.label, parentId) as MindNode | undefined;
       if (!node) {
         const id = crypto.randomUUID();
-        const sort = (db.prepare('SELECT COALESCE(MAX(sort), -1) + 1 AS n FROM mind_nodes WHERE user_id = ? AND book_id = ?')
-          .get(userId, bookId) as { n: number }).n;
+        const sort = nextSort(db, userId, bookId);
         insertStmt.run(
           id, userId, bookId, parentId, hl.chapter_index, highlightId, item.label, item.kind,
           item.summary ?? null, item.source?.chapterIndex ?? null, item.source?.paragraphIndex ?? null, sort
@@ -117,4 +121,49 @@ export function deleteMindSubtree(db: Database.Database, userId: string, bookId:
 
 export function deleteMindNodesOfHighlight(db: Database.Database, userId: string, bookId: string, highlightId: string): void {
   db.prepare('DELETE FROM mind_nodes WHERE user_id = ? AND book_id = ? AND highlight_id = ?').run(userId, bookId, highlightId);
+}
+
+/**
+ * 手动添加节点（kind 'custom'）。parentId 给定：挂在该节点下（须属于本人本书），chapter_index/highlight_id 继承父节点；
+ * 否则挂在 chapterIndex 章下（parent_id null、highlight_id null）。父节点不存在/非本人 → null
+ */
+export function addCustomNode(
+  db: Database.Database, userId: string, bookId: string,
+  input: { parentId?: string; chapterIndex?: number; label: string; note?: string }
+): MindNode | null {
+  let parentId: string | null = null;
+  let chapterIndex = input.chapterIndex ?? 0;
+  let highlightId: string | null = null;
+  if (input.parentId) {
+    const parent = db.prepare('SELECT * FROM mind_nodes WHERE id = ? AND user_id = ? AND book_id = ?')
+      .get(input.parentId, userId, bookId) as MindNode | undefined;
+    if (!parent) return null;
+    parentId = parent.id;
+    chapterIndex = parent.chapter_index;
+    highlightId = parent.highlight_id;
+  }
+  const id = crypto.randomUUID();
+  db.prepare(
+    `INSERT INTO mind_nodes (id, user_id, book_id, parent_id, chapter_index, highlight_id, label, kind, note, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'custom', ?, ?)`
+  ).run(id, userId, bookId, parentId, chapterIndex, highlightId, input.label, input.note || null, nextSort(db, userId, bookId));
+  return db.prepare('SELECT * FROM mind_nodes WHERE id = ?').get(id) as MindNode;
+}
+
+/**
+ * 改 label / note（note '' → null）。划线根节点（kind 'highlight'）不能改名，尝试改名返回 'FORBIDDEN'。
+ * 不存在/非本人 → null
+ */
+export function updateMindNode(
+  db: Database.Database, userId: string, bookId: string, id: string,
+  patch: { label?: string; note?: string | null }
+): MindNode | null | 'FORBIDDEN' {
+  const node = db.prepare('SELECT * FROM mind_nodes WHERE id = ? AND user_id = ? AND book_id = ?')
+    .get(id, userId, bookId) as MindNode | undefined;
+  if (!node) return null;
+  if (patch.label !== undefined && patch.label !== node.label && node.kind === 'highlight') return 'FORBIDDEN';
+  const label = patch.label ?? node.label;
+  const note = patch.note === undefined ? node.note : (patch.note || null);
+  db.prepare('UPDATE mind_nodes SET label = ?, note = ? WHERE id = ?').run(label, note, id);
+  return db.prepare('SELECT * FROM mind_nodes WHERE id = ?').get(id) as MindNode;
 }

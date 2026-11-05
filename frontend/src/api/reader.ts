@@ -70,6 +70,12 @@ export const readerApi = {
   keepMindChain: (bookId: string, highlightId: string, chain: ChainItem[]) =>
     http.post<ApiResponse<MindNode[]>>(`/reader/${bookId}/mind-nodes/keep`, { highlightId, chain }),
 
+  addMindNode: (bookId: string, body: { parentId?: string; chapterIndex?: number; label: string; note?: string }) =>
+    http.post<ApiResponse<MindNode>>(`/reader/${bookId}/mind-nodes`, body),
+
+  updateMindNode: (bookId: string, id: string, patch: { label?: string; note?: string | null }) =>
+    http.patch<ApiResponse<MindNode>>(`/reader/${bookId}/mind-nodes/${id}`, patch),
+
   deleteMindNode: (bookId: string, id: string) =>
     http.delete<ApiResponse<{ deleted: number }>>(`/reader/${bookId}/mind-nodes/${id}`),
 }

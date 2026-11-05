@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { HIGHLIGHTS_DDL, createHighlight } from '../../src/services/highlights';
-import { MIND_DDL, keepChain, listMindNodes, deleteMindSubtree, migrateMindTables } from '../../src/services/mind-nodes';
+import { MIND_DDL, keepChain, listMindNodes, deleteMindSubtree, migrateMindTables, addCustomNode, updateMindNode } from '../../src/services/mind-nodes';
 
 function setup() {
   const d = new Database(':memory:');
@@ -66,5 +66,49 @@ describe('mind-nodes service', () => {
     d.prepare("INSERT INTO ai_expansions (book_id, center, chapter_index, ctx_from, ctx_to, result) VALUES ('b', 'c', 0, 0, 1, '[]')").run();
     migrateMindTables(d); // 新表不动
     expect(d.prepare('SELECT COUNT(*) AS n FROM ai_expansions').get()).toEqual({ n: 1 });
+  });
+
+  it('adds a custom node under a chapter', () => {
+    const { d } = setup();
+    const a = addCustomNode(d, 'u1', 'b1', { chapterIndex: 2, label: '我的想法', note: '备注' })!;
+    const b = addCustomNode(d, 'u1', 'b1', { chapterIndex: 2, label: '另一个' })!;
+    expect(a).toMatchObject({ parent_id: null, highlight_id: null, kind: 'custom', chapter_index: 2, label: '我的想法', note: '备注' });
+    expect(b.note).toBeNull();
+    expect(b.sort).toBe(a.sort + 1);
+  });
+
+  it('adds under a kept node inheriting chapter and highlight', () => {
+    const { d, h } = setup();
+    const nodes = keepChain(d, 'u1', 'b1', h.id, chainA)!;
+    const c = addCustomNode(d, 'u1', 'b1', { parentId: nodes[1].id, label: '补充' })!;
+    expect(c).toMatchObject({ parent_id: nodes[1].id, chapter_index: 3, highlight_id: h.id, kind: 'custom' });
+  });
+
+  it('rejects a parent of another user', () => {
+    const { d, h } = setup();
+    const nodes = keepChain(d, 'u1', 'b1', h.id, chainA)!;
+    expect(addCustomNode(d, 'u2', 'b1', { parentId: nodes[1].id, label: 'x' })).toBeNull();
+    expect(addCustomNode(d, 'u1', 'b1', { parentId: 'nope', label: 'x' })).toBeNull();
+  });
+
+  it('updates label and note, empty note clears', () => {
+    const { d } = setup();
+    const a = addCustomNode(d, 'u1', 'b1', { chapterIndex: 0, label: '旧' })!;
+    expect(updateMindNode(d, 'u1', 'b1', a.id, { label: '新', note: '批注' })).toMatchObject({ label: '新', note: '批注' });
+    expect(updateMindNode(d, 'u1', 'b1', a.id, { note: '' })).toMatchObject({ label: '新', note: null });
+  });
+
+  it('refuses renaming a highlight root', () => {
+    const { d, h } = setup();
+    const root = keepChain(d, 'u1', 'b1', h.id, chainA)![0];
+    expect(updateMindNode(d, 'u1', 'b1', root.id, { label: '改名' })).toBe('FORBIDDEN');
+    expect(updateMindNode(d, 'u1', 'b1', root.id, { note: '批注' })).toMatchObject({ note: '批注', label: root.label });
+  });
+
+  it("cannot update others' nodes", () => {
+    const { d } = setup();
+    const a = addCustomNode(d, 'u1', 'b1', { chapterIndex: 0, label: '旧' })!;
+    expect(updateMindNode(d, 'u2', 'b1', a.id, { label: '新' })).toBeNull();
+    expect(updateMindNode(d, 'u1', 'b1', 'nope', { label: '新' })).toBeNull();
   });
 });

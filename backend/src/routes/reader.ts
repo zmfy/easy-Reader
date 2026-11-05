@@ -7,7 +7,7 @@ import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../services/highlights';
-import { keepChain, deleteMindSubtree } from '../services/mind-nodes';
+import { keepChain, deleteMindSubtree, addCustomNode, updateMindNode } from '../services/mind-nodes';
 import { expandHighlight, AiBadOutputError, listMindNodesWithLater } from '../services/mind-expand';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
@@ -439,6 +439,38 @@ router.post('/:bookId/mind-nodes/keep', authMiddleware, (req: Request, res: Resp
   const nodes = keepChain(getDb(), req.user!.userId, req.params.bookId, parsed.data.highlightId, parsed.data.chain);
   if (!nodes) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '划线不存在'); return; }
   successResponse(res, nodes, '已保留到导图');
+});
+
+// POST /api/reader/:bookId/mind-nodes — 手动添加节点（parentId 与 chapterIndex 恰好给一个）
+router.post('/:bookId/mind-nodes', authMiddleware, (req: Request, res: Response) => {
+  const parsed = z.object({
+    parentId: z.string().min(1).optional(),
+    chapterIndex: z.number().int().min(0).optional(),
+    label: z.string().trim().min(1).max(60),
+    note: z.string().max(2000).optional(),
+  }).refine(v => (v.parentId === undefined) !== (v.chapterIndex === undefined)).safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!db.prepare('SELECT 1 FROM books WHERE id = ?').get(req.params.bookId)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+    return;
+  }
+  const node = addCustomNode(db, req.user!.userId, req.params.bookId, parsed.data);
+  if (!node) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '父节点不存在'); return; }
+  successResponse(res, node, '节点已添加', 201);
+});
+
+// PATCH /api/reader/:bookId/mind-nodes/:id — 改名 / 批注
+router.patch('/:bookId/mind-nodes/:id', authMiddleware, (req: Request, res: Response) => {
+  const parsed = z.object({
+    label: z.string().trim().min(1).max(60).optional(),
+    note: z.string().max(2000).nullable().optional(),
+  }).refine(v => v.label !== undefined || v.note !== undefined).safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const node = updateMindNode(getDb(), req.user!.userId, req.params.bookId, req.params.id, parsed.data);
+  if (!node) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '节点不存在'); return; }
+  if (node === 'FORBIDDEN') { errorResponse(res, 403, 'FORBIDDEN', '划线节点不能改名'); return; }
+  successResponse(res, node, '节点已更新');
 });
 
 // DELETE /api/reader/:bookId/mind-nodes/:id — 删除节点及其子树

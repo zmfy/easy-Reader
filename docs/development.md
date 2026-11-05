@@ -211,6 +211,8 @@ easyReader/
 | POST | `/:bookId/highlights/:id/expand` | AI 展开划线/知识点（防剧透，带缓存） |
 | GET | `/:bookId/mind-nodes` | 导图节点列表（可按 `highlightId` 过滤） |
 | POST | `/:bookId/mind-nodes/keep` | 保留一条知识点链为导图节点 |
+| POST | `/:bookId/mind-nodes` | 手动添加导图节点（`parentId` 或 `chapterIndex` 二选一） |
+| PATCH | `/:bookId/mind-nodes/:id` | 改导图节点名称 / 批注（划线根节点不能改名） |
 | DELETE | `/:bookId/mind-nodes/:id` | 删除导图节点及其子树 |
 
 ### 设置 `/api/settings`

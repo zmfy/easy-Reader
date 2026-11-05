@@ -410,6 +410,24 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 `chain` 为 1 到 10 项，从上游到下游依次排列；已存在的节点会复用。返回该链上的 `MindNode[]`（含根节点）；划线不存在返回 404。
 
+### POST /api/v1/reader/:bookId/mind-nodes
+
+手动添加节点（`kind` 为 `custom`）。
+
+```json
+{ "parentId": "挂在该节点下", "chapterIndex": 3, "label": "1 到 60 字", "note": "可选，最长 2000 字" }
+```
+
+`parentId` 与 `chapterIndex` 必须恰好给一个：给 `parentId` 时挂在该节点下（须是本人的节点），章节与划线归属继承父节点；给 `chapterIndex` 时挂在该章下。返回 201 与 `MindNode`；参数不符 422；书不存在或父节点不存在 404。
+
+### PATCH /api/v1/reader/:bookId/mind-nodes/:id
+
+```json
+{ "label": "新名称，1 到 60 字", "note": "批注，最长 2000 字；空字符串或 null 清除" }
+```
+
+两个字段至少给一个，返回更新后的 `MindNode`。节点不存在或不是本人的返回 404；改划线根节点（`kind` 为 `highlight`）的名称返回 403 `FORBIDDEN`（只改批注可以）。
+
 ### DELETE /api/v1/reader/:bookId/mind-nodes/:id
 
 删除节点及其子树，返回 `{ deleted: 数量 }`；不存在返回 404。
