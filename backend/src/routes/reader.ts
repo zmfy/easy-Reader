@@ -12,6 +12,7 @@ import { generateRecap, answerQuestion } from '../services/ai-reading-run';
 import { getTtsConfig, getSpeech, TTS_MAX_TEXT } from '../services/tts';
 import { resolveRealPathInsideRoot } from '../utils/path-safe';
 import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
+import { htmlToBlocks } from '../utils/content-blocks';
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 
@@ -135,8 +136,13 @@ router.get('/:bookId/raw', authMiddleware, (req: Request, res: Response) => {
   fs.createReadStream(book.file_path).pipe(res);
 });
 
-// GET /api/reader/:bookId/chapter/:index
+// GET /api/reader/:bookId/chapter/:index[?format=html|blocks]
+// format=blocks：返回结构化内容块（供第三方客户端排版），默认 html（网页版）
 router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: Response) => {
+  const format = req.query.format ?? 'html';
+  if (format !== 'html' && format !== 'blocks') {
+    errorResponse(res, 422, 'VALIDATION_ERROR', 'format 只能是 html 或 blocks'); return;
+  }
   const book = findReadableBook(req.params.bookId, res);
   if (!book) return;
 
@@ -153,6 +159,10 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
       processedContent = rewriteEpubAssetUrls(rawContent, book.id, chapterHref);
     }
     const safeContent = purify.sanitize(processedContent);
+    if (format === 'blocks') {
+      successResponse(res, { index, format, blocks: htmlToBlocks(safeContent) });
+      return;
+    }
     successResponse(res, { index, content: safeContent });
   } catch (err) {
     // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
