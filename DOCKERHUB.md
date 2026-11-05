@@ -5,6 +5,7 @@
 - 官网：<https://easyreader.ucool.uk/>
 - 源码与问题反馈：<https://github.com/zmfy/easy-Reader>（MIT 协议）
 - 更新日志：<https://easyreader.ucool.uk/changelog>
+- 部署教程（群晖、威联通、飞牛、Unraid 等）：<https://easyreader.ucool.uk/guides>
 
 ![阅读器](https://easyreader.ucool.uk/screenshots/reader.png)
 
@@ -59,7 +60,7 @@ docker compose up -d
 
 ### 首次登录
 
-默认管理员账号 `admin`，密码 `admin123`。首次登录后必须先修改密码，然后在书库页点「扫描书库」导入书籍。
+默认管理员账号 `admin`，密码 `admin123`。首次登录后必须先修改密码，然后在书库页点右上角的「扫描导入」导入书籍。
 
 ## 挂载目录
 
