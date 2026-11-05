@@ -1,3 +1,4 @@
+import path from 'path';
 import { ReaderPlugin } from '../types';
 
 /** Extract <body> inner HTML from a full XHTML/HTML document string */
@@ -14,11 +15,67 @@ function extractBodyContent(html: string): string {
     .trim();
 }
 
+interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
+
+/** 目录页里指向书内页面的链接（相对路径按页面位置解析，去掉锚点；外链忽略） */
+export function extractIndexLinks(html: string, pageHref: string): Array<{ title: string; href: string }> {
+  const links: Array<{ title: string; href: string }> = [];
+  for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = m[1].split('#')[0];
+    const title = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    if (!href || !title || /^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
+    links.push({ title, href: path.posix.normalize(path.posix.join(path.posix.dirname(pageHref), href)) });
+  }
+  return links;
+}
+
+/**
+ * 套装书的目录常把几十册的条目全部平铺（只靠重复出现的「封面」区分），但书内的
+ * 「总目录」页列着每册书名并链接到各册第一页。满足以下条件时，用这些链接文字作分组：
+ * 至少 3 个、按阅读顺序递增、目标在同一层；平均每组 ≥ 2 条且多数组内有同层条目
+ * （即原目录确实没分组）。不满足就原样返回，普通书的「目录」页与已分层的目录不受影响。
+ */
+export function groupByIndexPage<T extends { href: string; level?: number }>(
+  chapters: T[], links: Array<{ title: string; href: string }>,
+): Array<T & { groupTitle?: string }> {
+  const firstByHref = new Map<string, number>();
+  chapters.forEach((c, i) => { if (!firstByHref.has(c.href)) firstByHref.set(c.href, i); });
+  const targets: Array<{ pos: number; title: string }> = [];
+  for (const link of links) {
+    const pos = firstByHref.get(link.href);
+    if (pos !== undefined) targets.push({ pos, title: link.title });
+  }
+  if (targets.length < 3 || targets.length < links.length * 0.8) return chapters;
+  const level = (i: number) => chapters[i].level ?? 0;
+  const L = level(targets[0].pos);
+  for (let k = 0; k < targets.length; k++) {
+    if (level(targets[k].pos) !== L) return chapters;
+    if (k > 0 && targets[k].pos <= targets[k - 1].pos) return chapters;
+  }
+  // 最后一组延伸到出现更浅层级的条目或结尾
+  let end = targets[targets.length - 1].pos + 1;
+  while (end < chapters.length && level(end) >= L) end++;
+  const bounds = targets.map((t, k) => [t.pos, k + 1 < targets.length ? targets[k + 1].pos : end]);
+  for (const [from, to] of bounds) for (let i = from; i < to; i++) if (level(i) < L) return chapters;
+  const flatGroups = bounds.filter(([from, to]) => {
+    for (let i = from + 1; i < to; i++) if (level(i) === L) return true;
+    return false;
+  }).length;
+  if ((end - targets[0].pos) / targets.length < 2 || flatGroups < targets.length / 2) return chapters;
+
+  const out: Array<T & { groupTitle?: string }> = chapters.map(c => ({ ...c }));
+  bounds.forEach(([from, to], k) => {
+    for (let i = from; i < to; i++) out[i].level = level(i) + 1;
+    out[from].groupTitle = targets[k].title;
+  });
+  return out;
+}
+
 export class EpubParser implements ReaderPlugin {
   format = 'epub';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private epub: any = null;
-  private chapters: Array<{ index: number; title: string; id: string; href: string; level?: number }> = [];
+  private chapters: EpubChapter[] = [];
   private manifestByHref = new Map<string, { id: string; mediaType: string }>();
 
   async load(filePath: string): Promise<void> {
@@ -27,6 +84,21 @@ export class EpubParser implements ReaderPlugin {
     this.epub = await EPub.createAsync(filePath);
     this.buildManifestMap();
     this.buildChapterList();
+    await this.applyIndexPageGroups();
+  }
+
+  /** 前 3 页里若有列出各册书名的「总目录」页，按它给平铺的套装目录分组（见 groupByIndexPage） */
+  private async applyIndexPageGroups(): Promise<void> {
+    if (this.chapters.length < 6 || typeof this.epub.getChapterRawAsync !== 'function') return;
+    for (const chapter of this.chapters.slice(0, 3)) {
+      let html = '';
+      try { html = await this.epub.getChapterRawAsync(chapter.id); } catch { continue; }
+      const grouped = groupByIndexPage(this.chapters, extractIndexLinks(html || '', chapter.href));
+      if (grouped !== this.chapters) {
+        this.chapters = grouped;
+        return;
+      }
+    }
   }
 
   private buildManifestMap(): void {
@@ -146,10 +218,12 @@ export class EpubParser implements ReaderPlugin {
       }));
   }
 
-  async getChapters(): Promise<Array<{ index: number; title: string; href?: string; level?: number }>> {
-    return this.chapters.map(c => (c.level === undefined
-      ? { index: c.index, title: c.title, href: c.href }
-      : { index: c.index, title: c.title, href: c.href, level: c.level }));
+  async getChapters(): Promise<Array<{ index: number; title: string; href?: string; level?: number; groupTitle?: string }>> {
+    return this.chapters.map(c => ({
+      index: c.index, title: c.title, href: c.href,
+      ...(c.level !== undefined ? { level: c.level } : {}),
+      ...(c.groupTitle ? { groupTitle: c.groupTitle } : {}),
+    }));
   }
 
   async getChapterContent(index: number): Promise<string> {
