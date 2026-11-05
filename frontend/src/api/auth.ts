@@ -31,6 +31,9 @@ export const authApi = {
   me: () =>
     http.get<ApiResponse<User>>('/auth/me'),
 
+  changePassword: (currentPassword: string, newPassword: string) =>
+    http.post<ApiResponse<AuthData>>('/auth/password', { currentPassword, newPassword }),
+
   refresh: (refreshToken: string) =>
     http.post<ApiResponse<{ accessToken: string; refreshToken: string }>>('/auth/refresh', { refreshToken }),
 }

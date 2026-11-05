@@ -67,6 +67,14 @@ export const useAuthStore = defineStore('auth', () => {
     storeTokens(data)
   }
 
+  /** 修改自己的密码：成功后其他设备下线，本机换用返回的新令牌 */
+  async function changePassword(currentPassword: string, newPassword: string) {
+    const resp = await authApi.changePassword(currentPassword, newPassword)
+    const data = resp.data.data!
+    user.value = data.user
+    storeTokens(data)
+  }
+
   async function logout() {
     try { await authApi.logout() } catch { /* ignore */ }
     clearTokens()
@@ -103,5 +111,5 @@ export const useAuthStore = defineStore('auth', () => {
     scheduleRefresh(existingToken)
   }
 
-  return { user, accessToken, isLoggedIn, isAdmin, login, logout, fetchMe, storeTokens, clearTokens, tryRefresh }
+  return { user, accessToken, isLoggedIn, isAdmin, login, logout, changePassword, fetchMe, storeTokens, clearTokens, tryRefresh }
 })

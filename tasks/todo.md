@@ -378,3 +378,18 @@
 - [x] /api/docs（marked 渲染，跟随深色模式）与 /api/docs.md（原文）；Dockerfile 复制 docs/api.md、.dockerignore 放行（临时镜像实测能复制进去）；手机 390 宽长行内代码换行、无横向滚动
 - [x] README、.env.example、docker-compose 加 CORS_ORIGINS；更新说明 11-05「第三方客户端 API」
 - [x] 验证：jest 46 suites / 408、vitest 86、前后端 tsc；/api 与 /api/v1 登录、书库、书架、目录、章节均正常，网页版不受影响
+
+# 外网使用安全：强制修改默认密码、反向代理后限流
+
+决定（用户）：两项都做；默认密码强制修改（不只是提示）
+
+- [x] users.must_change_password：新建的默认管理员为 1；已有库迁移时把仍是 admin123 的用户标为 1（数据副本实测：删列重启后 admin 被标记）
+- [x] authMiddleware：需要改密码的用户只能调用 /auth/me、/auth/password、/auth/logout，其余 403 AUTH_PASSWORD_CHANGE_REQUIRED（测试先行）
+- [x] POST /auth/password（所有用户改自己的密码）：校验当前密码、新密码规则与管理员重置一致（共用 schema）、不能与当前相同；清除标记、令牌版本 +1（其他设备下线）、返回新令牌
+- [x] login / me 返回 mustChangePassword
+- [x] TRUST_PROXY：按反向代理层数识别真实 IP（parseTrustProxy 测试先行）
+- [x] 限流拆分：登录 / 改密码 15 分钟 20 次失败（成功不计）；注册 20 次且成功也计数（安全审查指出：成功不计会让开放注册时可批量建号，实测第 21 次 429）；续期单独放宽；me / logout 不限流
+- [x] 前端：/change-password 页（强制时不能离开）、路由守卫与 403 拦截跳转、侧栏「修改密码」；密码规则抽成 utils/password-policy（设置页共用，测试先行）
+- [x] 文档：api.md、README、.env.example、docker-compose、CLAUDE.md；更新说明
+- [x] 验证：jest 49 suites / 430（新增 22）、vitest 94、前后端 tsc；接口实测默认密码登录 mustChangePassword=true、书库 403、当前密码错 / 弱密码 / 同密码 422、改后旧令牌 401 新令牌 200；临时后端 TRUST_PROXY=1 时 IP A 第 21 次失败 429、IP B 仍 401，未设置时 B 也 429（复现原问题），成功登录 25 次不计数；Chrome 登录后进改密码页、访问书架被拦回、错误密码提示不掉线、改后进书库、侧栏入口与「返回」、已登录会话被标记后下一次请求转改密码页、手机 390 宽无横向滚动
+- [ ] 已知（未改）：「晴空」「素纸」主题没有定义 --card-bg 等卡片变量，登录 / 注册页卡片显示为暗夜主题的深色；改密码页改用 --bg-1 避开

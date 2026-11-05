@@ -39,6 +39,10 @@
             <div class="toggle-knob" />
           </div>
         </div>
+        <router-link to="/change-password" class="action-row" @click="sidebarOpen = false">
+          <IconKey class="action-icon" :size="16" :stroke-width="1.75" />
+          <span>修改密码</span>
+        </router-link>
         <div class="action-row action-row--logout" @click="handleLogout">
           <IconLogout class="action-icon" :size="16" :stroke-width="1.75" />
           <span>退出登录</span>
@@ -69,7 +73,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconLogout, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
@@ -277,6 +281,7 @@ async function handleLogout() {
   transition: all 0.15s ease;
   user-select: none;
 }
+a.action-row { text-decoration: none; }
 .action-row span { flex: 1; }
 .action-icon { flex-shrink: 0; }
 .action-row:hover { color: var(--text-1); background: rgba(124, 92, 255, 0.08); }

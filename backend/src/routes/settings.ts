@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { getDb } from '../db';
+import { strongPasswordSchema } from '../utils/password-policy';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { aiPlugins, isAiConfigured, getActivePluginName } from '../ai/ai-manager';
@@ -229,14 +230,7 @@ router.put('/users/:id/role', authMiddleware, adminMiddleware, (req: Request, re
 
 // PUT /api/settings/users/:id/password
 router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
-  const schema = z.object({
-    password: z.string()
-      .min(8, '密码至少8位')
-      .regex(/[A-Z]/, '密码必须包含至少一个大写字母')
-      .regex(/[a-z]/, '密码必须包含至少一个小写字母')
-      .regex(/[0-9]/, '密码必须包含至少一个数字')
-      .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?`~]/, '密码必须包含至少一个特殊字符'),
-  });
+  const schema = z.object({ password: strongPasswordSchema });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) {
     errorResponse(res, 422, 'VALIDATION_ERROR', parsed.error.issues[0]?.message || '密码格式不符合要求');

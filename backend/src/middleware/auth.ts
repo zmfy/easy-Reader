@@ -6,6 +6,18 @@ import { JwtPayload } from '../types';
 import { JWT_SECRET } from '../secret';
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+  authenticate(req, res, next, false);
+}
+
+/**
+ * 与 authMiddleware 相同，但仍在使用默认密码的账号也放行。
+ * 只用于改密码所需的接口：/auth/me、/auth/password、/auth/logout
+ */
+export function authAllowingPasswordChange(req: Request, res: Response, next: NextFunction): void {
+  authenticate(req, res, next, true);
+}
+
+function authenticate(req: Request, res: Response, next: NextFunction, allowPendingPasswordChange: boolean): void {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '未提供认证令牌');
@@ -34,6 +46,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     return;
   }
 
+  // 默认密码未修改：除改密码相关接口外一律拒绝（标记从数据库读，已登录的会话也立即生效）
+  if (user.must_change_password && !allowPendingPasswordChange) {
+    errorResponse(res, 403, 'AUTH_PASSWORD_CHANGE_REQUIRED', '请先修改默认密码');
+    return;
+  }
+
   req.user = { userId: user.id, role: user.role, type: 'access' };
   next();
 }
@@ -42,17 +60,18 @@ interface TokenUser {
   id: string;
   role: 'admin' | 'user';
   token_version: number;
+  must_change_password: boolean;
 }
 
 /** The user a token belongs to, or null if the user is gone or the token was revoked (version bumped). */
 function findTokenUser(payload: JwtPayload): TokenUser | null {
-  const user = getDb().prepare('SELECT id, role, token_version FROM users WHERE id = ?').get(payload.userId) as
-    { id: string; role: 'admin' | 'user'; token_version: number | null } | undefined;
+  const user = getDb().prepare('SELECT id, role, token_version, must_change_password FROM users WHERE id = ?').get(payload.userId) as
+    { id: string; role: 'admin' | 'user'; token_version: number | null; must_change_password: number | null } | undefined;
   if (!user) return null;
   const currentVersion = user.token_version ?? 0;
   // Tokens issued before versioning carry no tv: treat as version 0
   if ((payload.tv ?? 0) !== currentVersion) return null;
-  return { id: user.id, role: user.role, token_version: currentVersion };
+  return { id: user.id, role: user.role, token_version: currentVersion, must_change_password: !!user.must_change_password };
 }
 
 /** Verify a refresh token against current DB state; returns the user to re-issue tokens for, or null. */

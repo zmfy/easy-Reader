@@ -15,7 +15,7 @@ import { authMiddleware, generateTokens, verifyRefreshToken } from '../../src/mi
 
 function makeDb() {
   const d = new Database(':memory:');
-  d.exec("CREATE TABLE users (id TEXT PRIMARY KEY, role TEXT, token_version INTEGER DEFAULT 0)");
+  d.exec("CREATE TABLE users (id TEXT PRIMARY KEY, role TEXT, token_version INTEGER DEFAULT 0, must_change_password INTEGER DEFAULT 0)");
   d.prepare("INSERT INTO users (id, role) VALUES ('u1', 'user')").run();
   return d;
 }

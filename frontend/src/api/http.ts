@@ -60,6 +60,11 @@ function redirectToLogin(): void {
 http.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // 账号仍在使用默认密码：后端拒绝除改密码外的请求，转到改密码页
+    if (error.response?.status === 403 && error.response.data?.code === 'AUTH_PASSWORD_CHANGE_REQUIRED') {
+      if (window.location.pathname !== '/change-password') window.location.href = '/change-password'
+      return Promise.reject(error)
+    }
     const config = error.config as InternalAxiosRequestConfig & { _retried?: boolean }
     const is401 = error.response?.status === 401
     const isRefreshUrl = config?.url?.includes('/auth/refresh')

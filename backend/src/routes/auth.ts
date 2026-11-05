@@ -3,8 +3,9 @@ import bcrypt from 'bcryptjs';
 import { randomUUID as uuidv4 } from 'crypto';
 import { z } from 'zod';
 import { getDb } from '../db';
-import { authMiddleware, generateTokens, verifyRefreshToken } from '../middleware/auth';
-import { credentialLimiter, refreshLimiter } from '../middleware/rate-limit';
+import { authAllowingPasswordChange, generateTokens, verifyRefreshToken } from '../middleware/auth';
+import { credentialLimiter, registerLimiter, refreshLimiter } from '../middleware/rate-limit';
+import { strongPasswordSchema } from '../utils/password-policy';
 import { successResponse, errorResponse } from '../utils/response';
 import { User } from '../types';
 
@@ -13,6 +14,11 @@ const router = Router();
 const loginSchema = z.object({
   username: z.string().min(1).max(50),
   password: z.string().min(1).max(100),
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(100),
+  newPassword: strongPasswordSchema,
 });
 
 const registerSchema = z.object({
@@ -40,18 +46,19 @@ router.post('/login', credentialLimiter, (req: Request, res: Response) => {
 
   const tokens = generateTokens(user.id, user.role, user.token_version ?? 0);
   successResponse(res, {
-    user: { id: user.id, username: user.username, role: user.role },
+    // mustChangePassword 为 true 时（仍是默认密码），除改密码外的接口都会返回 403，客户端应先引导改密码
+    user: { id: user.id, username: user.username, role: user.role, mustChangePassword: !!user.must_change_password },
     ...tokens,
   }, '登录成功');
 });
 
 // POST /api/auth/logout
-router.post('/logout', authMiddleware, (_req: Request, res: Response) => {
+router.post('/logout', authAllowingPasswordChange, (_req: Request, res: Response) => {
   successResponse(res, null, '已登出');
 });
 
 // POST /api/auth/register
-router.post('/register', credentialLimiter, (req: Request, res: Response) => {
+router.post('/register', registerLimiter, (req: Request, res: Response) => {
   const db = getDb();
   const settings = db.prepare("SELECT value FROM settings WHERE key = 'registration_mode'").get() as { value: string } | undefined;
   const registrationMode = settings?.value || 'invite';
@@ -107,14 +114,47 @@ router.post('/register', credentialLimiter, (req: Request, res: Response) => {
 });
 
 // GET /api/auth/me
-router.get('/me', authMiddleware, (req: Request, res: Response) => {
+router.get('/me', authAllowingPasswordChange, (req: Request, res: Response) => {
   const db = getDb();
-  const user = db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(req.user!.userId) as Omit<User, 'password_hash'> | undefined;
+  const user = db.prepare('SELECT id, username, role, created_at, must_change_password FROM users WHERE id = ?').get(req.user!.userId) as
+    (Omit<User, 'password_hash'> & { must_change_password?: number }) | undefined;
   if (!user) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在');
     return;
   }
-  successResponse(res, user);
+  const { must_change_password, ...rest } = user;
+  successResponse(res, { ...rest, mustChangePassword: !!must_change_password });
+});
+
+// POST /api/auth/password — 修改自己的密码（默认密码账号也可调用）
+// 成功后该账号其他设备上的令牌全部失效，返回给当前设备一组新令牌
+router.post('/password', credentialLimiter, authAllowingPasswordChange, (req: Request, res: Response) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', parsed.error.issues[0]?.message || '参数校验失败');
+    return;
+  }
+  const { currentPassword, newPassword } = parsed.data;
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user!.userId) as User | undefined;
+  if (!user) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '用户不存在'); return; }
+  // 用 422 而非 401：401 会让客户端以为令牌失效而去续期 / 退出登录
+  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '当前密码不正确');
+    return;
+  }
+  if (newPassword === currentPassword) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '新密码不能与当前密码相同');
+    return;
+  }
+
+  const tokenVersion = (user.token_version ?? 0) + 1;
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0, token_version = ? WHERE id = ?')
+    .run(bcrypt.hashSync(newPassword, 10), tokenVersion, user.id);
+  successResponse(res, {
+    user: { id: user.id, username: user.username, role: user.role, mustChangePassword: false },
+    ...generateTokens(user.id, user.role, tokenVersion),
+  }, '密码已修改');
 });
 
 // POST /api/auth/refresh

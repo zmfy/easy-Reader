@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { backfillFingerprintVersion } from './services/scan-versions';
 import { cleanBookTitle } from './utils/book-title';
+import { DEFAULT_ADMIN_PASSWORD, markDefaultPasswordUsers } from './utils/password-policy';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -114,6 +115,13 @@ function initSchema(): void {
   }
   // Revocation counter: incremented on password change, invalidating every token issued before
   try { database.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch { /* column exists */ }
+  // 仍在使用默认密码的账号必须先改密码；新增此列时，把已有库中密码仍是默认值的账号标记出来
+  let addedMustChange = false;
+  try {
+    database.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
+    addedMustChange = true;
+  } catch { /* column exists */ }
+  if (addedMustChange) markDefaultPasswordUsers(database);
   // Chapter-local reading anchor: block index + fraction within that block
   // (independent of font size / page width, unlike scroll_top pixels)
   for (const stmt of [
@@ -289,8 +297,8 @@ function initSchema(): void {
   if (!adminExists) {
     const bcrypt = require('bcryptjs');
     const { randomUUID: uuidv4 } = require('crypto');
-    const hash = bcrypt.hashSync('admin123', 10);
-    database.prepare('INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)').run(
+    const hash = bcrypt.hashSync(DEFAULT_ADMIN_PASSWORD, 10);
+    database.prepare('INSERT INTO users (id, username, password_hash, role, must_change_password) VALUES (?, ?, ?, ?, 1)').run(
       uuidv4(), 'admin', hash, 'admin'
     );
   }

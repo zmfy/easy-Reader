@@ -44,6 +44,7 @@
 |---|---|---|
 | 401 | `AUTH_UNAUTHORIZED` | 未登录、令牌无效或已过期 |
 | 403 | `AUTH_FORBIDDEN` | 没有权限（如普通用户调用管理员接口） |
+| 403 | `AUTH_PASSWORD_CHANGE_REQUIRED` | 账号仍在使用默认密码，需先调用改密码接口（见第 2 节） |
 | 404 | `RESOURCE_NOT_FOUND` | 书籍、书签等不存在 |
 | 409 | `BUSINESS_CONFLICT` | 状态冲突（如书已在书架中） |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | 不支持的资源类型 |
@@ -70,7 +71,8 @@
 
 频率限制（按客户端 IP，超出返回 429 `RATE_LIMIT`）：
 
-- 登录、注册：15 分钟内最多 **20 次失败**，成功的请求不计。
+- 登录、改密码：15 分钟内最多 **20 次失败**，成功的请求不计。
+- 注册：15 分钟内最多 20 次（成功的也计数）。
 - 续期：15 分钟内最多 120 次。请在收到 401 时续期，或在 accessToken 快过期时续期，不要每次请求前都续期。
 
 ### POST /api/v1/auth/login（无需登录）
@@ -91,6 +93,8 @@
 
 用户名或密码错误时返回 401。
 
+`user.mustChangePassword` 为 `true` 表示账号仍在使用默认密码（如首次启动自动创建的管理员）。这时除 `me`、`password`、`logout` 外，其他接口都返回 403 `AUTH_PASSWORD_CHANGE_REQUIRED`，客户端应先引导用户修改密码。
+
 ### POST /api/v1/auth/refresh（无需登录）
 
 ```json
@@ -101,7 +105,19 @@
 
 ### GET /api/v1/auth/me
 
-返回当前用户 `{ id, username, role, created_at }`。
+返回当前用户 `{ id, username, role, created_at, mustChangePassword }`。
+
+### POST /api/v1/auth/password
+
+修改自己的密码，需要默认密码的账号也可以调用。
+
+```json
+{ "currentPassword": "当前密码", "newPassword": "Good#Pass1" }
+```
+
+新密码规则：8–100 位，包含大写字母、小写字母、数字和特殊字符（如 `!@#$%^&*`），且不能与当前密码相同。当前密码错误或新密码不合规时返回 422，`message` 说明原因。
+
+成功后返回新的 `{ user, accessToken, refreshToken }`，请替换保存。此账号在其他设备上的令牌全部失效，需要重新登录。
 
 ### POST /api/v1/auth/logout
 

@@ -4,6 +4,8 @@ export interface User {
   password_hash: string;
   role: 'admin' | 'user';
   token_version?: number;
+  /** 1 = 仍在使用默认密码，必须先改密码 */
+  must_change_password?: number;
   created_at: string;
 }
 

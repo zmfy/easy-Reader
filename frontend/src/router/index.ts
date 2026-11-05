@@ -21,6 +21,12 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
+      path: '/change-password',
+      name: 'ChangePassword',
+      component: () => import('@/views/ChangePassword.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/library',
       name: 'Library',
       component: () => import('@/views/Library.vue'),
@@ -112,6 +118,12 @@ router.beforeEach(async (to, _from, next) => {
 
   if (!authStore.user) {
     await authStore.fetchMe()
+  }
+
+  // 仍在使用默认密码：只能停留在改密码页（后端也会拒绝其他接口）
+  if (authStore.user?.mustChangePassword && to.path !== '/change-password') {
+    next('/change-password')
+    return
   }
 
   if (to.meta.roles && Array.isArray(to.meta.roles)) {

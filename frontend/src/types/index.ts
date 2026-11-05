@@ -3,6 +3,8 @@ export interface User {
   username: string
   role: 'admin' | 'user'
   created_at?: string
+  /** 仍在使用默认密码：必须先改密码才能使用其他功能 */
+  mustChangePassword?: boolean
 }
 
 export interface Book {
