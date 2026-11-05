@@ -6,6 +6,7 @@ import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
+import { listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../services/highlights';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
@@ -332,6 +333,51 @@ router.delete('/:bookId/bookmarks/:id', authMiddleware, (req: Request, res: Resp
   const result = db.prepare('DELETE FROM bookmarks WHERE id = ? AND user_id = ? AND book_id = ?').run(req.params.id, req.user!.userId, req.params.bookId);
   if (result.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书签不存在'); return; }
   successResponse(res, null, '书签已删除');
+});
+
+// GET /api/reader/:bookId/highlights
+router.get('/:bookId/highlights', authMiddleware, (req: Request, res: Response) => {
+  successResponse(res, listHighlights(getDb(), req.user!.userId, req.params.bookId));
+});
+
+// POST /api/reader/:bookId/highlights
+router.post('/:bookId/highlights', authMiddleware, (req: Request, res: Response) => {
+  const schema = z.object({
+    chapterIndex: z.number().int().min(0),
+    startOffset: z.number().int().min(0),
+    endOffset: z.number().int().min(0),
+    text: z.string().min(1).max(1000),
+    note: z.string().max(2000).nullish(),
+  }).refine(v => v.endOffset > v.startOffset);
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+
+  const db = getDb();
+  if (!db.prepare('SELECT 1 FROM books WHERE id = ?').get(req.params.bookId)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
+    return;
+  }
+  const { note, ...rest } = parsed.data;
+  const highlight = createHighlight(db, req.user!.userId, req.params.bookId, { ...rest, note: note ?? undefined });
+  successResponse(res, highlight, '划线已添加', 201);
+});
+
+// PATCH /api/reader/:bookId/highlights/:id
+router.patch('/:bookId/highlights/:id', authMiddleware, (req: Request, res: Response) => {
+  const parsed = z.object({ note: z.string().max(2000).nullable() }).safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const highlight = updateHighlightNote(getDb(), req.user!.userId, req.params.bookId, req.params.id, parsed.data.note);
+  if (!highlight) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '划线不存在'); return; }
+  successResponse(res, highlight, '批注已更新');
+});
+
+// DELETE /api/reader/:bookId/highlights/:id
+router.delete('/:bookId/highlights/:id', authMiddleware, (req: Request, res: Response) => {
+  if (!deleteHighlight(getDb(), req.user!.userId, req.params.bookId, req.params.id)) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '划线不存在');
+    return;
+  }
+  successResponse(res, null, '划线已删除');
 });
 
 export default router;

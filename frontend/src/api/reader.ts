@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, AiRecap, AiAnswer } from '@/types'
+import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, Highlight, AiRecap, AiAnswer } from '@/types'
 
 export const readerApi = {
   getChapters: (bookId: string) =>
@@ -47,4 +47,17 @@ export const readerApi = {
 
   deleteBookmark: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/bookmarks/${id}`),
+
+  // 划线与批注
+  getHighlights: (bookId: string) =>
+    http.get<ApiResponse<Highlight[]>>(`/reader/${bookId}/highlights`),
+
+  createHighlight: (bookId: string, body: { chapterIndex: number; startOffset: number; endOffset: number; text: string; note?: string }) =>
+    http.post<ApiResponse<Highlight>>(`/reader/${bookId}/highlights`, body),
+
+  updateHighlightNote: (bookId: string, id: string, note: string | null) =>
+    http.patch<ApiResponse<Highlight>>(`/reader/${bookId}/highlights/${id}`, { note }),
+
+  deleteHighlight: (bookId: string, id: string) =>
+    http.delete<ApiResponse<null>>(`/reader/${bookId}/highlights/${id}`),
 }

@@ -88,6 +88,19 @@ export interface Bookmark {
   created_at: string
 }
 
+export interface Highlight {
+  id: string
+  user_id: string
+  book_id: string
+  chapter_index: number
+  start_offset: number
+  end_offset: number
+  text: string
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Chapter {
   index: number
   title: string
