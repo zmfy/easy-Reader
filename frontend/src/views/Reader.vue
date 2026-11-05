@@ -103,7 +103,7 @@
             <div
               v-else
               class="chapter-content"
-              :class="{ 'image-page': isImagePage(reader.currentContent.value) }"
+              :class="{ 'image-page': isImagePage(reader.currentContent.value), 'fit-width': readerStore.settings.imageFit === 'width' }"
               v-html="hideLeadingTitle(reader.currentContent.value, chapterTitle)"
               :style="contentStyle"
               @click.capture="handleContentClick"
@@ -133,7 +133,7 @@
             <div v-if="isPdfRender" class="chapter-content pdf-chapter">
               <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
             </div>
-            <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content) }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
+            <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
           </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
@@ -168,6 +168,23 @@
               :class="{ active: readerStore.settings.pageMode === 'waterfall' }"
               @click="setPageMode('waterfall')"
             >瀑布流</button>
+          </div>
+        </div>
+
+        <!-- 漫画图片：只在当前内容有纯图片页时显示 -->
+        <div v-if="hasImagePages" class="setting-group">
+          <div class="setting-label">漫画图片</div>
+          <div class="mode-options">
+            <button
+              class="mode-btn"
+              :class="{ active: readerStore.settings.imageFit !== 'width' }"
+              @click="readerStore.updateSettings({ imageFit: 'height' })"
+            >适合高度</button>
+            <button
+              class="mode-btn"
+              :class="{ active: readerStore.settings.imageFit === 'width' }"
+              @click="readerStore.updateSettings({ imageFit: 'width' })"
+            >适合宽度</button>
           </div>
         </div>
 
@@ -526,6 +543,10 @@ const contentStyle = computed(() => ({
 // ── Waterfall state ──────────────────────────────────────────
 interface WaterfallChapter { index: number; title: string; content: string }
 const waterfallChapters = ref<WaterfallChapter[]>([])
+// 当前内容里有纯图片页（漫画）时，阅读设置里才显示「漫画图片」适合高度 / 宽度
+const hasImagePages = computed(() => readerStore.settings.pageMode === 'waterfall'
+  ? waterfallChapters.value.some(ch => isImagePage(ch.content))
+  : isImagePage(reader.currentContent.value))
 const waterfallLoading = ref(false)
 const hasMoreChapters = computed(() => {
   if (!waterfallChapters.value.length) return false
@@ -1526,6 +1547,12 @@ onUnmounted(() => {
   margin: 0 auto !important;
 }
 .chapter-content.image-page :deep(svg) { width: 100% !important; }
+/* 适合宽度：铺满纸张宽度，不限高度（上下滚动看） */
+.chapter-content.image-page.fit-width :deep(img),
+.chapter-content.image-page.fit-width :deep(svg) {
+  width: 100% !important;
+  max-height: none !important;
+}
 
 /* 章末导航：上一章 / 目录 为描边按钮，下一章为主色按钮 */
 .chapter-end {

@@ -127,6 +127,8 @@ export interface ReaderSettings {
   backgroundColor: string
   fontColor: string
   pageMode: 'scroll' | 'waterfall'
+  /** 漫画等纯图片页：适合高度（一屏一页）/ 适合宽度（铺满纸张宽度，上下滚动） */
+  imageFit: 'height' | 'width'
 }
 
 export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill'
