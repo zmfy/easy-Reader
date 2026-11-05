@@ -123,7 +123,11 @@ export interface AiPlugin {
 export interface ReaderPlugin {
   format: string;
   load(filePath: string): Promise<void>;
-  getChapters(): Promise<Array<{ index: number; title: string; href?: string }>>;
+  /**
+   * level: 目录层级（0 为顶层），没有多层目录时省略。
+   * groupTitle: 从这一章开始的分组标题（如 TXT「第一部 小丑」），该分组本身不是章节
+   */
+  getChapters(): Promise<Array<{ index: number; title: string; href?: string; level?: number; groupTitle?: string }>>;
   getChapterContent(index: number): Promise<string>;
   getTotalProgress(): Promise<number>;
   getProgress(): Promise<number>;

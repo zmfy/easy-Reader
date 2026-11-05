@@ -80,3 +80,39 @@ describe('TxtParser merge compares every number in the heading', () => {
     expect((await p.getChapters()).map(c => c.title)).toEqual(['第十卷魔界之战第两千一百三十章斗兽', '第十卷魔界之战第两千一百三十一章得晶']);
   });
 });
+
+describe('TxtParser volume levels', () => {
+  async function chaptersWithLevel(text: string) {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
+    fs.writeFileSync(file, text, 'utf-8');
+    const p = new TxtParser();
+    await p.load(file);
+    return (await p.getChapters()).map(c => {
+      const { title, level, groupTitle } = c as { title: string; level?: number; groupTitle?: string };
+      return groupTitle ? [title, level, groupTitle] : [title, level];
+    });
+  }
+
+  it('puts body-less 卷 headings at level 0 and the chapters after them at level 1', async () => {
+    expect(await chaptersWithLevel('第一章 楔子\n正文。\n第一卷 梦魇\n\n第二章 外乡人\n正文。\n第三章 信\n正文。\n第二卷 阴谋家\n\n第四章 分配\n正文。\n')).toEqual([
+      ['第一章 楔子', 0], ['第一卷 梦魇', 0], ['第二章 外乡人', 1], ['第三章 信', 1], ['第二卷 阴谋家', 0], ['第四章 分配', 1],
+    ]);
+  });
+
+  it('treats 「第十卷…」 chapters that have a body as chapters, not volumes', async () => {
+    expect(await chaptersWithLevel('第十卷 魔界之战\n\n第十卷魔界之战第一章 分元\n正文。\n第十卷魔界之战1875\n正文。\n')).toEqual([
+      ['第十卷 魔界之战', 0], ['第十卷魔界之战第一章 分元', 1], ['第十卷魔界之战1875', 1],
+    ]);
+  });
+
+  it('groups chapters under 「第X部 名称」 lines without turning them into chapters', async () => {
+    const text = '诡秘之主\n第一部 小丑\n\n第一章 绯红\n正文。\n第二章 情况\n第一部我采取了新写法。\n第一部总结\n第二部 无面人\n第三章 门\n第二部分是暗杀。\n第七卷 倒吊人\n第四章 欢迎\n正文。\n';
+    expect(await chaptersWithLevel(text)).toEqual([
+      ['第一章 绯红', 1, '第一部 小丑'], ['第二章 情况', 1], ['第三章 门', 1, '第二部 无面人'], ['第七卷 倒吊人', 0], ['第四章 欢迎', 1],
+    ]);
+  });
+
+  it('adds no level when the book has no volume headings', async () => {
+    expect(await chaptersWithLevel('第一章 开端\n正文。\n第二章 发展\n正文。\n')).toEqual([['第一章 开端', undefined], ['第二章 发展', undefined]]);
+  });
+});

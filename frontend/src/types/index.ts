@@ -90,6 +90,10 @@ export interface Chapter {
   index: number
   title: string
   href?: string
+  /** 目录层级（0 为顶层），单层目录时省略 */
+  level?: number
+  /** 从这一章开始的分组标题（TXT「第一部 小丑」），分组本身不是章节 */
+  groupTitle?: string
 }
 
 export interface ApiResponse<T = unknown> {

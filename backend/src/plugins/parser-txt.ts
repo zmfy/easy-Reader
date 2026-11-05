@@ -9,6 +9,10 @@ interface ChapterMeta {
   title: string;
   startByte: number;
   endByte: number;
+  /** 标题之后是否有正文（只有标题的「第 X 卷」是分卷标题） */
+  hasBody?: boolean;
+  /** 从本章开始的「第 X 部 名称」分组（这类行不算章节，只用于目录分组） */
+  partTitle?: string;
 }
 
 function detectEncoding(filePath: string): string {
@@ -164,6 +168,9 @@ export class TxtParser implements ReaderPlugin {
       let remainder = Buffer.alloc(0);
       // 当前章节标题之后是否出现过正文
       let sawBody = false;
+      // 「第 X 部 名称」（编号后有空格，排除「第一部总结」「第二部分是…」这类正文）
+      const partPattern = /^第[零〇一二两三四五六七八九十百千万\d]+部\s+\S/;
+      let pendingPart: string | null = null;
 
       const checkLine = (lineBuffer: Buffer, absoluteStart: number) => {
         if (absoluteStart - segmentStarts[segmentStarts.length - 1] >= SEGMENT) {
@@ -179,16 +186,22 @@ export class TxtParser implements ReaderPlugin {
             if (lineText.length > prev.title.length) prev.title = lineText;
             return;
           }
-          sawBody = false;
-          if (chapters.length > 0) {
-            chapters[chapters.length - 1].endByte = absoluteStart;
+          if (prev) {
+            prev.endByte = absoluteStart;
+            prev.hasBody = sawBody;
           }
+          sawBody = false;
           chapters.push({
             index: chapters.length,
             title: lineText,
             startByte: absoluteStart,
             endByte: this.fileSize,
+            ...(pendingPart ? { partTitle: pendingPart } : {}),
           });
+          pendingPart = null;
+        } else if (partPattern.test(lineText) && lineText.length < 30) {
+          // 「第一部 小丑」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
+          pendingPart = lineText;
         } else if (lineText) {
           sawBody = true;
         }
@@ -207,6 +220,7 @@ export class TxtParser implements ReaderPlugin {
           });
         }
 
+        if (chapters.length > 0) chapters[chapters.length - 1].hasBody = sawBody;
         this.chapters = chapters;
         const firstStart = chapters[0]?.startByte ?? 0;
         this.leadingTextEnd = firstStart > 0 && this.hasVisiblePreamble(firstStart) ? firstStart : 0;
@@ -260,8 +274,27 @@ export class TxtParser implements ReaderPlugin {
     });
   }
 
-  async getChapters(): Promise<Array<{ index: number; title: string }>> {
-    return this.chapters.map(c => ({ index: c.index, title: c.title }));
+  async getChapters(): Promise<Array<{ index: number; title: string; level?: number; groupTitle?: string }>> {
+    // 分卷标题：「第 X 卷」开头、不含章 / 回编号、且只有标题没有正文
+    const isVolume = (c: ChapterMeta) =>
+      /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(c.title) && !/[章节回集]/.test(headingNumber(c.title)) && !c.hasBody;
+    if (!this.chapters.some(c => c.partTitle || isVolume(c))) {
+      return this.chapters.map(c => ({ index: c.index, title: c.title }));
+    }
+    // 目录分两层：分卷标题 / 「第 X 部」分组在 0 层，其下章节在 1 层（第一个分组之前的章节仍为 0 层）。
+    // groupTitle：从这一章开始的「第 X 部」分组标题，由前端显示为不可跳转的分组行
+    let inGroup = false;
+    return this.chapters.map(c => {
+      if (isVolume(c)) {
+        inGroup = true;
+        return { index: c.index, title: c.title, level: 0 };
+      }
+      if (c.partTitle) {
+        inGroup = true;
+        return { index: c.index, title: c.title, level: 1, groupTitle: c.partTitle };
+      }
+      return { index: c.index, title: c.title, level: inGroup ? 1 : 0 };
+    });
   }
 
   /**

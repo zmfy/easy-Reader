@@ -18,7 +18,7 @@ export class EpubParser implements ReaderPlugin {
   format = 'epub';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private epub: any = null;
-  private chapters: Array<{ index: number; title: string; id: string; href: string }> = [];
+  private chapters: Array<{ index: number; title: string; id: string; href: string; level?: number }> = [];
   private manifestByHref = new Map<string, { id: string; mediaType: string }>();
 
   async load(filePath: string): Promise<void> {
@@ -60,7 +60,7 @@ export class EpubParser implements ReaderPlugin {
   }
 
   private buildChapterList(): void {
-    const toc: Array<{ id: string; title?: string; href?: string }> = this.epub.toc || [];
+    const toc: Array<{ id: string; title?: string; href?: string; level?: number }> = this.epub.toc || [];
     const flow: Array<{ id: string; href?: string; title?: string }> = this.epub.flow || [];
 
     // Build href → flow item map (TOC hrefs may carry anchors; flow hrefs don't)
@@ -71,24 +71,31 @@ export class EpubParser implements ReaderPlugin {
 
     // Build flow-id → TOC title map (used to annotate full-flow chapters)
     const flowIdToTitle = new Map<string, string>();
+    const flowIdToLevel = new Map<string, number>();
     for (const item of toc) {
       if (!item.href || !item.title) continue;
       const flowItem = hrefToFlow.get(item.href.split('#')[0]);
-      if (flowItem) flowIdToTitle.set(flowItem.id, item.title);
+      if (flowItem) {
+        flowIdToTitle.set(flowItem.id, item.title);
+        if (!flowIdToLevel.has(flowItem.id)) flowIdToLevel.set(flowItem.id, item.level ?? 0);
+      }
     }
 
     // Try TOC-based chapter list (works well for text books)
     if (toc.length > 0) {
       const seen = new Set<string>();
-      const result: Array<{ index: number; title: string; id: string; href: string }> = [];
+      const result: Array<{ index: number; title: string; id: string; href: string; level?: number }> = [];
       for (const item of toc) {
         if (!item.href) continue;
         const hrefBase = item.href.split('#')[0];
         const flowItem = hrefToFlow.get(hrefBase);
         if (!flowItem || seen.has(flowItem.id)) continue;
         seen.add(flowItem.id);
-        result.push({ index: result.length, title: item.title || `第 ${result.length + 1} 章`, id: flowItem.id, href: flowItem.href });
+        // level：原书目录层级（套装书的「书 → 部分 → 篇」），供阅读器折叠显示
+        result.push({ index: result.length, title: item.title || `第 ${result.length + 1} 章`, id: flowItem.id, href: flowItem.href, level: item.level ?? 0 });
       }
+      // 单层目录不带 level，与原来一致
+      if (!result.some(c => (c.level ?? 0) > 0)) result.forEach(c => delete c.level);
 
       // For manga/image-heavy books, TOC only covers chapter dividers and the
       // bulk of pages (individual manga frames) have no TOC entry.
@@ -107,12 +114,21 @@ export class EpubParser implements ReaderPlugin {
     // so the frontend can display page numbers instead.
     const validFlow = flow.filter(item => !!item.id && !!item.href);
     if (validFlow.length > 0) {
-      this.chapters = validFlow.map((item, idx) => ({
-        index: idx,
-        title: flowIdToTitle.get(item.id) || '',
-        id: item.id,
-        href: item.href!,
-      }));
+      // 有标题的页沿用原书目录层级；没有标题的页挂在前面最近一个有标题的条目下面
+      // （漫画：卷 → 话 → 各页），目录里默认收起，不再与章节标题平铺
+      let lastTitledLevel: number | null = null;
+      this.chapters = validFlow.map((item, idx) => {
+        const title = flowIdToTitle.get(item.id) || '';
+        let level: number;
+        if (title) {
+          level = flowIdToLevel.get(item.id) ?? 0;
+          lastTitledLevel = level;
+        } else {
+          level = lastTitledLevel === null ? 0 : lastTitledLevel + 1;
+        }
+        return { index: idx, title, id: item.id, href: item.href!, level };
+      });
+      if (!this.chapters.some(c => (c.level ?? 0) > 0)) this.chapters.forEach(c => delete c.level);
       return;
     }
 
@@ -130,8 +146,10 @@ export class EpubParser implements ReaderPlugin {
       }));
   }
 
-  async getChapters(): Promise<Array<{ index: number; title: string; href?: string }>> {
-    return this.chapters.map(c => ({ index: c.index, title: c.title, href: c.href }));
+  async getChapters(): Promise<Array<{ index: number; title: string; href?: string; level?: number }>> {
+    return this.chapters.map(c => (c.level === undefined
+      ? { index: c.index, title: c.title, href: c.href }
+      : { index: c.index, title: c.title, href: c.href, level: c.level }));
   }
 
   async getChapterContent(index: number): Promise<string> {

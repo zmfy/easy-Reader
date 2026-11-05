@@ -362,13 +362,26 @@
           </div>
           <div class="toc-body" ref="tocBodyRef">
             <ul v-if="tocTab === 'toc'" class="toc-list">
-              <li v-for="ch in tocChapters" :key="ch.index">
+              <li v-for="row in tocRows" :key="row.index">
                 <a
                   class="toc-link"
-                  :class="{ current: ch.index === reader.currentChapterIndex.value, read: ch.index < reader.currentChapterIndex.value }"
-                  :title="ch.title || `第 ${ch.index + 1} ${unitLabel}`"
-                  @click="jumpToChapter(ch.index)"
-                ><span class="toc-title">{{ ch.title || `第 ${ch.index + 1} ${unitLabel}` }}</span></a>
+                  :class="{ current: row.index === reader.currentChapterIndex.value, read: row.index >= 0 && row.index < reader.currentChapterIndex.value, nested: tocTree.hasNesting, group: row.index < 0 }"
+                  :style="tocTree.hasNesting ? { paddingLeft: `${4 + row.depth * 18}px` } : undefined"
+                  :title="row.title ?? tocTitle(row.index)"
+                  @click="row.index < 0 ? toggleTocNode(row.index) : jumpToChapter(row.index)"
+                >
+                  <!-- 多层目录：有下级的显示箭头，点箭头展开 / 收起，点标题跳转 -->
+                  <button
+                    v-if="tocTree.hasNesting"
+                    class="toc-caret"
+                    :class="{ open: row.expanded, leaf: !row.hasChildren }"
+                    :tabindex="row.hasChildren ? 0 : -1"
+                    :aria-label="row.hasChildren ? (row.expanded ? '收起' : '展开') : undefined"
+                    :aria-hidden="!row.hasChildren"
+                    @click.stop="row.hasChildren && toggleTocNode(row.index)"
+                  ><IconChevronRight :size="14" :stroke-width="2" /></button>
+                  <span class="toc-title">{{ row.title ?? tocTitle(row.index) }}</span>
+                </a>
               </li>
             </ul>
             <template v-else>
@@ -397,6 +410,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
+import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Loading } from '@element-plus/icons-vue'
 import { useReader } from '@/composables/useReader'
@@ -883,7 +897,32 @@ const bookProgress = computed(() => {
   const total = reader.chapters.value.length
   return total ? `${((reader.currentChapterIndex.value + 1) / total) * 100}%` : '0%'
 })
-const tocChapters = computed(() => tocReversed.value ? [...reader.chapters.value].reverse() : reader.chapters.value)
+// 多层目录（套装 EPUB、TXT 分卷）按树折叠显示；单层目录与原来的平铺列表一致
+const tocTree = computed(() => buildTocTree(reader.chapters.value))
+const tocExpanded = ref(new Set<number>())
+const tocRows = computed(() => visibleTocRows(tocTree.value, tocExpanded.value, tocReversed.value))
+
+function tocTitle(index: number) {
+  const title = reader.chapters.value[index]?.title
+  if (title) return title
+  // 没有标题的页挂在有标题的条目下（漫画 EPUB：话 → 各页），显示为该条目内的页码
+  const node = tocTree.value[tocTree.value.pos.get(index) ?? -1]
+  if (node && node.parent !== null && node.parent >= 0) return `第 ${index - node.parent + 1} 页`
+  return `第 ${index + 1} ${unitLabel.value}`
+}
+
+function toggleTocNode(index: number) {
+  const next = new Set(tocExpanded.value)
+  if (next.has(index)) next.delete(index)
+  else next.add(index)
+  tocExpanded.value = next
+}
+
+// 打开目录时只展开当前章节所在的那一支（分组行的 index 为负数，TXT「第一部 小丑」这类不是章节的分组）
+function expandTocToCurrent() {
+  if (!tocTree.value.hasNesting) return
+  tocExpanded.value = new Set(tocAncestors(tocTree.value, reader.currentChapterIndex.value))
+}
 const tocStatus = computed(() =>
   [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
 
@@ -895,11 +934,13 @@ function openToc(tab: 'toc' | 'bookmark') {
   }
   tocTab.value = tab
   tocVisible.value = true
+  if (tab === 'toc') expandTocToCurrent()
   scrollTocToCurrent()
 }
 
 function switchTocTab(tab: 'toc' | 'bookmark') {
   tocTab.value = tab
+  if (tab === 'toc') expandTocToCurrent()
   scrollTocToCurrent()
 }
 
@@ -1670,6 +1711,28 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .toc-link.bookmark .toc-title { white-space: normal; }
+.toc-link.nested { gap: 2px; }
+.toc-caret {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--reader-text-secondary);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.toc-caret:hover { background: var(--reader-active-bg); color: var(--reader-text); }
+.toc-caret.open { transform: rotate(90deg); }
+/* 没有下级的条目留出同样宽度，标题对齐 */
+.toc-caret.leaf { visibility: hidden; pointer-events: none; }
+/* 不是章节的分组行（如 TXT「第一部 小丑」）：点整行展开 / 收起 */
+.toc-link.group { color: var(--reader-text-secondary); font-weight: 600; }
 .toc-extra {
   display: block;
   margin-top: 2px;
