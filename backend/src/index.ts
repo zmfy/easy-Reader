@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { getDb } from './db';
@@ -16,9 +15,12 @@ import shelfRoutes from './routes/shelf';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
 import { parseCorsOrigins } from './utils/cors-origins';
+import { parseTrustProxy } from './utils/trust-proxy';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
 
 const app = express();
+// 经反向代理（Nginx、群晖反代等）访问时，按 X-Forwarded-For 识别真实客户端 IP（限流按 IP 计数）
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 
@@ -56,19 +58,12 @@ if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
 }
 
-// Rate limiting for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20,
-  message: { success: false, code: 'RATE_LIMIT', message: '请求过于频繁，请稍后再试' },
-});
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Routes：/api/v1 是给第三方客户端的稳定版本，与网页版使用的 /api 是同一组路由
 const api = express.Router();
-api.use('/auth', authLimiter, authRoutes);
+api.use('/auth', authRoutes);
 api.use('/library/manual-overrides', manualOverridesRoutes);
 api.use('/library/scan-batches', scanBatchesRoutes);
 api.use('/library/series', seriesRoutes);

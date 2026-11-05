@@ -4,6 +4,7 @@ import { randomUUID as uuidv4 } from 'crypto';
 import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, generateTokens, verifyRefreshToken } from '../middleware/auth';
+import { credentialLimiter, refreshLimiter } from '../middleware/rate-limit';
 import { successResponse, errorResponse } from '../utils/response';
 import { User } from '../types';
 
@@ -21,7 +22,7 @@ const registerSchema = z.object({
 });
 
 // POST /api/auth/login
-router.post('/login', (req: Request, res: Response) => {
+router.post('/login', credentialLimiter, (req: Request, res: Response) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
@@ -50,7 +51,7 @@ router.post('/logout', authMiddleware, (_req: Request, res: Response) => {
 });
 
 // POST /api/auth/register
-router.post('/register', (req: Request, res: Response) => {
+router.post('/register', credentialLimiter, (req: Request, res: Response) => {
   const db = getDb();
   const settings = db.prepare("SELECT value FROM settings WHERE key = 'registration_mode'").get() as { value: string } | undefined;
   const registrationMode = settings?.value || 'invite';
@@ -117,7 +118,7 @@ router.get('/me', authMiddleware, (req: Request, res: Response) => {
 });
 
 // POST /api/auth/refresh
-router.post('/refresh', (req: Request, res: Response) => {
+router.post('/refresh', refreshLimiter, (req: Request, res: Response) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
     errorResponse(res, 401, 'AUTH_UNAUTHORIZED', '未提供刷新令牌');

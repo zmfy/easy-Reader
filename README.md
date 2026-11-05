@@ -125,6 +125,7 @@ docker compose up -d --build
 | `PORT` | 否 | `3000` | 容器内监听端口（对外映射见 `docker-compose.yml`） |
 | `BOOKS_DIR` | 否 | `/app/books` | 书库目录（容器内路径） |
 | `DATA_DIR` | 否 | `/app/data` | 数据库目录（容器内路径） |
+| `TRUST_PROXY` | 否 | — | 经反向代理（Nginx、Caddy、群晖反代等）访问时设置，一层代理填 `1`。不设置时所有访问者都被当作代理的 IP，登录限流会互相影响；直接暴露端口时不要设置 |
 | `CORS_ORIGINS` | 否 | — | 允许跨域访问 API 的网页来源，逗号分隔（如 `https://reader.example.com`）；只有运行在其他网址上的网页客户端需要，原生 App 不需要 |
 
 NAS 上的实际路径在 `docker-compose.yml` 的 `volumes` 里配置：
