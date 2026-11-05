@@ -886,7 +886,7 @@ interface HlMenuState {
 }
 // 持有 DOM 元素，用 shallowRef 避免被深层代理
 const hlMenu = shallowRef<HlMenuState | null>(null)
-const highlightable = computed(() => !isPdf.value && !isPdfRender.value)
+const highlightable = computed(() => !!reader.bookFormat.value && !isPdf.value && !isPdfRender.value)
 
 // 正文所属章节：翻页模式为当前章，瀑布流取所在 section
 function chapterIndexOf(content: HTMLElement): number {
@@ -996,6 +996,8 @@ onUnmounted(() => {
 // 点击已有划线：打开「写批注 / 删除划线」菜单；正在选字时不处理
 function openExistingHighlightMenu(e: MouseEvent): boolean {
   if (!highlightable.value || window.getSelection()?.isCollapsed === false) return false
+  // 划线里的链接（脚注/内链/外链）照常跳转，不弹菜单
+  if ((e.target as HTMLElement).closest('a')) return false
   const mark = (e.target as HTMLElement).closest<HTMLElement>('mark.hl')
   const h = mark && reader.highlights.value.find(x => x.id === mark.dataset.hlId)
   if (!mark || !h) return false
@@ -1074,7 +1076,8 @@ async function goToNextChapter() {
   if (contentRef.value) contentRef.value.scrollTop = 0
 }
 
-async function jumpToChapter(index: number) {
+/** 返回 false 表示被更新的切章请求取代 */
+async function jumpToChapter(index: number): Promise<boolean> {
   tocVisible.value = false
   resetChapterPositionTracking()
   if (readerStore.settings.pageMode === 'waterfall') {
@@ -1087,11 +1090,12 @@ async function jumpToChapter(index: number) {
     await fillWaterfallIfNeeded()
   } else {
     // 被更新的切章请求取代时，不保存进度也不调整滚动
-    if (!await reader.loadChapter(index)) return
+    if (!await reader.loadChapter(index)) return false
     await reader.saveProgress(0)
     await nextTick()
     if (contentRef.value) contentRef.value.scrollTop = 0
   }
+  return true
 }
 
 // 笔记页签：按章分组
@@ -1100,8 +1104,12 @@ const highlightGroups = computed(() => groupHighlightsByChapter(reader.highlight
 // 点笔记 → 跳到所在章 → 等正文渲染并绘制完成后滚到划线处并闪一下；
 // 重试到超时仍找不到才认为原文已变化（跳章后正文可能异步渲染）
 async function jumpToHighlight(h: Highlight) {
-  await jumpToChapter(h.chapter_index)
-  if (!await scrollToHighlightMark(h)) ElMessage.warning('原文已变化，无法定位这条划线')
+  const stale = () => ElMessage.warning('原文已变化，无法定位这条划线')
+  if (h.chapter_index < 0 || h.chapter_index >= reader.chapters.value.length) { stale(); return }
+  let ok = false
+  try { ok = await jumpToChapter(h.chapter_index) } catch { stale(); return }
+  if (!ok) return
+  if (!await scrollToHighlightMark(h)) stale()
 }
 
 async function scrollToHighlightMark(h: Highlight): Promise<boolean> {
@@ -1500,6 +1508,10 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
   if ((e.target as HTMLElement | null)?.isContentEditable) return
   // 原生 PDF（浏览器内置查看器）或侧边抽屉打开时不处理
+  if (e.key === 'Escape' && hlMenu.value) {
+    hlMenu.value = null
+    return
+  }
   if (e.key === 'Escape' && (tocVisible.value || askVisible.value)) {
     tocVisible.value = false
     askVisible.value = false

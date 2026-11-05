@@ -47,6 +47,9 @@ export function clearHighlights(content: HTMLElement): void {
   content.normalize()
 }
 
+// 这些元素的直接子节点里的纯空白只是排版换行，不能包 mark
+const STRUCTURAL_TAGS = new Set(['UL', 'OL', 'DL', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGROUP'])
+
 /** 先清除已有 mark.hl，再按 items 包裹；每段文本节点包成 <mark class="hl" data-hl-id>，有批注的加 has-note */
 export function applyHighlights(
   content: HTMLElement,
@@ -64,7 +67,9 @@ export function applyHighlights(
       const len = n.data.length
       const from = Math.max(start, pos) - pos
       const to = Math.min(end, pos + len) - pos
-      if (from < to) hits.push({ node: n, from, to })
+      // 纯空白节点若不在行内元素里（ul/tr/段落之间的换行），包 mark 会破坏结构，跳过
+      const skip = !n.data.trim() && (n.parentElement === content || STRUCTURAL_TAGS.has(n.parentElement?.tagName ?? ''))
+      if (from < to && !skip) hits.push({ node: n, from, to })
       pos += len
       if (pos >= end) break
     }

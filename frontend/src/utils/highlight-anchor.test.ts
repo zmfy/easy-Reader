@@ -54,6 +54,19 @@ describe('overlaps', () => {
   })
 })
 
+describe('applyHighlights 空白节点', () => {
+  it('跨段落划线不给段落间换行或列表结构空白包 mark', () => {
+    content.innerHTML = '<p>a</p>\n<p>b</p><ul>\n<li>c</li>\n</ul>'
+    const before = content.textContent
+    applyHighlights(content, [{ id: 'h1', anchor: { start: 0, end: before!.length }, hasNote: false }])
+    expect(content.textContent).toBe(before)
+    const marks = [...content.querySelectorAll('mark.hl')]
+    expect(marks.length).toBe(3)
+    expect(marks.some(m => m.parentElement === content || m.parentElement!.tagName === 'UL')).toBe(false)
+    expect(marks.some(m => !m.textContent!.trim())).toBe(false)
+  })
+})
+
 describe('applyHighlights', () => {
   const text = '项羽者，下相人也。字羽。初起时，年二十四。其季父项梁。'
   const span = { start: text.indexOf('下相人也。字羽'), end: text.indexOf('下相人也。字羽') + 7 }

@@ -204,6 +204,10 @@ easyReader/
 | GET | `/:bookId/bookmarks` | 书签列表 |
 | POST | `/:bookId/bookmarks` | 新增书签（自动裁剪，每用户每本只留最近 10 条） |
 | DELETE | `/:bookId/bookmarks/:id` | 删除书签 |
+| GET | `/:bookId/highlights` | 划线/批注列表 |
+| POST | `/:bookId/highlights` | 新增划线（可带批注） |
+| PATCH | `/:bookId/highlights/:id` | 修改/清除批注 |
+| DELETE | `/:bookId/highlights/:id` | 删除划线 |
 
 ### 设置 `/api/settings`
 

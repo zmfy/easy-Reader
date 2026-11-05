@@ -362,11 +362,11 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 对正文的一段文字做划线，可附带批注。每个用户在每本书上各有一份，按阅读顺序（章节、偏移）排列。
 
-#### GET /api/v1/reader/:bookId/highlights
+### GET /api/v1/reader/:bookId/highlights
 
 `[{ id, user_id, book_id, chapter_index, start_offset, end_offset, text, note, created_at, updated_at }]`，按 `chapter_index`、`start_offset` 升序。
 
-#### POST /api/v1/reader/:bookId/highlights
+### POST /api/v1/reader/:bookId/highlights
 
 ```json
 { "chapterIndex": 12, "startOffset": 100, "endOffset": 130, "text": "划线的原文，1 到 1000 字", "note": "最长 2000 字，可选" }
@@ -374,7 +374,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 `chapterIndex`、`startOffset` 为不小于 0 的整数，`endOffset` 必须大于 `startOffset`。成功返回 201 和新划线；书不存在返回 404，参数不合法返回 422。
 
-#### PATCH /api/v1/reader/:bookId/highlights/:id
+### PATCH /api/v1/reader/:bookId/highlights/:id
 
 ```json
 { "note": "新的批注，最长 2000 字；传 null 或空字符串清除批注" }
@@ -382,7 +382,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 返回更新后的划线；不存在返回 404。
 
-#### DELETE /api/v1/reader/:bookId/highlights/:id
+### DELETE /api/v1/reader/:bookId/highlights/:id
 
 删除划线，不存在返回 404。
 

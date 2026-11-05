@@ -19,7 +19,7 @@ export function deleteBookRelations(db: Database.Database, bookIds: string[]): v
   deleteTtsCache(bookIds);
 }
 
-/** Delete a user's personal reading data (shelf, progress, bookmarks, reader prefs). */
+/** Delete a user's personal reading data (shelf, progress, bookmarks, highlights, reader prefs). */
 export function deleteUserData(db: Database.Database, userId: string): void {
   for (const table of USER_RELATION_TABLES) {
     db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(userId);
