@@ -137,6 +137,9 @@ const layout = computed(() => layoutMap(props.root, collapsed.value, measureText
 const svgEl = ref<SVGSVGElement | null>(null)
 const viewportEl = ref<SVGGElement | null>(null)
 let zoomer: ZoomBehavior<SVGSVGElement, unknown> | null = null
+/** 是否已经成功 fit 过：只在第一次有内容且可见时自动 fit，之后 root 变化（编辑）保留用户的缩放/平移 */
+let fitted = false
+let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
   const svg = svgEl.value
@@ -148,17 +151,24 @@ onMounted(() => {
     .on('zoom', e => { viewportEl.value?.setAttribute('transform', e.transform.toString()) })
   // 双击（含双指轻点）不缩放
   select(svg).call(zoomer).on('dblclick.zoom', null)
+  // 首次挂载时可能尚不可见（尺寸为 0），等到有尺寸时再补一次 fit
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => { if (!fitted) fit() })
+    resizeObserver.observe(svg)
+  }
   nextTick(fit)
 })
 
 onBeforeUnmount(() => {
   if (svgEl.value) select(svgEl.value).on('.zoom', null)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   zoomer = null
 })
 
 watch(() => props.root, root => {
   syncCollapsed(root)
-  nextTick(fit)
+  if (!fitted) nextTick(fit)
 })
 
 function fit() {
@@ -167,11 +177,13 @@ function fit() {
   const cw = svg.clientWidth, ch = svg.clientHeight
   if (!cw || !ch) return
   const { width, height, nodes } = layout.value
+  if (nodes.length < 2) return   // 只有书名（数据还没加载好）时不算首次 fit
   const k = Math.max(FIT_MIN_SCALE, Math.min(cw / width, ch / height, 1))
   const tx = width * k <= cw ? (cw - width * k) / 2 : 0
   const rootY = nodes[0]?.y ?? height / 2
   const ty = height * k <= ch ? (ch - height * k) / 2 : ch / 2 - rootY * k
   select(svg).call(zoomer.transform, zoomIdentity.translate(tx, ty).scale(k))
+  fitted = true
 }
 
 /** 折叠/展开后保持被点的节点在屏幕上的位置不动 */
@@ -182,9 +194,11 @@ function toggle(id: string) {
   else next.add(id)
   collapsed.value = next
   const after = layout.value.nodes.find(n => n.id === id)
-  if (before && after && svgEl.value && zoomer) {
-    select(svgEl.value).call(zoomer.translateBy, before.x - after.x, before.y - after.y)
-  }
+  if (!before || !after) return
+  // 等 DOM 按新布局更新后再平移，避免先跳一下
+  nextTick(() => {
+    if (svgEl.value && zoomer) select(svgEl.value).call(zoomer.translateBy, before.x - after.x, before.y - after.y)
+  })
 }
 
 function collapseAll() {
