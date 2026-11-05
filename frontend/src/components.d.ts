@@ -48,6 +48,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     HighlightMenu: typeof import('./components/HighlightMenu.vue')['default']
     MindExpandPanel: typeof import('./components/MindExpandPanel.vue')['default']
+    MindMapCanvas: typeof import('./components/MindMapCanvas.vue')['default']
     PdfPage: typeof import('./components/PdfPage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
