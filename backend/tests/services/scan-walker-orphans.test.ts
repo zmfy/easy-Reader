@@ -72,6 +72,7 @@ describe('removeOrphanBooks', () => {
       CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
       CREATE TABLE book_ai_metadata (book_id TEXT);
       CREATE TABLE ai_recaps (book_id TEXT, chapter_index INTEGER, paragraph_index INTEGER, content TEXT);
+      CREATE TABLE highlights (id TEXT, user_id TEXT, book_id TEXT);
     `);
     d.prepare("INSERT INTO books VALUES ('A', 'normal', NULL), ('B', 'duplicate', 'A'), ('C', 'duplicate', 'X')").run();
     d.prepare("INSERT INTO shelf VALUES ('s', 'u', 'A')").run();
@@ -99,6 +100,7 @@ describe('removeOrphanBooks at scale', () => {
       CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
       CREATE TABLE book_ai_metadata (book_id TEXT);
       CREATE TABLE ai_recaps (book_id TEXT, chapter_index INTEGER, paragraph_index INTEGER, content TEXT);
+      CREATE TABLE highlights (id TEXT, user_id TEXT, book_id TEXT);
     `);
     const ins = d.prepare("INSERT INTO books VALUES (?, 'normal', NULL)");
     const ids = Array.from({ length: 40000 }, (_, i) => `b${i}`);

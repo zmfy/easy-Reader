@@ -3,10 +3,10 @@ import { deleteTtsCache } from './tts';
 
 // Tables holding per-book data keyed by book_id. manual_overrides (admin
 // decisions) and audit_log (audit trail) are intentionally kept.
-const BOOK_RELATION_TABLES = ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps'];
+const BOOK_RELATION_TABLES = ['shelf', 'reading_progress', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps', 'highlights'];
 
 // Tables holding per-user reading data keyed by user_id.
-const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'bookmarks'];
+const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'bookmarks', 'highlights'];
 
 /** Delete all rows that reference the given books. Call inside the caller's transaction. */
 export function deleteBookRelations(db: Database.Database, bookIds: string[]): void {
