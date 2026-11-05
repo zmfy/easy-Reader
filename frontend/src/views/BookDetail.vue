@@ -232,12 +232,12 @@ async function fetchBook() {
     const [bookResp, metaResp, shelfResp, progressResp] = await Promise.all([
       libraryApi.get(id),
       libraryApi.getAiMetadata(id).catch(() => null),
-      shelfApi.list().catch(() => null),
+      shelfApi.status(id).catch(() => null),
       readerApi.getProgress(id).catch(() => null),
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
-    onShelf.value = !!shelfResp?.data.data?.some(item => item.book_id === id)
+    onShelf.value = !!shelfResp?.data.data?.inShelf
     progress.value = progressResp?.data.data ?? null
 
     // Gate the AI-fill button on whether AI is configured (admin-only feature).

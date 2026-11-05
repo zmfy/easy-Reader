@@ -61,6 +61,20 @@ export function readTxtPreview(filePath: string, maxChars: number): string {
   }
 }
 
+const SEPARATOR_LINE_RE = /^[=＝\-－_*＊~～#＃─━·]{5,}$/;
+const URL_RE = /https?:\/\/|www\.|[a-z0-9-]+\.(com|cn|net|org|me|cc|top|xyz|info|vip|la|co)\b/i;
+const PROMO_RE = /尽在.{0,15}下载|免费.{0,6}(txt|小说)|txt小说|小说下载|资源库|喜欢的就?去看看/i;
+
+/**
+ * 第一个章节标题之前常见的盗版站推广：网址、「更多小说尽在…下载」、分隔线。
+ * 只用于前言（书名 / 作者 / 简介所在部分），章节正文不过滤。
+ */
+export function isPreambleAdLine(line: string): boolean {
+  const text = line.replace(/\s+/g, '');
+  if (!text) return false;
+  return SEPARATOR_LINE_RE.test(text) || URL_RE.test(text) || PROMO_RE.test(text);
+}
+
 export class TxtParser implements ReaderPlugin {
   format = 'txt';
   private filePath = '';
@@ -150,7 +164,7 @@ export class TxtParser implements ReaderPlugin {
 
         this.chapters = chapters;
         const firstStart = chapters[0]?.startByte ?? 0;
-        this.leadingTextEnd = firstStart > 0 && this.hasVisibleText(0, firstStart) ? firstStart : 0;
+        this.leadingTextEnd = firstStart > 0 && this.hasVisiblePreamble(firstStart) ? firstStart : 0;
         resolve();
       };
 
@@ -212,9 +226,13 @@ export class TxtParser implements ReaderPlugin {
     if (this.chapters.length === 0) return '';
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
-    // 第 0 章从文件开头读起，带上第一个标题之前的书名 / 简介 / 前言
-    const start = index === 0 && this.leadingTextEnd > 0 ? 0 : chapter.startByte;
-    return this.renderRange(start, chapter.endByte);
+    const body = this.renderRange(chapter.startByte, chapter.endByte);
+    // 第 0 章带上第一个标题之前的书名 / 简介 / 前言（去掉推广行）
+    if (index === 0 && this.leadingTextEnd > 0) {
+      const preamble = this.paragraphs(0, this.leadingTextEnd).filter(p => !isPreambleAdLine(p));
+      return [this.toHtml(preamble), body].filter(Boolean).join('\n');
+    }
+    return body;
   }
 
   /**
@@ -246,13 +264,21 @@ export class TxtParser implements ReaderPlugin {
     return iconv.decode(buffer, this.encoding);
   }
 
-  private renderRange(start: number, end: number): string {
-    const paragraphs = this.readRange(start, end).split(/\r?\n+/).filter((p: string) => p.trim());
+  private paragraphs(start: number, end: number): string[] {
+    return this.readRange(start, end).split(/\r?\n+/).filter((p: string) => p.trim());
+  }
+
+  private toHtml(paragraphs: string[]): string {
     return paragraphs.map((p: string) => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
   }
 
-  private hasVisibleText(start: number, end: number): boolean {
-    return /\S/.test(this.readRange(start, Math.min(end, start + 64 * 1024)));
+  private renderRange(start: number, end: number): string {
+    return this.toHtml(this.paragraphs(start, end));
+  }
+
+  /** 第一个标题之前是否有去掉推广行后仍可见的文字 */
+  private hasVisiblePreamble(end: number): boolean {
+    return this.paragraphs(0, Math.min(end, 64 * 1024)).some(p => !isPreambleAdLine(p));
   }
 
   async getTotalProgress(): Promise<number> {

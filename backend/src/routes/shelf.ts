@@ -23,6 +23,13 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   successResponse(res, withDisplayTitle(items));
 });
 
+// GET /api/shelf/:bookId — 单本是否在书架（书页用，不必拉整个书架）
+router.get('/:bookId', authMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  const row = db.prepare('SELECT 1 FROM shelf WHERE user_id = ? AND book_id = ?').get(req.user!.userId, req.params.bookId);
+  successResponse(res, { inShelf: !!row });
+});
+
 // POST /api/shelf
 router.post('/', authMiddleware, (req: Request, res: Response) => {
   const schema = z.object({ bookId: z.string().uuid() });

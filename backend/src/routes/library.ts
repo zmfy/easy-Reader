@@ -104,7 +104,11 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
 
   const total = (db.prepare(`SELECT COUNT(*) as cnt FROM books ${whereClause}`).get(...params) as { cnt: number }).cnt;
   const offset = (page - 1) * pageSize;
-  const books = db.prepare(`SELECT * FROM books ${whereClause} ORDER BY ${sortBy} ${sortOrder} LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as Book[];
+  // 书名按显示的清洗后书名排序（与 display_title 一致），同名再按原文件名
+  const orderBy = sortBy === 'title'
+    ? `clean_title(title) ${sortOrder}, title ${sortOrder}`
+    : `${sortBy} ${sortOrder}`;
+  const books = db.prepare(`SELECT * FROM books ${whereClause} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).all(...params, pageSize, offset) as Book[];
 
   paginatedResponse(res, withDisplayTitle(hideFilePathForNonAdmin(req, books)), page, pageSize, total);
 });

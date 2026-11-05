@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { backfillFingerprintVersion } from './services/scan-versions';
+import { cleanBookTitle } from './utils/book-title';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -17,6 +18,9 @@ export function getDb(): Database.Database {
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
+    // 书库「书名 A→Z」按界面显示的清洗后书名排序（ORDER BY clean_title(title)）
+    db.function('clean_title', { deterministic: true }, (title: unknown) =>
+      typeof title === 'string' ? cleanBookTitle(title) : title);
     initSchema();
   }
   return db;

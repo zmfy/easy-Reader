@@ -127,6 +127,8 @@ export interface ReaderPlugin {
   getChapterContent(index: number): Promise<string>;
   getTotalProgress(): Promise<number>;
   getProgress(): Promise<number>;
+  /** Optional: release held resources when evicted from the plugin cache. */
+  dispose?(): void;
 }
 
 export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill';

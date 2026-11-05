@@ -92,47 +92,78 @@ export function buildPageText(items: PdfTextItem[]): string {
   return paragraphs.join('\n');
 }
 
+interface PdfDocument {
+  numPages: number;
+  getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItem[] }> }>;
+  destroy(): void;
+}
+
+let pdfjs: { disableWorker: boolean; getDocument(data: Buffer): Promise<PdfDocument> } | null = null;
+
+/** pdf-parse 自带的 pdf.js（与 pdf-parse 默认版本一致），只用来打开文档、按需取单页文字 */
+function getPdfjs() {
+  if (!pdfjs) {
+    pdfjs = require('pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js');
+    pdfjs!.disableWorker = true;
+  }
+  return pdfjs!;
+}
+
+/**
+ * 打开时只读页数；页文字在需要时（插件模式文字、AI 问书 / 前情、听书）才提取并缓存。
+ * 逐页显示由前端 pdf.js 渲染原文件，不需要后端文字，大 PDF 打开不再等待全书解析。
+ */
 export class PdfParser implements ReaderPlugin {
   format = 'pdf';
-  private pages: string[] = [];
+  private doc: PdfDocument | null = null;
+  private numPages = 0;
+  private pageTexts = new Map<number, Promise<string>>();
 
   async load(filePath: string): Promise<void> {
-    const pdfParse = require('pdf-parse');
     const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer, {
-      pagerender: (pageData: Record<string, unknown>) => {
-        return (pageData.getTextContent as () => Promise<{ items: PdfTextItem[] }>)().then(textContent => {
-          const text = buildPageText(textContent.items);
-          this.pages.push(text);
-          return text;
-        });
-      }
-    });
-    if (this.pages.length === 0 && data.text) {
-      // Fallback: split by estimated page size
-      const chunkSize = 2000;
-      for (let i = 0; i < data.text.length; i += chunkSize) {
-        this.pages.push(data.text.slice(i, i + chunkSize));
-      }
+    this.doc = await getPdfjs().getDocument(buffer);
+    this.numPages = this.doc.numPages;
+  }
+
+  private pageText(index: number): Promise<string> {
+    let text = this.pageTexts.get(index);
+    if (!text) {
+      const doc = this.doc!;
+      text = doc.getPage(index + 1)
+        .then(page => page.getTextContent())
+        .then(content => buildPageText(content.items));
+      // 失败不缓存，下次重试
+      text.catch(() => this.pageTexts.delete(index));
+      this.pageTexts.set(index, text);
     }
+    return text;
   }
 
   async getChapters(): Promise<Array<{ index: number; title: string }>> {
-    return this.pages.map((_, i) => ({ index: i, title: `第 ${i + 1} 页` }));
+    return Array.from({ length: this.numPages }, (_, i) => ({ index: i, title: `第 ${i + 1} 页` }));
   }
 
   async getChapterContent(index: number): Promise<string> {
-    const page = this.pages[index];
-    if (page === undefined) throw new Error(`页面 ${index} 不存在`);
+    if (!Number.isInteger(index) || index < 0 || index >= this.numPages || !this.doc) {
+      throw new Error(`页面 ${index} 不存在`);
+    }
+    const page = await this.pageText(index);
     const paragraphs = page.split(/\n+/).filter(p => p.trim());
     return paragraphs.map(p => `<p>${escapeHtml(p.trim())}</p>`).join('\n');
   }
 
   async getTotalProgress(): Promise<number> {
-    return this.pages.length;
+    return this.numPages;
   }
 
   async getProgress(): Promise<number> {
     return 0;
+  }
+
+  /** 插件缓存淘汰时释放文档（含整本文件的内存） */
+  dispose(): void {
+    this.doc?.destroy();
+    this.doc = null;
+    this.pageTexts.clear();
   }
 }

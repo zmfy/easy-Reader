@@ -55,10 +55,13 @@ export async function getReaderPlugin(book: Book): Promise<ReaderPlugin> {
     const plugin = createPlugin(book.file_format);
     await plugin.load(book.file_path);
     if (fileMtime > 0) {
+      const replaced = pluginCache.get(book.id);
       pluginCache.delete(book.id);
+      if (replaced && replaced.plugin !== plugin) replaced.plugin.dispose?.();
       pluginCache.set(book.id, { plugin, mtimeMs: fileMtime });
       while (pluginCache.size > PLUGIN_CACHE_MAX) {
         const oldest = pluginCache.keys().next().value as string;
+        pluginCache.get(oldest)?.plugin.dispose?.();
         pluginCache.delete(oldest);
       }
     }

@@ -603,6 +603,16 @@ const changelogTagLabels: Record<ChangelogTag, string> = {
 
 const changelog: ChangelogRelease[] = [
   {
+    date: '2026-11-05',
+    title: '书库排序、PDF 打开速度与前言清理',
+    items: [
+      { tag: 'lib', text: '书库「书名（A→Z）」改为按页面上显示的书名排序：《三国演义》（精校版全本）作者：罗贯中 这类文件按「三国演义」排，不再因书名号、括号说明排到一起' },
+      { tag: 'reader', text: 'PDF 逐页显示打开更快：不再先解析全书文字，打开时只读页数；AI 问书、听书需要文字时才按页提取' },
+      { tag: 'txt', text: 'TXT 第一章前的书名 / 作者 / 简介中，盗版站推广（网址、「更多小说尽在…下载」、分隔线）不再显示；章节正文保持原样' },
+      { tag: 'lib', text: '书页判断「是否已在书架」只查这一本，书架很大时书页打开更快' },
+    ],
+  },
+  {
     date: '2026-11-04',
     title: '听书、AI 前情提要与问书、阅读器改版',
     items: [
