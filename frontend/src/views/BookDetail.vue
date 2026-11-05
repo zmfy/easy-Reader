@@ -26,7 +26,7 @@
               <el-button
                 size="large"
                 :class="{ 'on-shelf': onShelf }"
-                :loading="addingShelf"
+                :loading="shelfBusy"
                 :title="onShelf ? '点击移出书架' : '加入书架'"
                 @click="toggleShelf"
               >
@@ -171,7 +171,7 @@ import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
 import { libraryApi } from '@/api/library'
-import { shelfApi } from '@/api/shelf'
+import { useShelfToggle } from '@/composables/useShelfToggle'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
 import { settingsApi } from '@/api/settings'
@@ -194,8 +194,7 @@ let aiPreviewAbort: AbortController | null = null
 const aiPreview = ref<AiFillPreview | null>(null)
 const aiPreviewVisible = ref(false)
 const aiConfigured = ref(true)
-const addingShelf = ref(false)
-const onShelf = ref(false)
+const { onShelf, busy: shelfBusy, refresh: refreshShelf, toggle: toggleShelf } = useShelfToggle(() => book.value?.id ?? (route.params.bookId as string))
 const progress = ref<ReadingProgress | null>(null)
 const readLabel = computed(() => readButtonLabel(progress.value))
 const displayTitle = computed(() => book.value?.display_title || book.value?.title || '')
@@ -229,15 +228,14 @@ async function fetchBook() {
   loading.value = true
   try {
     const id = route.params.bookId as string
-    const [bookResp, metaResp, shelfResp, progressResp] = await Promise.all([
+    const [bookResp, metaResp, , progressResp] = await Promise.all([
       libraryApi.get(id),
       libraryApi.getAiMetadata(id).catch(() => null),
-      shelfApi.status(id).catch(() => null),
+      refreshShelf(),
       readerApi.getProgress(id).catch(() => null),
     ])
     book.value = bookResp.data.data || null
     aiMeta.value = metaResp?.data.data ?? null
-    onShelf.value = !!shelfResp?.data.data?.inShelf
     progress.value = progressResp?.data.data ?? null
 
     // Gate the AI-fill button on whether AI is configured (admin-only feature).
@@ -330,35 +328,6 @@ onBeforeUnmount(cancelAiPreview)
 async function onAiApplied() {
   // 重新加载书籍、AI 元数据与类似作品的书库链接
   await fetchBook()
-}
-
-async function toggleShelf() {
-  if (!book.value) return
-  addingShelf.value = true
-  try {
-    if (onShelf.value) {
-      await shelfApi.remove(book.value.id)
-      onShelf.value = false
-      ElMessage.success('已移出书架')
-    } else {
-      await shelfApi.add(book.value.id)
-      onShelf.value = true
-      ElMessage.success('已加入书架')
-    }
-  } catch (err: unknown) {
-    const resp = (err as { response?: { status?: number; data?: { message?: string } } })?.response
-    if (resp?.data?.message?.includes('已在书架')) {
-      onShelf.value = true
-    } else if (onShelf.value && resp?.status === 404) {
-      // 已在别处移出：同步为未在书架
-      onShelf.value = false
-      ElMessage.info('该书已不在书架中')
-    } else {
-      ElMessage.error(onShelf.value ? '移出失败' : '添加失败')
-    }
-  } finally {
-    addingShelf.value = false
-  }
 }
 
 onMounted(fetchBook)

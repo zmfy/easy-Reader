@@ -42,6 +42,7 @@
           <div class="nav-actions">
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button class="nav-btn" :class="{ on: onShelf }" :title="shelfLabel" :aria-label="shelfLabel" :aria-pressed="onShelf" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
             <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" :title="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
             <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
@@ -62,6 +63,9 @@
           </el-tooltip>
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书籍详情" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip :content="shelfLabel" placement="left" :show-after="300">
+            <button class="side-tool" :aria-label="shelfLabel" :aria-pressed="onShelf" :class="{ on: onShelf }" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip v-if="listenAvailable" :content="listenActive ? '关闭听书' : (ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）')" placement="left" :show-after="300">
             <button class="side-tool" :aria-label="listenActive ? '关闭听书' : (ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）')" :class="{ on: listenActive }" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
@@ -441,14 +445,18 @@ import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/util
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
+import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const readerStore = useReaderStore()
 const bookId = route.params.bookId as string
+// 书架：工具栏按钮加入 / 移出当前书
+const { onShelf, toggle: toggleShelf, refresh: refreshShelf } = useShelfToggle(() => bookId)
+const shelfLabel = computed(() => onShelf.value ? '已在书架（点击移出）' : '加入书架')
 
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
@@ -1291,6 +1299,7 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
+  refreshShelf()
   const aiStatus = settingsApi.getAiStatus().then(r => {
     aiReady.value = !!r.data.data?.configured
     ttsReady.value = !!r.data.data?.tts_enabled
