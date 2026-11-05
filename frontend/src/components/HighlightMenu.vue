@@ -1,6 +1,6 @@
 <template>
-  <!-- 划线浮层：显示在选区 / 被点击的划线上方（x、y 为视口坐标，指向目标顶部中点） -->
-  <div ref="menuRef" class="hl-menu" :style="{ left: `${x}px`, top: `${y}px` }" @pointerdown.stop @click.stop>
+  <!-- 划线浮层：x、y 为视口坐标；above 时指向目标顶部中点、浮层在其上方，below 时指向底部中点、浮层在其下方 -->
+  <div ref="menuRef" class="hl-menu" :class="placement" :style="{ left: `${x}px`, top: `${y}px` }" @pointerdown.stop @mousedown.prevent @click.stop>
     <template v-if="mode === 'new'">
       <button class="hl-menu-btn" @click="emit('highlight')">划线</button>
       <button class="hl-menu-btn" @click="emit('note')">批注</button>
@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
-defineProps<{ x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean }>()
+withDefaults(defineProps<{ x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean; placement?: 'above' | 'below' }>(), { placement: 'above' })
 const emit = defineEmits<{ highlight: []; note: []; delete: []; close: [] }>()
 
 const menuRef = ref<HTMLElement | null>(null)
@@ -50,6 +50,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--reader-panel-shadow);
   white-space: nowrap;
 }
+.hl-menu.below { transform: translate(-50%, 10px); }
 .hl-menu-btn {
   border: none;
   background: transparent;

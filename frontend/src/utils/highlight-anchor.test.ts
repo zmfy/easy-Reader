@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights } from './highlight-anchor'
+import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight } from './highlight-anchor'
 
 const HTML = '<p>项羽者，下相人也。</p><p>字羽。初起时，年二十四。</p><p>其季父项梁。</p>'
 let content: HTMLElement
@@ -105,5 +105,30 @@ describe('pickChapterHighlights', () => {
       { id: 'early', anchor: { start: 4, end: 7 }, hasNote: true },
       { id: 'moved', anchor: { start: 12, end: 15 }, hasNote: false },
     ])
+  })
+})
+
+describe('chapterContentOf', () => {
+  it('finds the .chapter-content holding a node inside root, skipping PDF pages', () => {
+    document.body.innerHTML = `<div id="root"><section><div class="chapter-content" id="a"><p>甲乙</p><p>丙</p></div></section>
+      <div class="chapter-content pdf-chapter" id="pdf"><p>页</p></div></div><div class="chapter-content" id="outside"><p>外</p></div>`
+    const root = document.getElementById('root')!
+    const a = document.getElementById('a')!
+    expect(chapterContentOf(a.querySelector('p')!.firstChild!, root)).toBe(a)
+    expect(chapterContentOf(a, root)).toBe(a)
+    expect(chapterContentOf(root.querySelector('section')!, root)).toBeNull()
+    expect(chapterContentOf(document.getElementById('pdf')!.firstChild!, root)).toBeNull()
+    expect(chapterContentOf(document.getElementById('outside')!.firstChild!, root)).toBeNull()
+    expect(chapterContentOf(a, null)).toBeNull()
+  })
+})
+
+describe('checkNewHighlight', () => {
+  const located = [{ id: 'h', anchor: { start: 10, end: 20 }, hasNote: false }]
+  it('rejects overlaps first, then over-long text', () => {
+    expect(checkNewHighlight({ start: 0, end: 10 }, 'x'.repeat(10), located)).toBe('ok')
+    expect(checkNewHighlight({ start: 15, end: 2000 }, 'x'.repeat(1985), located)).toBe('overlap')
+    expect(checkNewHighlight({ start: 20, end: 1021 }, 'x'.repeat(1001), located)).toBe('too-long')
+    expect(checkNewHighlight({ start: 20, end: 1020 }, 'x'.repeat(1000), located)).toBe('ok')
   })
 })

@@ -98,3 +98,22 @@ export function pickChapterHighlights(
   }
   return accepted.sort((a, b) => a.anchor.start - b.anchor.start)
 }
+
+/** 节点所在的划线正文容器（root 内、非 PDF 页的 .chapter-content）；选区跨章或在正文外 → null */
+export function chapterContentOf(node: Node, root: Element | null): HTMLElement | null {
+  const el = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement
+  const content = el?.closest<HTMLElement>('.chapter-content')
+  if (!content || !root?.contains(content) || content.classList.contains('pdf-chapter')) return null
+  return content
+}
+
+export const MAX_HIGHLIGHT_CHARS = 1000
+
+/** 新选区能否划线：与本章已定位的划线重叠 → 'overlap'；超过 1000 字 → 'too-long' */
+export function checkNewHighlight(
+  anchor: TextAnchor, text: string, located: Array<{ anchor: TextAnchor }>,
+): 'ok' | 'overlap' | 'too-long' {
+  if (located.some(h => overlaps(h.anchor, anchor))) return 'overlap'
+  if (text.length > MAX_HIGHLIGHT_CHARS) return 'too-long'
+  return 'ok'
+}

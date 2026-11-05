@@ -157,6 +157,7 @@
       :y="hlMenu.y"
       :mode="hlMenu.mode"
       :has-note="hlMenu.hasNote"
+      :placement="hlMenu.placement"
       @highlight="onHlHighlight"
       @note="onHlNote"
       @delete="onHlDelete"
@@ -456,7 +457,7 @@ import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import HighlightMenu from '@/components/HighlightMenu.vue'
-import { rangeToAnchor, overlaps, applyHighlights, pickChapterHighlights, type TextAnchor } from '@/utils/highlight-anchor'
+import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, type TextAnchor } from '@/utils/highlight-anchor'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
@@ -864,10 +865,11 @@ function handleContentClick(e: MouseEvent) {
 
 // ── 划线 / 批注（PDF 不支持）────────────────────────────────
 interface HlMenuState {
-  x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean
-  chapterIndex: number; anchor?: TextAnchor; text?: string; id?: string
+  x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean; placement: 'above' | 'below'
+  content: HTMLElement; chapterIndex: number; anchor?: TextAnchor; text?: string; id?: string
 }
-const hlMenu = ref<HlMenuState | null>(null)
+// 持有 DOM 元素，用 shallowRef 避免被深层代理
+const hlMenu = shallowRef<HlMenuState | null>(null)
 const highlightable = computed(() => !isPdf.value && !isPdfRender.value)
 
 // 正文所属章节：翻页模式为当前章，瀑布流取所在 section
@@ -882,49 +884,98 @@ function locatedHighlights(content: HTMLElement, chapterIndex: number) {
   return pickChapterHighlights(content.textContent || '', reader.highlights.value.filter(h => h.chapter_index === chapterIndex))
 }
 
+// 每个正文容器上次绘制的划线签名：只重绘新渲染的、或划线有变化的章节，
+// 避免瀑布流预加载时把所有章节 normalize 一遍、打断用户正在进行的选区
+const paintedHighlights = new WeakMap<HTMLElement, string>()
+
 function refreshHighlights() {
   if (!highlightable.value) return
-  contentRef.value?.querySelectorAll<HTMLElement>('.chapter-content').forEach(content => {
+  contentRef.value?.querySelectorAll<HTMLElement>('.chapter-content:not(.pdf-chapter)').forEach(content => {
     const idx = chapterIndexOf(content)
-    if (idx >= 0) applyHighlights(content, locatedHighlights(content, idx))
+    if (idx < 0) return
+    const items = locatedHighlights(content, idx)
+    const sig = items.map(i => `${i.id}:${i.anchor.start}-${i.anchor.end}:${i.hasNote ? 1 : 0}`).join('|')
+    // 正文被整体替换时 mark 已不在，按「未绘制」处理
+    const prev = content.querySelector('mark.hl') ? paintedHighlights.get(content) : ''
+    if (prev === sig) return
+    applyHighlights(content, items)
+    paintedHighlights.set(content, sig)
   })
 }
 
 // 正文重新渲染（换章、加载完成、瀑布流增删章节）或划线变化后重绘；flush: 'post' 即在 DOM 更新之后
 watch(
   [() => reader.currentContent.value, loading, () => waterfallChapters.value.length, () => reader.highlights.value],
-  () => { hlMenu.value = null; refreshHighlights() },
+  () => {
+    // 菜单所在的正文已被移除（换章等）才关闭；其他章节的加载不影响
+    if (hlMenu.value && !hlMenu.value.content.isConnected) hlMenu.value = null
+    refreshHighlights()
+  },
   { flush: 'post' },
 )
 
-// 浮层位置：目标顶部中点，避开顶栏与屏幕左右边缘
-function menuPoint(rect: DOMRect): { x: number; y: number } {
+// 浮层位置：目标顶部中点（触屏放在选区下方，避开系统的复制菜单），避开顶栏与屏幕边缘
+function menuPoint(rect: DOMRect, placement: 'above' | 'below'): { x: number; y: number } {
   return {
     x: Math.min(Math.max(rect.left + rect.width / 2, 100), window.innerWidth - 100),
-    y: Math.max(rect.top, 64),
+    y: placement === 'above' ? Math.max(rect.top, 64) : Math.min(rect.bottom, window.innerHeight - 64),
   }
 }
 
-// 选区 → 菜单：此处立即算出锚点与原文保存下来，之后重绘划线会使 Range 失效
-function onContentPointerUp(e: PointerEvent) {
+// 同一个已稳定的选区只提示一次（pointerup 与 selectionchange 都会走到这里）
+let warnedSelection = ''
+
+// 根据当前选区打开 / 更新 / 关闭「划线 · 批注」菜单。
+// 锚点与原文在此立即算出并保存，之后重绘划线会使 Range 失效
+function syncSelectionMenu() {
   if (!highlightable.value) return
+  const closeNewMenu = () => { if (hlMenu.value?.mode === 'new') hlMenu.value = null }
   const sel = window.getSelection()
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
-  const content = e.currentTarget as HTMLElement
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    warnedSelection = ''
+    closeNewMenu()  // 点击划线打开的菜单此时选区本就是折叠的，不关
+    return
+  }
   const range = sel.getRangeAt(0)
-  const picked = rangeToAnchor(content, range)
-  const chapterIndex = chapterIndexOf(content)
-  if (!picked || chapterIndex < 0) return
-  if (locatedHighlights(content, chapterIndex).some(h => overlaps(h.anchor, picked.anchor))) {
-    ElMessage.warning('与已有划线重叠')
+  const content = chapterContentOf(range.commonAncestorContainer, contentRef.value)
+  const picked = content && rangeToAnchor(content, range)
+  const chapterIndex = content ? chapterIndexOf(content) : -1
+  if (!content || !picked || chapterIndex < 0) return closeNewMenu()
+  const check = checkNewHighlight(picked.anchor, picked.text, locatedHighlights(content, chapterIndex))
+  if (check !== 'ok') {
+    closeNewMenu()
+    const key = `${chapterIndex}:${picked.anchor.start}-${picked.anchor.end}`
+    if (key !== warnedSelection) {
+      warnedSelection = key
+      ElMessage.warning(check === 'overlap' ? '与已有划线重叠' : '一次最多划 1000 字')
+    }
     return
   }
-  if (picked.text.length > 1000) {
-    ElMessage.warning('一次最多划 1000 字')
-    return
+  const placement = window.matchMedia('(pointer: coarse)').matches ? 'below' : 'above'
+  hlMenu.value = {
+    ...menuPoint(range.getBoundingClientRect(), placement), placement,
+    mode: 'new', hasNote: false, content, chapterIndex, ...picked,
   }
-  hlMenu.value = { ...menuPoint(range.getBoundingClientRect()), mode: 'new', hasNote: false, chapterIndex, ...picked }
 }
+
+// 桌面：松开鼠标立即出菜单
+function onContentPointerUp() {
+  clearTimeout(selectionTimer)
+  syncSelectionMenu()
+}
+
+// 触屏长按选字（iOS 以 touchcancel 结束、拖动选区手柄不派发指针事件）与拖到正文外松开：
+// 等选区稳定后再同步，手柄拖动过程中菜单随之更新
+let selectionTimer: ReturnType<typeof setTimeout> | undefined
+function onSelectionChange() {
+  clearTimeout(selectionTimer)
+  selectionTimer = setTimeout(syncSelectionMenu, 280)
+}
+document.addEventListener('selectionchange', onSelectionChange)
+onUnmounted(() => {
+  document.removeEventListener('selectionchange', onSelectionChange)
+  clearTimeout(selectionTimer)
+})
 
 // 点击已有划线：打开「写批注 / 删除划线」菜单；正在选字时不处理
 function openExistingHighlightMenu(e: MouseEvent): boolean {
@@ -937,7 +988,8 @@ function openExistingHighlightMenu(e: MouseEvent): boolean {
   // 跨行的划线取被点中的那一行
   const rects = [...mark.getClientRects()]
   const rect = rects.find(r => e.clientY >= r.top && e.clientY <= r.bottom) || mark.getBoundingClientRect()
-  hlMenu.value = { ...menuPoint(rect), mode: 'existing', hasNote: !!h.note, chapterIndex: h.chapter_index, id: h.id }
+  const content = mark.closest<HTMLElement>('.chapter-content')!
+  hlMenu.value = { ...menuPoint(rect, 'above'), placement: 'above', mode: 'existing', hasNote: !!h.note, content, chapterIndex: h.chapter_index, id: h.id }
   return true
 }
 
@@ -1465,7 +1517,7 @@ onMounted(async () => {
 
   await reader.loadProgress()
   reader.loadBookmarks()
-  if (!isPdfRender.value) reader.loadHighlights()
+  if (!isPdfRender.value) reader.loadHighlights().catch(() => ElMessage.error('划线加载失败'))
   // 隔了几天再打开：提示前情提要（不自动调用 AI）
   aiStatus.then(() => {
     const p = reader.progress.value
