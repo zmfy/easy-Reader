@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight } from './highlight-anchor'
+import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks } from './highlight-anchor'
 
 const HTML = '<p>项羽者，下相人也。</p><p>字羽。初起时，年二十四。</p><p>其季父项梁。</p>'
 let content: HTMLElement
@@ -143,5 +143,39 @@ describe('checkNewHighlight', () => {
     expect(checkNewHighlight({ start: 15, end: 2000 }, 'x'.repeat(1985), located)).toBe('overlap')
     expect(checkNewHighlight({ start: 20, end: 1021 }, 'x'.repeat(1001), located)).toBe('too-long')
     expect(checkNewHighlight({ start: 20, end: 1020 }, 'x'.repeat(1000), located)).toBe('ok')
+  })
+})
+
+describe('flashText / unwrapMarks', () => {
+  it('wraps the first occurrence of the trimmed label, across nodes and existing marks', () => {
+    applyHighlights(content, [{ id: 'h1', anchor: { start: 6, end: 9 }, hasNote: false }])
+    const text = content.textContent
+    // 「人也。字羽」跨段落且跨划线 mark
+    const marks = flashText(content, '  人也。字羽 ')
+    expect(marks.length).toBeGreaterThan(1)
+    expect(marks.every(m => m.tagName === 'MARK' && m.className === 'src-flash')).toBe(true)
+    expect(marks.map(m => m.textContent).join('')).toBe('人也。字羽')
+    expect(content.textContent).toBe(text)
+    // 原划线仍在
+    expect(content.querySelector('mark.hl')!.textContent).toBe('人也。')
+    unwrapMarks(content, marks)
+    expect(content.querySelector('mark.src-flash')).toBeNull()
+    expect(content.textContent).toBe(text)
+    expect(content.querySelector('mark.hl')!.textContent).toBe('人也。')
+    // 拆开的文本节点已合并
+    clearHighlights(content)
+    expect(content.innerHTML).toBe(HTML)
+  })
+
+  it('returns [] when the label is empty or not found', () => {
+    expect(flashText(content, '刘邦')).toEqual([])
+    expect(flashText(content, '   ')).toEqual([])
+    expect(content.innerHTML).toBe(HTML)
+  })
+
+  it('takes the first occurrence only', () => {
+    const marks = flashText(content, '项')
+    expect(marks).toHaveLength(1)
+    expect(marks[0].parentElement!.textContent).toBe('项羽者，下相人也。')
   })
 })

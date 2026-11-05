@@ -51,39 +51,71 @@ export function clearHighlights(content: HTMLElement): void {
 const STRUCTURAL_TAGS = new Set(['UL', 'OL', 'DL', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGROUP'])
 
 /** 先清除已有 mark.hl，再按 items 包裹；每段文本节点包成 <mark class="hl" data-hl-id>，有批注的加 has-note */
+// 把正文中 [start, end) 的文本逐个文本节点包进 makeMark() 创建的元素，返回这些元素
+function wrapTextRange(content: HTMLElement, { start, end }: TextAnchor, makeMark: () => HTMLElement): HTMLElement[] {
+  if (end <= start) return []
+  // 先收集相交文本节点，再统一修改，避免遍历中改树
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+  const hits: Array<{ node: Text; from: number; to: number }> = []
+  let pos = 0
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    const len = n.data.length
+    const from = Math.max(start, pos) - pos
+    const to = Math.min(end, pos + len) - pos
+    // 纯空白节点若不在行内元素里（ul/tr/段落之间的换行），包 mark 会破坏结构，跳过
+    const skip = !n.data.trim() && (n.parentElement === content || STRUCTURAL_TAGS.has(n.parentElement?.tagName ?? ''))
+    if (from < to && !skip) hits.push({ node: n, from, to })
+    pos += len
+    if (pos >= end) break
+  }
+  return hits.map(({ node, from, to }) => {
+    let target = node
+    if (from > 0) target = target.splitText(from)
+    if (to - from < target.data.length) target.splitText(to - from)
+    const mark = makeMark()
+    target.parentNode!.insertBefore(mark, target)
+    mark.appendChild(target)
+    return mark
+  })
+}
+
 export function applyHighlights(
   content: HTMLElement,
   items: Array<{ id: string; anchor: TextAnchor; hasNote: boolean }>,
 ): void {
   clearHighlights(content)
   for (const item of items) {
-    const { start, end } = item.anchor
-    if (end <= start) continue
-    // 先收集相交文本节点，再统一修改，避免遍历中改树
-    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
-    const hits: Array<{ node: Text; from: number; to: number }> = []
-    let pos = 0
-    for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
-      const len = n.data.length
-      const from = Math.max(start, pos) - pos
-      const to = Math.min(end, pos + len) - pos
-      // 纯空白节点若不在行内元素里（ul/tr/段落之间的换行），包 mark 会破坏结构，跳过
-      const skip = !n.data.trim() && (n.parentElement === content || STRUCTURAL_TAGS.has(n.parentElement?.tagName ?? ''))
-      if (from < to && !skip) hits.push({ node: n, from, to })
-      pos += len
-      if (pos >= end) break
-    }
-    for (const { node, from, to } of hits) {
-      let target = node
-      if (from > 0) target = target.splitText(from)
-      if (to - from < target.data.length) target.splitText(to - from)
+    wrapTextRange(content, item.anchor, () => {
       const mark = document.createElement('mark')
       mark.className = item.hasNote ? 'hl has-note' : 'hl'
       mark.dataset.hlId = item.id
-      target.parentNode!.insertBefore(mark, target)
-      mark.appendChild(target)
-    }
+      return mark
+    })
   }
+}
+
+/** 跳原文：把正文中 label（去首尾空白）首次出现处包进 <mark class="src-flash">；找不到返回 [] */
+export function flashText(content: HTMLElement, label: string): HTMLElement[] {
+  const needle = label.trim()
+  if (!needle) return []
+  const start = (content.textContent || '').indexOf(needle)
+  if (start < 0) return []
+  return wrapTextRange(content, { start, end: start + needle.length }, () => {
+    const mark = document.createElement('mark')
+    mark.className = 'src-flash'
+    return mark
+  })
+}
+
+/** 拆掉 flashText 加的包裹并合并文本节点（划线 mark 不受影响） */
+export function unwrapMarks(content: HTMLElement, marks: HTMLElement[]): void {
+  for (const mark of marks) {
+    const parent = mark.parentNode
+    if (!parent) continue
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
+    parent.removeChild(mark)
+  }
+  content.normalize()
 }
 
 /**

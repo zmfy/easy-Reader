@@ -162,10 +162,22 @@
       :mode="hlMenu.mode"
       :has-note="hlMenu.hasNote"
       :placement="hlMenu.placement"
+      :ai-enabled="aiReady"
       @highlight="onHlHighlight"
       @note="onHlNote"
       @delete="onHlDelete"
+      @expand="onHlExpand"
       @close="hlMenu = null"
+    />
+
+    <!-- AI 展开知识点（划线被删除时随之卸载） -->
+    <MindExpandPanel
+      v-if="mindHighlight"
+      v-model="mindVisible"
+      :book-id="bookId"
+      :highlight="mindHighlight"
+      :chapters="reader.chapters.value"
+      @jump="onMindJump"
     />
 
     <!-- Settings Panel -->
@@ -472,7 +484,8 @@ import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import HighlightMenu from '@/components/HighlightMenu.vue'
-import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, type TextAnchor } from '@/utils/highlight-anchor'
+import MindExpandPanel from '@/components/MindExpandPanel.vue'
+import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, type TextAnchor } from '@/utils/highlight-anchor'
 import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
 import { groupHighlightsByChapter } from '@/utils/highlight-list'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
@@ -1029,6 +1042,80 @@ async function onHlHighlight() {
   try { await reader.addHighlight(m.chapterIndex, m.anchor, m.text) } catch { ElMessage.error('划线保存失败') }
 }
 
+// ── AI 展开 ──────────────────────────────────────────────────
+// 存 id 而非对象：批注更新后取到最新的划线；划线被删除则面板随之卸载
+const mindHighlightId = ref<string | null>(null)
+const mindVisible = ref(false)
+const mindHighlight = computed(() => reader.highlights.value.find(h => h.id === mindHighlightId.value) ?? null)
+
+function openMindPanel(id: string) {
+  mindHighlightId.value = id
+  mindVisible.value = true
+}
+
+// 新选区：先按「划线」同样的流程保存，再打开面板；已有划线：直接打开
+async function onHlExpand() {
+  const m = hlMenu.value
+  hlMenu.value = null
+  if (!m) return
+  if (m.mode === 'existing') {
+    if (m.id) openMindPanel(m.id)
+    return
+  }
+  if (!m.anchor || !m.text) return
+  window.getSelection()?.removeAllRanges()
+  let created: Highlight
+  try { created = await reader.addHighlight(m.chapterIndex, m.anchor, m.text) } catch { ElMessage.error('划线保存失败'); return }
+  openMindPanel(created.id)
+}
+
+// 跳原文：切到出处所在章，在正文里找知识点首次出现处，滚到视口中央并闪一下
+async function onMindJump({ chapterIndex, label }: { chapterIndex: number; label: string }) {
+  let ok = false
+  try { ok = await jumpToChapter(chapterIndex) } catch { return }
+  if (!ok) return
+  const content = await waitChapterContent(chapterIndex)
+  const marks = content ? flashText(content, label) : []
+  if (!content || marks.length === 0) {
+    ElMessage.warning(`原文中没有找到「${label.trim()}」`)
+    return
+  }
+  await document.fonts.ready
+  const range = document.createRange()
+  range.setStartBefore(marks[0])
+  range.setEndAfter(marks[marks.length - 1])
+  const rect = range.getBoundingClientRect()
+  const scroller = contentRef.value
+  if (scroller) {
+    const box = scroller.getBoundingClientRect()
+    scroller.scrollTop += rect.top + rect.height / 2 - (box.top + box.height / 2)
+  }
+  setTimeout(() => {
+    unwrapMarks(content, marks)
+    // 拆分 / 合并文本节点后让该章划线按「未绘制」重绘一次，避免签名缓存认为没有变化
+    paintedHighlights.delete(content)
+    refreshHighlights()
+  }, 1500)
+}
+
+// 跳章后正文可能异步渲染：等该章的正文容器出现
+async function waitChapterContent(chapterIndex: number): Promise<HTMLElement | null> {
+  for (let i = 0; i < 15; i++) {
+    await nextTick()
+    if (!loading.value) {
+      const content = readerStore.settings.pageMode === 'scroll'
+        ? (reader.currentChapterIndex.value === chapterIndex ? contentRef.value?.querySelector<HTMLElement>('.chapter-content:not(.pdf-chapter)') : null)
+        : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] .chapter-content:not(.pdf-chapter)`)
+      if (content) {
+        refreshHighlights()  // 先画好划线，闪烁包裹在划线之后插入
+        return content
+      }
+    }
+    await new Promise(r => setTimeout(r, 100))
+  }
+  return null
+}
+
 async function onHlNote() {
   const m = hlMenu.value
   hlMenu.value = null
@@ -1053,9 +1140,14 @@ async function onHlDelete() {
   hlMenu.value = null
   const h = m && reader.highlights.value.find(x => x.id === m.id)
   if (!h) return
-  if (h.note) {
+  // 有批注或有导图节点才确认；查询失败按「有」处理
+  let needConfirm = !!h.note
+  if (!needConfirm) {
+    try { needConfirm = ((await readerApi.getMindNodes(bookId, h.id)).data.data ?? []).length > 0 } catch { needConfirm = true }
+  }
+  if (needConfirm) {
     try {
-      await ElMessageBox.confirm('删除后批注也会一起删除，确定删除这条划线吗？', '删除划线', { confirmButtonText: '删除划线', cancelButtonText: '取消', type: 'warning' })
+      await ElMessageBox.confirm('删除后批注和导图节点也会一起删除，确定删除这条划线吗？', '删除划线', { confirmButtonText: '删除划线', cancelButtonText: '取消', type: 'warning' })
     } catch { return }
   }
   try { await reader.removeHighlight(h.id) } catch { ElMessage.error('删除划线失败') }
@@ -2130,6 +2222,11 @@ onUnmounted(() => {
 }
 .chapter-content :deep(mark.hl.hl-flash) {
   animation: hl-flash 1.6s ease-out;
+}
+.chapter-content :deep(mark.src-flash) {
+  color: inherit;
+  background: transparent;
+  animation: hl-flash 1.5s ease-out;
 }
 @keyframes hl-flash {
   0%, 40% { background: var(--reader-accent-weak); box-shadow: 0 0 0 4px var(--reader-accent-weak); }

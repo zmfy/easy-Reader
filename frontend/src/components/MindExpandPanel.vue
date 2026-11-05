@@ -100,8 +100,9 @@ function findNode(t: TreeNode, key: string): TreeNode | null {
 }
 
 function errorText(err: unknown, fallback: string): string {
-  const e = err as { response?: { status?: number; data?: { code?: string; message?: string } }; code?: string }
-  if (e.response?.status === 422 || e.response?.data?.code === 'AI_BAD_OUTPUT') return 'AI 返回格式不正确，请重试'
+  const e = err as { response?: { data?: { code?: string; message?: string } }; code?: string }
+  // 只有 AI 输出解析失败用固定文案；其他 422（如参数校验）显示后端给的原因
+  if (e.response?.data?.code === 'AI_BAD_OUTPUT') return 'AI 返回格式不正确，请重试'
   if (e.code === 'ECONNABORTED') return 'AI 响应超时，请稍后再试'
   return e.response?.data?.message || fallback
 }
@@ -164,6 +165,9 @@ async function load() {
   // 该划线还没有任何节点：自动以根为中心展开一次
   if (kept.value.length === 0) expand('root')
 }
+
+// 手机布局每次打开都从半屏开始
+watch(() => props.modelValue, open => { if (open) fullscreen.value = false })
 
 watch(() => [props.modelValue, props.highlight.id] as const, ([open, id]) => {
   if (open && id !== loadedFor) load()

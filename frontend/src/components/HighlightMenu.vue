@@ -4,9 +4,11 @@
     <template v-if="mode === 'new'">
       <button class="hl-menu-btn" @click="emit('highlight')">划线</button>
       <button class="hl-menu-btn" @click="emit('note')">批注</button>
+      <button v-if="aiEnabled" class="hl-menu-btn ai" @click="emit('expand')"><IconSparkles :size="15" :stroke-width="1.75" />AI 展开</button>
     </template>
     <template v-else>
       <button class="hl-menu-btn" @click="emit('note')">{{ hasNote ? '编辑批注' : '写批注' }}</button>
+      <button v-if="aiEnabled" class="hl-menu-btn ai" @click="emit('expand')"><IconSparkles :size="15" :stroke-width="1.75" />AI 展开</button>
       <button class="hl-menu-btn danger" @click="emit('delete')">删除划线</button>
     </template>
   </div>
@@ -14,9 +16,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { IconSparkles } from '@tabler/icons-vue'
 
-withDefaults(defineProps<{ x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean; placement?: 'above' | 'below' }>(), { placement: 'above' })
-const emit = defineEmits<{ highlight: []; note: []; delete: []; close: [] }>()
+withDefaults(defineProps<{ x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean; placement?: 'above' | 'below'; aiEnabled: boolean }>(), { placement: 'above' })
+const emit = defineEmits<{ highlight: []; note: []; delete: []; expand: []; close: [] }>()
 
 const menuRef = ref<HTMLElement | null>(null)
 
@@ -62,6 +65,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
+.hl-menu-btn.ai { display: inline-flex; align-items: center; gap: 4px; }
 .hl-menu-btn:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
 .hl-menu-btn.danger:hover { color: var(--el-color-danger); }
 </style>
