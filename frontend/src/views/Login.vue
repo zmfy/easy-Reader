@@ -97,7 +97,8 @@ async function handleSubmit() {
 
   try {
     await authStore.login(form.username, form.password)
-    ElMessage.success('欢迎回来，' + form.username)
+    // 默认密码账号会被带到设置新密码页，那里有说明，不再弹「欢迎回来」
+    if (!authStore.user?.mustChangePassword) ElMessage.success('欢迎回来，' + form.username)
     router.push('/library')
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '登录失败，请重试'

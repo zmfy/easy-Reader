@@ -2,16 +2,27 @@
   <div class="pwd-page">
     <div class="pwd-card">
       <div class="pwd-header">
-        <span class="pwd-icon"><IconKey :size="22" :stroke-width="1.75" /></span>
-        <h1>{{ forced ? '请先修改默认密码' : '修改密码' }}</h1>
-        <p v-if="forced" class="pwd-tip">
-          当前账号仍在使用初始密码，修改后才能继续使用。修改后，此账号在其他设备上的登录会失效。
-        </p>
-        <p v-else class="pwd-tip">修改后，此账号在其他设备上的登录会失效，需要重新登录。</p>
+        <span v-if="!forced" class="pwd-icon"><IconKey :size="22" :stroke-width="1.75" /></span>
+        <h1>{{ forced ? '设置新密码' : '修改密码' }}</h1>
+        <p v-if="!forced" class="pwd-tip">修改后，此账号在其他设备上的登录会失效，需要重新登录。</p>
+      </div>
+
+      <!-- 默认密码账号：说明为什么必须改、改了会怎样，避免老用户以为出了故障 -->
+      <div v-if="forced" class="notice" role="alert">
+        <div class="notice-head">
+          <span class="notice-icon"><IconShieldLock :size="18" :stroke-width="1.75" /></span>
+          <span class="notice-title">为了安全，需要先设置一个新密码</span>
+        </div>
+        <p>你正在使用系统的初始密码 <code>admin123</code>，这个密码是公开的，任何能访问到这台 NAS 的人都能用它登录。</p>
+        <ul>
+          <li><IconCheck :size="15" :stroke-width="2.25" />只需设置一次，之后用新密码登录</li>
+          <li><IconCheck :size="15" :stroke-width="2.25" />书库、书架、阅读进度和书签都不受影响</li>
+          <li><IconCheck :size="15" :stroke-width="2.25" />其他设备上的登录会失效，用新密码重新登录即可</li>
+        </ul>
       </div>
 
       <form class="pwd-form" @submit.prevent="submit">
-        <label class="field">
+        <label v-if="!currentPrefilled" class="field">
           <span>当前密码</span>
           <el-input v-model="form.current" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" />
         </label>
@@ -46,7 +57,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { IconKey } from '@tabler/icons-vue'
+import { IconCheck, IconKey, IconShieldLock } from '@tabler/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { passwordRules, passwordValid, type PasswordRules } from '@/utils/password-policy'
 
@@ -54,7 +65,9 @@ const authStore = useAuthStore()
 const router = useRouter()
 
 const forced = computed(() => !!authStore.user?.mustChangePassword)
-const form = reactive({ current: '', next: '', confirm: '' })
+// 刚用默认密码登录时，当前密码就是刚输入的那个，不必再填（刷新页面后没有，则显示输入框）
+const currentPrefilled = ref(!!authStore.pendingCurrentPassword)
+const form = reactive({ current: authStore.pendingCurrentPassword ?? '', next: '', confirm: '' })
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -73,12 +86,15 @@ async function submit() {
   if (!canSubmit.value || loading.value) return
   loading.value = true
   errorMsg.value = ''
+  const wasForced = forced.value
   try {
     await authStore.changePassword(form.current, form.next)
-    ElMessage.success('密码已修改')
+    ElMessage.success(wasForced ? '新密码已设置，下次请用新密码登录' : '密码已修改')
     router.replace('/library')
   } catch (err: unknown) {
     errorMsg.value = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '修改失败，请重试'
+    // 带过来的当前密码不对（极少见，如别处刚改过密码）：显示输入框让用户自己填
+    if (errorMsg.value === '当前密码不正确') { currentPrefilled.value = false; form.current = '' }
   } finally {
     loading.value = false
   }
@@ -134,12 +150,76 @@ async function logout() {
   color: var(--text-0);
 }
 
+.pwd-header h1:first-child { margin-top: 0; }
+
 .pwd-tip {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-2);
 }
+
+.notice {
+  margin-bottom: 22px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  /* 颜色全部取自当前主题：主色 --accent 淡铺底色，文字用主题文字色 */
+  background: color-mix(in srgb, var(--accent) 7%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--card-border));
+}
+
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notice-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.notice-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--card-title);
+}
+
+.notice p {
+  margin: 10px 0 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-1);
+}
+
+.notice code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.notice ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-1);
+}
+
+.notice li { display: flex; align-items: flex-start; gap: 6px; line-height: 1.6; }
+.notice li svg { flex: none; margin-top: 3px; color: var(--accent); }
 
 .pwd-form {
   display: flex;

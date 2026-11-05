@@ -18,6 +18,9 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const accessToken = ref<string | null>(localStorage.getItem('accessToken'))
 
+  // 用默认密码登录时暂存刚输入的密码（只在内存里），改密码页据此免填「当前密码」；改完或退出即清除
+  const pendingCurrentPassword = ref<string | null>(null)
+
   const isLoggedIn = computed(() => !!accessToken.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
@@ -56,6 +59,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null }
     accessToken.value = null
     user.value = null
+    pendingCurrentPassword.value = null
     localStorage.removeItem('accessToken')
     localStorage.removeItem('refreshToken')
   }
@@ -64,6 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
     const resp = await authApi.login({ username, password })
     const data = resp.data.data!
     user.value = data.user
+    pendingCurrentPassword.value = data.user.mustChangePassword ? password : null
     storeTokens(data)
   }
 
@@ -71,6 +76,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function changePassword(currentPassword: string, newPassword: string) {
     const resp = await authApi.changePassword(currentPassword, newPassword)
     const data = resp.data.data!
+    pendingCurrentPassword.value = null
     user.value = data.user
     storeTokens(data)
   }
@@ -111,5 +117,5 @@ export const useAuthStore = defineStore('auth', () => {
     scheduleRefresh(existingToken)
   }
 
-  return { user, accessToken, isLoggedIn, isAdmin, login, logout, changePassword, fetchMe, storeTokens, clearTokens, tryRefresh }
+  return { user, accessToken, pendingCurrentPassword, isLoggedIn, isAdmin, login, logout, changePassword, fetchMe, storeTokens, clearTokens, tryRefresh }
 })
