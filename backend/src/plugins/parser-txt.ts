@@ -75,6 +75,38 @@ export function isPreambleAdLine(line: string): boolean {
   return SEPARATOR_LINE_RE.test(text) || URL_RE.test(text) || PROMO_RE.test(text);
 }
 
+const compact = (s: string) => s.replace(/\s+/g, '');
+
+/**
+ * 标题里全部的「第 X 卷 / 章 / 回」编号，如「第二回史大郎…」→「第二回」、
+ * 「第十卷魔界之战第两千一百三十章斗兽」→「第十卷第两千一百三十章」
+ */
+const headingNumber = (title: string) =>
+  (title.match(/第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回]/g) ?? []).join('');
+
+/**
+ * 章节开头重复的标题只留一份：完整的标题行，或拆成「第二回」「史大郎…」几行、
+ * 拼起来等于标题的部分都算重复。留下的一份由阅读器标题区去重隐藏。
+ */
+export function dropRepeatedTitle(paragraphs: string[], title: string): string[] {
+  const t = compact(title);
+  if (!t) return paragraphs;
+  let acc = '';
+  let consumed = 0;   // 到最后一份完整标题为止的段落数
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = compact(paragraphs[i]);
+    if (p === t) { consumed = i + 1; acc = ''; continue; }
+    if (t.startsWith(acc + p)) {
+      acc += p;
+      if (acc === t) { consumed = i + 1; acc = ''; }
+      continue;
+    }
+    break;
+  }
+  if (consumed <= 1 && compact(paragraphs[0] ?? '') === t) return paragraphs;
+  return consumed > 0 ? [title, ...paragraphs.slice(consumed)] : paragraphs;
+}
+
 export class TxtParser implements ReaderPlugin {
   format = 'txt';
   private filePath = '';
@@ -130,6 +162,8 @@ export class TxtParser implements ReaderPlugin {
     return new Promise((resolve, reject) => {
       let processedBytes = 0;
       let remainder = Buffer.alloc(0);
+      // 当前章节标题之后是否出现过正文
+      let sawBody = false;
 
       const checkLine = (lineBuffer: Buffer, absoluteStart: number) => {
         if (absoluteStart - segmentStarts[segmentStarts.length - 1] >= SEGMENT) {
@@ -137,6 +171,15 @@ export class TxtParser implements ReaderPlugin {
         }
         const lineText = iconv.decode(lineBuffer, encoding).trim();
         if (chapterPattern.test(lineText) && lineText.length < 60) {
+          const prev = chapters[chapters.length - 1];
+          if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
+            // 上一个标题之后没有正文，又是同一编号的标题（网页抓取的书常把每回标题写两遍：
+            // 「第二回史大郎…」+「第二回」「史大郎…」），并为一章，保留较完整的标题。
+            // 编号不同（如「第七卷 倒吊人」后接「第一章 欢迎」）仍各自成章
+            if (lineText.length > prev.title.length) prev.title = lineText;
+            return;
+          }
+          sawBody = false;
           if (chapters.length > 0) {
             chapters[chapters.length - 1].endByte = absoluteStart;
           }
@@ -146,6 +189,8 @@ export class TxtParser implements ReaderPlugin {
             startByte: absoluteStart,
             endByte: this.fileSize,
           });
+        } else if (lineText) {
+          sawBody = true;
         }
       };
 
@@ -226,7 +271,7 @@ export class TxtParser implements ReaderPlugin {
     if (this.chapters.length === 0) return '';
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
-    const body = this.renderRange(chapter.startByte, chapter.endByte);
+    const body = this.toHtml(dropRepeatedTitle(this.paragraphs(chapter.startByte, chapter.endByte), chapter.title));
     // 第 0 章带上第一个标题之前的书名 / 简介 / 前言（去掉推广行）
     if (index === 0 && this.leadingTextEnd > 0) {
       const preamble = this.paragraphs(0, this.leadingTextEnd).filter(p => !isPreambleAdLine(p));
