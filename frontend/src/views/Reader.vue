@@ -333,9 +333,18 @@
       </div>
     </Transition>
 
+    <!-- 查看模式提示条：从学习导图打开时显示，浏览不改变阅读进度 -->
+    <div v-if="viewOnly" class="view-only-bar" :class="{ raised: !toolbarVisible }" role="status" @click.stop>
+      <span class="view-only-text">从学习导图打开：浏览不会改变阅读进度</span>
+      <span class="view-only-actions">
+        <button class="view-only-btn primary" @click="leaveViewOnly('continue-here')">从这里继续读</button>
+        <button class="view-only-btn" @click="leaveViewOnly('back-to-saved')">回到上次进度</button>
+      </span>
+    </div>
+
     <!-- 前情提要卡片：隔几天再打开时自动出现，工具栏随时调出；点按钮才调用 AI -->
     <Transition name="recap">
-      <div v-if="recapVisible" class="recap-card" @click.stop>
+      <div v-if="recapVisible" class="recap-card" :class="{ 'below-bar': viewOnly }" @click.stop>
         <div class="recap-head">
           <IconHistory :size="18" :stroke-width="1.75" class="recap-icon" />
           <div class="recap-heading">
@@ -499,6 +508,7 @@ import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
+import { openingProgressMode, exitViewOnly, type ViewOnlyExit } from '@/utils/reader-view-mode'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
 import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHighlight, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSitemap, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
@@ -1697,6 +1707,37 @@ function clearJumpQuery() {
   router.replace({ query })
 }
 
+// 查看模式：从学习导图打开时浏览不改变阅读进度，只有提示条的两个按钮能退出
+const viewOnly = computed(() => reader.progressMode.value === 'view-only')
+
+async function leaveViewOnly(action: ViewOnlyExit) {
+  const next = exitViewOnly(action)
+  reader.progressMode.value = next.mode
+  if (next.saveCurrent) {
+    clearTimeout(saveTimer)
+    if (readerStore.settings.pageMode === 'scroll') saveChapterPosition()
+    else reader.saveProgress(0)
+  }
+  if (next.restoreSaved) await restoreSavedProgress()
+}
+
+/** 回到已保存的阅读进度（正常打开阅读器时的定位） */
+async function restoreSavedProgress() {
+  resetChapterPositionTracking()
+  if (readerStore.settings.pageMode === 'waterfall') {
+    // 瀑布流从 currentChapterIndex 开始加载（查看模式下它可能已被跳转改变）
+    reader.currentChapterIndex.value = reader.progress.value.chapterIndex
+    await initWaterfall()
+  } else {
+    // 打开时用户若已切到别的章节，不再恢复旧进度位置
+    if (!await reader.loadChapter(reader.progress.value.chapterIndex)) return
+    await restoreChapterPosition({
+      paragraphIndex: reader.progress.value.paragraphIndex ?? 0,
+      paragraphOffset: reader.progress.value.paragraphOffset ?? 0,
+    })
+  }
+}
+
 async function runJumpTarget(t: JumpTarget) {
   if (t.kind === 'highlight') await jumpToHighlight(t.highlight)
   else if (t.find) await onMindJump({ chapterIndex: t.chapterIndex, label: t.find })
@@ -1737,32 +1778,25 @@ onMounted(async () => {
     jumpTarget = resolveJumpTarget()
     clearJumpQuery()
     if (!jumpTarget) ElMessage.warning('原文位置已失效')
+    // 有效跳转进入查看模式，之后的翻章、滚动、离开都不保存进度
+    reader.progressMode.value = openingProgressMode(!!jumpTarget)
   }
   // 隔了几天再打开：提示前情提要（不自动调用 AI）
   aiStatus.then(() => {
     const p = reader.progress.value
-    if (shouldOfferRecap(p, aiReady.value)) {
+    if (!jumpTarget && shouldOfferRecap(p, aiReady.value)) {
       recapAwayDays.value = daysSince(p.updatedAt)
       recapVisible.value = true
     }
   })
 
-  // 有效的跳转目标代替恢复进度（跳章时照常保存新进度）
+  // 有效的跳转目标代替恢复进度（查看模式下不保存进度）
   if (jumpTarget) {
     await runJumpTarget(jumpTarget)
     return
   }
 
-  if (readerStore.settings.pageMode === 'waterfall') {
-    await initWaterfall()
-  } else {
-    // 打开时用户若已切到别的章节，不再恢复旧进度位置
-    if (!await reader.loadChapter(reader.progress.value.chapterIndex)) return
-    await restoreChapterPosition({
-      paragraphIndex: reader.progress.value.paragraphIndex ?? 0,
-      paragraphOffset: reader.progress.value.paragraphOffset ?? 0,
-    })
-  }
+  await restoreSavedProgress()
 })
 
 onBeforeUnmount(() => {
@@ -2453,6 +2487,47 @@ onUnmounted(() => {
   font-family: var(--font-sans);
   color: var(--reader-text);
 }
+.view-only-bar {
+  position: fixed;
+  top: 66px;
+  left: 50%;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px 6px 14px;
+  transform: translateX(-50%);
+  background: var(--reader-panel-bg);
+  border: 1px solid var(--reader-divider);
+  border-radius: 12px;
+  box-shadow: var(--reader-panel-shadow);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--reader-text-2);
+  transition: top 300ms ease;
+}
+/* 顶栏下滑隐藏时提示条上移贴顶 */
+.view-only-bar.raised { top: 8px; }
+.view-only-actions { display: inline-flex; gap: 6px; }
+.view-only-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--reader-divider);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--reader-text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.view-only-btn:hover { color: var(--reader-accent); border-color: var(--reader-accent); }
+.view-only-btn.primary { border-color: var(--reader-accent); background: var(--reader-accent); color: #fff; }
+.view-only-btn.primary:hover { color: #fff; }
+/* 查看模式提示条在上方时让开（窄屏提示条可能折成两行） */
+.recap-card.below-bar { top: 140px; }
 .recap-enter-active,
 .recap-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
 .recap-enter-from,

@@ -3,6 +3,7 @@ import { readerApi } from '@/api/reader'
 import type { Chapter, Bookmark, Highlight, ReadingProgress, ReadingAnchor } from '@/types'
 import type { TextAnchor } from '@/utils/highlight-anchor'
 import { ElMessage } from 'element-plus'
+import { canSaveProgress, type ProgressMode } from '@/utils/reader-view-mode'
 
 export function useReader(bookId: string) {
   const chapters = ref<Chapter[]>([])
@@ -14,6 +15,9 @@ export function useReader(bookId: string) {
   const loading = ref(false)
   const bookFormat = ref('')
   const pdfUsePlugin = ref(false)
+  /** 查看模式（从学习导图打开）下所有进度保存都被跳过 */
+  const progressMode = ref<ProgressMode>('normal')
+  const savingAllowed = () => canSaveProgress(progressMode.value)
 
   const currentChapter = computed(() => chapters.value[currentChapterIndex.value])
 
@@ -50,11 +54,13 @@ export function useReader(bookId: string) {
   }
 
   async function saveProgress(scrollTop: number, anchor: ReadingAnchor = { paragraphIndex: 0, paragraphOffset: 0 }) {
+    if (!savingAllowed()) return
     const title = currentChapter.value?.title || ''
     await readerApi.saveProgress(bookId, currentChapterIndex.value, title, scrollTop, anchor)
   }
 
   function saveProgressOnHide(scrollTop: number, anchor: ReadingAnchor) {
+    if (!savingAllowed()) return
     const title = currentChapter.value?.title || ''
     readerApi.saveProgressOnHide(bookId, currentChapterIndex.value, title, scrollTop, anchor)
   }
@@ -108,20 +114,20 @@ export function useReader(bookId: string) {
   async function prevChapter() {
     if (currentChapterIndex.value > 0) {
       if (!await loadChapter(currentChapterIndex.value - 1)) return
-      await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
+      if (savingAllowed()) await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
     }
   }
 
   async function nextChapter() {
     if (currentChapterIndex.value < chapters.value.length - 1) {
       if (!await loadChapter(currentChapterIndex.value + 1)) return
-      await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
+      if (savingAllowed()) await readerApi.saveProgress(bookId, currentChapterIndex.value, currentChapter.value?.title || '', 0)
     }
   }
 
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
-    loading, currentChapter, bookFormat, pdfUsePlugin,
+    loading, currentChapter, bookFormat, pdfUsePlugin, progressMode,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
     highlights, loadHighlights, addHighlight, setHighlightNote, removeHighlight,
