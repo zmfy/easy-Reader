@@ -7,6 +7,8 @@ import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../services/highlights';
+import { listMindNodes, keepChain, deleteMindSubtree } from '../services/mind-nodes';
+import { expandHighlight, AiBadOutputError } from '../services/mind-expand';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
@@ -378,6 +380,65 @@ router.delete('/:bookId/highlights/:id', authMiddleware, (req: Request, res: Res
     return;
   }
   successResponse(res, null, '划线已删除');
+});
+
+// POST /api/reader/:bookId/highlights/:id/expand — AI 展开划线（或其下某个知识点）
+router.post('/:bookId/highlights/:id/expand', authMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({
+    center: z.string().trim().min(1).max(60).optional(),
+    path: z.array(z.string().max(60)).max(10).optional(),
+    force: z.boolean().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
+  try {
+    const result = await expandHighlight(db, book, req.user!.userId, { highlightId: req.params.id, ...parsed.data });
+    if (!result) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '划线不存在'); return; }
+    successResponse(res, result);
+  } catch (err) {
+    if (err instanceof AiBadOutputError) {
+      errorResponse(res, 422, 'AI_BAD_OUTPUT', 'AI 返回格式不正确，请重试');
+      return;
+    }
+    console.error(`[reader:expand] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'AI 展开失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
+});
+
+// GET /api/reader/:bookId/mind-nodes?highlightId=
+router.get('/:bookId/mind-nodes', authMiddleware, (req: Request, res: Response) => {
+  const highlightId = typeof req.query.highlightId === 'string' && req.query.highlightId ? req.query.highlightId : undefined;
+  successResponse(res, listMindNodes(getDb(), req.user!.userId, req.params.bookId, highlightId));
+});
+
+// POST /api/reader/:bookId/mind-nodes/keep — 保留一条知识点链
+router.post('/:bookId/mind-nodes/keep', authMiddleware, (req: Request, res: Response) => {
+  const parsed = z.object({
+    highlightId: z.string().min(1),
+    chain: z.array(z.object({
+      label: z.string().min(1).max(60),
+      kind: z.enum(['event', 'concept', 'person']),
+      summary: z.string().max(200).optional(),
+      source: z.object({
+        chapterIndex: z.number().int().min(0),
+        paragraphIndex: z.number().int().min(0),
+      }).nullish(),
+    })).min(1).max(10),
+  }).safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const nodes = keepChain(getDb(), req.user!.userId, req.params.bookId, parsed.data.highlightId, parsed.data.chain);
+  if (!nodes) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '划线不存在'); return; }
+  successResponse(res, nodes, '已保留到导图');
+});
+
+// DELETE /api/reader/:bookId/mind-nodes/:id — 删除节点及其子树
+router.delete('/:bookId/mind-nodes/:id', authMiddleware, (req: Request, res: Response) => {
+  const deleted = deleteMindSubtree(getDb(), req.user!.userId, req.params.bookId, req.params.id);
+  if (deleted === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '节点不存在'); return; }
+  successResponse(res, { deleted }, '节点已删除');
 });
 
 export default router;

@@ -386,6 +386,34 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 删除划线，不存在返回 404。
 
+### AI 展开与导图节点
+
+对划线调用 AI，生成可继续追问的知识点候选；保留的知识点链存为导图节点。AI 只使用读者当前阅读位置之前的内容（防剧透），出处在读者位置之后的候选带 `later: true`。
+
+### POST /api/v1/reader/:bookId/highlights/:id/expand
+
+```json
+{ "center": "要展开的知识点，1 到 60 字，可选（缺省为划线原文）", "path": ["上游知识点，最多 10 项，每项不超过 60 字"], "force": false }
+```
+
+返回 `{ candidates: [{ label, kind, summary, source }], cached }`。`kind` 为 `event`、`concept`、`person`；`source` 为 `{ chapterIndex, paragraphIndex, chapterTitle, later }` 或 `null`。`force: true` 跳过缓存重新生成。错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；划线或书不存在 404；AI 返回无法解析 422 `AI_BAD_OUTPUT`；其他 AI 错误 500。
+
+### GET /api/v1/reader/:bookId/mind-nodes
+
+可选查询参数 `highlightId`，只取该划线下的节点。返回 `MindNode[]`。
+
+### POST /api/v1/reader/:bookId/mind-nodes/keep
+
+```json
+{ "highlightId": "划线 id", "chain": [{ "label": "1 到 60 字", "kind": "event", "summary": "可选，最长 200 字", "source": { "chapterIndex": 3, "paragraphIndex": 5 } }] }
+```
+
+`chain` 为 1 到 10 项，从上游到下游依次排列；已存在的节点会复用。返回该链上的 `MindNode[]`（含根节点）；划线不存在返回 404。
+
+### DELETE /api/v1/reader/:bookId/mind-nodes/:id
+
+删除节点及其子树，返回 `{ deleted: 数量 }`；不存在返回 404。
+
 ## 9. 阅读偏好
 
 每个用户一份，由客户端自行定义内容（字号、主题等），网页版也存在这里。

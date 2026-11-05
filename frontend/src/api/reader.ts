@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, Highlight, AiRecap, AiAnswer } from '@/types'
+import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, Highlight, MindNode, ChainItem, ExpandedCandidate, AiRecap, AiAnswer } from '@/types'
 
 export const readerApi = {
   getChapters: (bookId: string) =>
@@ -60,4 +60,16 @@ export const readerApi = {
 
   deleteHighlight: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/highlights/${id}`),
+
+  expandHighlight: (bookId: string, highlightId: string, body: { center?: string; path?: string[]; force?: boolean }) =>
+    http.post<ApiResponse<{ candidates: ExpandedCandidate[]; cached: boolean }>>(`/reader/${bookId}/highlights/${highlightId}/expand`, body),
+
+  getMindNodes: (bookId: string, highlightId?: string) =>
+    http.get<ApiResponse<MindNode[]>>(`/reader/${bookId}/mind-nodes`, { params: highlightId ? { highlightId } : undefined }),
+
+  keepMindChain: (bookId: string, highlightId: string, chain: ChainItem[]) =>
+    http.post<ApiResponse<MindNode[]>>(`/reader/${bookId}/mind-nodes/keep`, { highlightId, chain }),
+
+  deleteMindNode: (bookId: string, id: string) =>
+    http.delete<ApiResponse<{ deleted: number }>>(`/reader/${bookId}/mind-nodes/${id}`),
 }

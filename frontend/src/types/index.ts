@@ -101,6 +101,39 @@ export interface Highlight {
   updated_at: string
 }
 
+export type MindKind = 'highlight' | 'event' | 'concept' | 'person' | 'custom'
+
+export interface MindNode {
+  id: string
+  user_id: string
+  book_id: string
+  parent_id: string | null
+  chapter_index: number
+  highlight_id: string | null
+  label: string
+  kind: MindKind
+  summary: string | null
+  note: string | null
+  source_chapter: number | null
+  source_paragraph: number | null
+  sort: number
+  created_at: string
+}
+
+export interface ChainItem {
+  label: string
+  kind: 'event' | 'concept' | 'person'
+  summary?: string
+  source?: { chapterIndex: number; paragraphIndex: number } | null
+}
+
+export interface ExpandedCandidate {
+  label: string
+  kind: 'event' | 'concept' | 'person'
+  summary: string
+  source: { chapterIndex: number; paragraphIndex: number; chapterTitle: string; later: boolean } | null
+}
+
 export interface Chapter {
   index: number
   title: string

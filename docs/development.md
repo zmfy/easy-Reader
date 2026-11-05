@@ -208,6 +208,10 @@ easyReader/
 | POST | `/:bookId/highlights` | 新增划线（可带批注） |
 | PATCH | `/:bookId/highlights/:id` | 修改/清除批注 |
 | DELETE | `/:bookId/highlights/:id` | 删除划线 |
+| POST | `/:bookId/highlights/:id/expand` | AI 展开划线/知识点（防剧透，带缓存） |
+| GET | `/:bookId/mind-nodes` | 导图节点列表（可按 `highlightId` 过滤） |
+| POST | `/:bookId/mind-nodes/keep` | 保留一条知识点链为导图节点 |
+| DELETE | `/:bookId/mind-nodes/:id` | 删除导图节点及其子树 |
 
 ### 设置 `/api/settings`
 
