@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { backfillFingerprintVersion } from './services/scan-versions';
 import { HIGHLIGHTS_DDL } from './services/highlights';
+import { MIND_DDL } from './services/mind-nodes';
 import { cleanBookTitle } from './utils/book-title';
 import { DEFAULT_ADMIN_PASSWORD, markDefaultPasswordUsers } from './utils/password-policy';
 
@@ -274,6 +275,7 @@ function initSchema(): void {
 
   // === 学习笔记：划线与批注 ===
   database.exec(HIGHLIGHTS_DDL);
+  database.exec(MIND_DDL);
 
   // === Plan 3 schema: audit_log ===
   database.exec(`

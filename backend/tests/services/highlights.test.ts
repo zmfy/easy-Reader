@@ -1,9 +1,11 @@
 import Database from 'better-sqlite3';
+import { MIND_DDL, keepChain, listMindNodes } from '../../src/services/mind-nodes';
 import { HIGHLIGHTS_DDL, listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../../src/services/highlights';
 
 function makeDb() {
   const d = new Database(':memory:');
   d.exec(HIGHLIGHTS_DDL);
+  d.exec(MIND_DDL);
   return d;
 }
 
@@ -43,5 +45,14 @@ describe('highlights service', () => {
     expect(deleteHighlight(d, 'u2', 'b1', h.id)).toBe(false);
     expect(deleteHighlight(d, 'u1', 'b1', h.id)).toBe(true);
     expect(listHighlights(d, 'u1', 'b1')).toEqual([]);
+  });
+
+  it('deleting a highlight removes its nodes', () => {
+    const d = makeDb();
+    const h = createHighlight(d, 'u1', 'b1', hl(0, 0, 1));
+    keepChain(d, 'u1', 'b1', h.id, [{ label: '鸿门宴', kind: 'event' }]);
+    expect(listMindNodes(d, 'u1', 'b1', h.id)).toHaveLength(2);
+    deleteHighlight(d, 'u1', 'b1', h.id);
+    expect(listMindNodes(d, 'u1', 'b1', h.id)).toHaveLength(0);
   });
 });

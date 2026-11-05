@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import crypto from 'crypto';
 import { Highlight } from '../types';
+import { deleteMindNodesOfHighlight } from './mind-nodes';
 
 // 建表 SQL：db.ts 初始化与测试共用
 export const HIGHLIGHTS_DDL = `
@@ -49,6 +50,11 @@ export function updateHighlightNote(
 }
 
 export function deleteHighlight(db: Database.Database, userId: string, bookId: string, id: string): boolean {
-  const r = db.prepare('DELETE FROM highlights WHERE id = ? AND user_id = ? AND book_id = ?').run(id, userId, bookId);
-  return r.changes > 0;
+  // 划线与其导图节点同事务删除
+  return db.transaction((): boolean => {
+    const r = db.prepare('DELETE FROM highlights WHERE id = ? AND user_id = ? AND book_id = ?').run(id, userId, bookId);
+    if (r.changes === 0) return false;
+    deleteMindNodesOfHighlight(db, userId, bookId, id);
+    return true;
+  })();
 }
