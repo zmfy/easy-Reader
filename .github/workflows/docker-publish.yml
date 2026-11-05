@@ -3,6 +3,7 @@ name: Build and Push to Docker Hub
 # 镜像 tag 规则：
 #   推送 main 分支   → edge、sha-xxxxxxx（开发版，尝鲜用）
 #   推送 vX.Y.Z tag → X.Y.Z、X.Y、latest，并用 CHANGELOG.md 中对应一节创建 GitHub Release
+#   推送 tag 或手动运行 → 用 DOCKERHUB.md 更新 Docker Hub 仓库说明
 on:
   push:
     branches:
@@ -68,7 +69,21 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # 6. 创建 GitHub Release
+      # 6. 发版时把 DOCKERHUB.md 同步为 Docker Hub 的仓库说明
+      #    需要 DOCKERHUB_TOKEN 具有 Read, Write, Delete 权限，否则这一步会失败（镜像已推送，不受影响）
+      #    在 Actions 页面手动运行本 workflow 也会同步，改了说明不必为此发版
+      - name: Update Docker Hub description
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/easy-reader
+          readme-filepath: ./DOCKERHUB.md
+          short-description: NAS 自托管小说阅读器：TXT/EPUB/PDF/UMD，AI 补全书籍信息，听书与 AI 问书
+
+      # 7. 创建 GitHub Release
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
