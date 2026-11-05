@@ -51,7 +51,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
 import type { MapNode, MapNodeType } from '../utils/book-map'
-import { layoutMap, initialCollapsed, displayLabel, NODE_HEIGHT, NODE_PAD_X } from '../utils/map-layout'
+import { layoutMap, initialCollapsed, displayLabel, exportScale, NODE_HEIGHT, NODE_PAD_X } from '../utils/map-layout'
 
 const props = defineProps<{ root: MapNode; selectedId: string | null }>()
 const emit = defineEmits<{ select: [id: string] }>()
@@ -212,11 +212,11 @@ function expandAll() {
   nextTick(fit)
 }
 
-/** 导出当前展开状态的整张图：克隆 SVG，颜色写成属性（固定亮色、不依赖 CSS 变量），白底，2 倍像素 */
-const EXPORT_SCALE = 2
-const EXPORT_MAX_SIDE = 16384
-const EXPORT_MAX_AREA = 16_000_000   // iOS Safari canvas 面积上限约 16.7M 像素，超过时降低倍率
-async function exportPng(): Promise<Blob> {
+/**
+ * 导出当前展开状态的整张图：克隆 SVG，颜色写成属性（固定亮色、不依赖 CSS 变量），白底，默认 2 倍像素。
+ * 返回实际倍率：小于 1 说明图太大被缩小，调用方可提示用户
+ */
+async function exportPng(): Promise<{ blob: Blob; scale: number }> {
   const svg = svgEl.value
   if (!svg) throw new Error('导图尚未渲染')
   const { width, height } = layout.value
@@ -245,10 +245,16 @@ async function exportPng(): Promise<Blob> {
     g.querySelector('title')?.remove()
   })
 
-  const scale = Math.min(EXPORT_SCALE, EXPORT_MAX_SIDE / width, EXPORT_MAX_SIDE / height, Math.sqrt(EXPORT_MAX_AREA / (width * height)))
+  const scale = exportScale(width, height)
+  // 大图的 SVG 文本很长，用 Blob URL 代替 data: URL
+  const svgUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' }))
   const img = new Image()
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(clone))
-  await img.decode()
+  try {
+    img.src = svgUrl
+    await img.decode()
+  } finally {
+    URL.revokeObjectURL(svgUrl)
+  }
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(width * scale)
   canvas.height = Math.ceil(height * scale)
@@ -258,9 +264,10 @@ async function exportPng(): Promise<Blob> {
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.scale(scale, scale)
   ctx.drawImage(img, 0, 0, width, height)
-  return new Promise((resolve, reject) => {
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(b => (b ? resolve(b) : reject(new Error('导出图片失败'))), 'image/png')
   })
+  return { blob, scale }
 }
 
 defineExpose({ fit, collapseAll, expandAll, exportPng })

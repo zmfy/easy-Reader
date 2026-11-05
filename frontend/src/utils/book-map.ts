@@ -53,7 +53,7 @@ export function buildBookMap(input: {
     mindById.set(n.id, {
       id: n.id,
       type: 'mind',
-      label: hl ? hl.text.slice(0, HIGHLIGHT_LABEL_MAX) : n.label,
+      label: hl ? Array.from(hl.text).slice(0, HIGHLIGHT_LABEL_MAX).join('') : n.label,
       kind: n.kind,
       node: n,
       ...(hl ? { highlight: hl } : {}),
@@ -116,11 +116,15 @@ export function toMarkdown(root: MapNode): string {
   const lines = [`# ${escapeMd(root.label)}`]
   const walk = (n: MapNode, depth: number) => {
     const pad = '  '.repeat(depth)
-    let text = escapeMd(n.label)
+    // 划线节点：输出完整划线原文（导图上的标签是截断的）
+    let text = escapeMd(n.highlight ? n.highlight.text : n.label)
     const m = n.node
     if (m?.summary) text += `：${escapeMd(m.summary)}`
     lines.push(`${pad}- ${text}`)
-    if (m?.note) for (const l of m.note.split(/\r?\n/)) if (l.trim()) lines.push(`${pad}  > ${l.trim()}`)
+    // 划线批注在前，节点笔记在后，每行一条引用
+    for (const note of [n.highlight?.note, m?.note]) {
+      if (note) for (const l of note.split(/\r?\n/)) if (l.trim()) lines.push(`${pad}  > ${l.trim()}`)
+    }
     for (const c of n.children) walk(c, depth + 1)
   }
   for (const c of root.children) walk(c, 0)

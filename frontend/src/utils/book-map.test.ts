@@ -131,6 +131,22 @@ describe('book-map', () => {
       ['# 书\\[1\\]', '- 第0章', '  - 有\\*星\\#号 换行：概述\\_x', '    > 第一行', '    > 第二行', '    - 子', ''].join('\n'))
   })
 
+  it('toMarkdown writes full highlight text and its annotation', () => {
+    const long = '甲'.repeat(40) + '\n*乙*'
+    const h = { ...hl('h1', long), note: '批注一\n\n批注二' }
+    const nodes = [mind('m', { kind: 'highlight', highlight_id: 'h1', label: '短', note: '节点笔记' })]
+    const root = buildBookMap({ bookTitle: '书', chapters: flat.slice(0, 1), nodes, highlights: [h] })
+    expect(toMarkdown(root)).toBe(
+      ['# 书', '- 第0章', `  - ${'甲'.repeat(40)} \\*乙\\*`, '    > 批注一', '    > 批注二', '    > 节点笔记', ''].join('\n'))
+  })
+
+  it('truncates highlight labels by code points', () => {
+    const text = '😀'.repeat(31)
+    const nodes = [mind('m', { kind: 'highlight', highlight_id: 'h1' })]
+    const root = buildBookMap({ bookTitle: '书', chapters: flat, nodes, highlights: [hl('h1', text)] })
+    expect(root.children[0].children[0].label).toBe('😀'.repeat(30))
+  })
+
   it('safeFileName strips illegal characters', () => {
     expect(safeFileName(' a/b\\c:d*e?f"g<h>i|j ')).toBe('abcdefghij')
     expect(safeFileName(' /: ')).toBe('学习导图')

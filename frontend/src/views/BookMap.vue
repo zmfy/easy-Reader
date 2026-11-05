@@ -25,9 +25,13 @@
     <div class="map-body">
       <main class="map-main">
         <div v-if="ready && nodes.length === 0" class="map-empty">
-          还没有知识节点。在阅读器里划线后点「AI 展开」，或在章节上手动添加节点。
+          还没有知识节点。在阅读器里划线后点「AI 展开」，或在章节上手动添加节点。<template v-if="onlyNotes">关闭「只看有笔记的章节」后，可在章节上手动添加节点。</template>
         </div>
         <div v-if="loading" class="map-loading"><el-skeleton :rows="6" animated /></div>
+        <div v-else-if="loadFailed" class="map-error">
+          <span>导图加载失败</span>
+          <el-button size="small" @click="loadAll">重试</el-button>
+        </div>
         <MindMapCanvas
           v-else-if="ready"
           ref="canvasRef"
@@ -114,6 +118,7 @@ const chapters = ref<Chapter[]>([])
 const highlights = ref<Highlight[]>([])
 const nodes = ref<MindNode[]>([])
 const loading = ref(true)
+const loadFailed = ref(false)
 const ready = ref(false)
 const busy = ref(false)
 const exporting = ref(false)
@@ -155,6 +160,7 @@ function errorText(err: unknown, fallback: string): string {
 
 async function loadAll() {
   loading.value = true
+  loadFailed.value = false
   try {
     const [bookResp, chaptersResp, hlResp, nodesResp] = await Promise.all([
       libraryApi.get(bookId),
@@ -169,6 +175,7 @@ async function loadAll() {
     nodes.value = nodesResp.data.data ?? []
     ready.value = true
   } catch (err) {
+    loadFailed.value = true
     ElMessage.error(errorText(err, '学习导图加载失败'))
   } finally {
     loading.value = false
@@ -288,7 +295,7 @@ async function goSource(n: MapNode) {
   if (m.source_chapter === null) return
   if (m.source_later) {
     try {
-      await ElMessageBox.confirm('这是你还没读到的后文，跳转后阅读进度会移到那一章。确定跳转吗？', '跳转到后文', { confirmButtonText: '跳转到后文', type: 'warning' })
+      await ElMessageBox.confirm('这是你还没读到的后文，可能会剧透。确定查看吗？', '查看后文', { confirmButtonText: '查看后文', type: 'warning' })
     } catch {
       return
     }
@@ -317,7 +324,9 @@ async function onExport(cmd: 'png' | 'md') {
   if (!canvasRef.value) return
   exporting.value = true
   try {
-    download(await canvasRef.value.exportPng(), `${base}.png`)
+    const { blob, scale } = await canvasRef.value.exportPng()
+    if (scale < 1) ElMessage.warning('导图太大，导出的图片可能看不清，建议开启「只看有笔记的章节」或折叠后再导出')
+    download(blob, `${base}.png`)
   } catch (err) {
     ElMessage.error(errorText(err, '导出图片失败'))
   } finally {
@@ -360,6 +369,16 @@ async function onExport(cmd: 'png' | 'md') {
 .map-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .map-canvas { flex: 1; min-height: 0; }
 .map-loading { padding: 24px; }
+.map-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+}
 .map-empty {
   margin: 12px 16px 0;
   padding: 10px 14px;

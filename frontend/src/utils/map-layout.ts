@@ -93,3 +93,11 @@ export function initialCollapsed(root: MapNode, maxDepth: number): Set<string> {
   walk(root, 0)
   return out
 }
+
+/** 导出 PNG 的像素倍率：默认 2 倍；超过单边/面积上限时降低（iOS Safari canvas 面积上限约 16.7M 像素），可能小于 1 */
+const EXPORT_SCALE = 2
+const EXPORT_MAX_SIDE = 16384
+const EXPORT_MAX_AREA = 16_000_000
+export function exportScale(width: number, height: number): number {
+  return Math.min(EXPORT_SCALE, EXPORT_MAX_SIDE / width, EXPORT_MAX_SIDE / height, Math.sqrt(EXPORT_MAX_AREA / (width * height)))
+}

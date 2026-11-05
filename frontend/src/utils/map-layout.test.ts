@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { layoutMap, initialCollapsed, displayLabel, type LaidOutNode } from './map-layout'
+import { layoutMap, initialCollapsed, displayLabel, exportScale, type LaidOutNode } from './map-layout'
 import type { MapNode } from './book-map'
 
 const node = (id: string, children: MapNode[] = [], over: Partial<MapNode> = {}): MapNode => ({
@@ -91,5 +91,16 @@ describe('map-layout', () => {
     const seen: string[] = []
     layoutMap(node('r', [node('m', [], { label: long })]), new Set(), l => { seen.push(l); return 10 })
     expect(seen).toContain(displayLabel(long))
+  })
+})
+
+describe('exportScale', () => {
+  it('uses 2x for small maps', () => {
+    expect(exportScale(800, 600)).toBe(2)
+  })
+  it('shrinks to fit the side and area limits, possibly below 1', () => {
+    expect(exportScale(20000, 100)).toBeCloseTo(16384 / 20000)
+    expect(exportScale(3000, 3000)).toBeCloseTo(Math.sqrt(16_000_000 / 9_000_000))
+    expect(exportScale(8000, 8000)).toBeLessThan(1)
   })
 })
