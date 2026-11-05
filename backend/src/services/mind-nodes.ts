@@ -10,12 +10,20 @@ export const MIND_DDL = `
     sort INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_mind_nodes_user_book ON mind_nodes(user_id, book_id);
+  -- ctx_from / ctx_to：实际送给 AI 的上下文段落范围（防止边界更早的用户命中含后文的缓存）
   CREATE TABLE IF NOT EXISTS ai_expansions (
     book_id TEXT NOT NULL, center TEXT NOT NULL, chapter_index INTEGER NOT NULL,
+    ctx_from INTEGER NOT NULL, ctx_to INTEGER NOT NULL,
     result TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (book_id, center, chapter_index)
+    PRIMARY KEY (book_id, center, chapter_index, ctx_from, ctx_to)
   );
 `;
+
+/** 建表前迁移：旧版 ai_expansions 缺 ctx_from 列时直接删除重建（只是缓存） */
+export function migrateMindTables(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info('ai_expansions')").all() as Array<{ name: string }>;
+  if (cols.length > 0 && !cols.some(c => c.name === 'ctx_from')) db.exec('DROP TABLE ai_expansions');
+}
 
 export type MindKind = 'highlight' | 'event' | 'concept' | 'person' | 'custom';
 

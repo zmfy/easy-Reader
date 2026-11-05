@@ -118,6 +118,8 @@ export interface MindNode {
   source_paragraph: number | null
   sort: number
   created_at: string
+  /** 出处在当前用户阅读边界之后（GET mind-nodes 按请求用户计算） */
+  source_later?: boolean
 }
 
 export interface ChainItem {

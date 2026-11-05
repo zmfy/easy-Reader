@@ -1048,6 +1048,12 @@ const mindHighlightId = ref<string | null>(null)
 const mindVisible = ref(false)
 const mindHighlight = computed(() => reader.highlights.value.find(h => h.id === mindHighlightId.value) ?? null)
 
+// 换书时关闭面板（App 按 route.path 重建页面，这里只是防御：组件被复用时不残留上一本书的划线）
+watch(() => route.params.bookId, () => {
+  mindVisible.value = false
+  mindHighlightId.value = null
+})
+
 function openMindPanel(id: string) {
   mindHighlightId.value = id
   mindVisible.value = true

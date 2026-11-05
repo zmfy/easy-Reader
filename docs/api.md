@@ -396,11 +396,11 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 { "center": "要展开的知识点，1 到 60 字，可选（缺省为划线原文）", "path": ["上游知识点，最多 10 项，每项不超过 60 字"], "force": false }
 ```
 
-返回 `{ candidates: [{ label, kind, summary, source }], cached }`。`kind` 为 `event`、`concept`、`person`；`source` 为 `{ chapterIndex, paragraphIndex, chapterTitle, later }` 或 `null`。`force: true` 跳过缓存重新生成。错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；划线或书不存在 404；AI 返回无法解析 422 `AI_BAD_OUTPUT`；其他 AI 错误 500。
+返回 `{ candidates: [{ label, kind, summary, source }], cached }`。`kind` 为 `event`、`concept`、`person`；`source` 为 `{ chapterIndex, paragraphIndex, chapterTitle, later }` 或 `null`。缓存按（书、中心词、划线所在章、实际送给 AI 的段落范围）跨用户共享，阅读边界更早的用户不会命中含更后段落的缓存；命中时按本次的中心词与 `path` 再过滤候选。`force: true` 跳过缓存重新生成。错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；划线或书不存在 404；AI 返回无法解析 422 `AI_BAD_OUTPUT`；其他 AI 错误 500。
 
 ### GET /api/v1/reader/:bookId/mind-nodes
 
-可选查询参数 `highlightId`，只取该划线下的节点。返回 `MindNode[]`。
+可选查询参数 `highlightId`，只取该划线下的节点。返回 `MindNode[]`，每个节点额外带 `source_later: boolean`：出处（`source_chapter`/`source_paragraph`）在当前用户阅读边界（阅读进度与该划线位置中较晚者）之后为 `true`，无出处为 `false`。书或书文件不存在返回 404。
 
 ### POST /api/v1/reader/:bookId/mind-nodes/keep
 

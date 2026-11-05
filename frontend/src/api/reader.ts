@@ -62,7 +62,7 @@ export const readerApi = {
     http.delete<ApiResponse<null>>(`/reader/${bookId}/highlights/${id}`),
 
   expandHighlight: (bookId: string, highlightId: string, body: { center?: string; path?: string[]; force?: boolean }) =>
-    http.post<ApiResponse<{ candidates: ExpandedCandidate[]; cached: boolean }>>(`/reader/${bookId}/highlights/${highlightId}/expand`, body),
+    http.post<ApiResponse<{ candidates: ExpandedCandidate[]; cached: boolean }>>(`/reader/${bookId}/highlights/${highlightId}/expand`, body, { timeout: 180000 }),
 
   getMindNodes: (bookId: string, highlightId?: string) =>
     http.get<ApiResponse<MindNode[]>>(`/reader/${bookId}/mind-nodes`, { params: highlightId ? { highlightId } : undefined }),

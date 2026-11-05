@@ -35,6 +35,14 @@ describe('buildMindTree', () => {
     expect(a.children[0]).toMatchObject({ key: 'b', label: 'B', kind: 'person', kept: true, source: null })
   })
 
+  it('marks kept sources beyond the reading boundary from source_later', () => {
+    const t = buildMindTree([
+      node('r', null, '划线原文'),
+      node('a', 'r', 'A', { source_chapter: 9, source_paragraph: 0, source_later: true }),
+    ], {}, '划线原文')
+    expect(t.children[0].source).toEqual({ chapterIndex: 9, paragraphIndex: 0, chapterTitle: '', later: true })
+  })
+
   it('returns a bare root when nothing is kept', () => {
     const t = buildMindTree([], {}, '某句话')
     expect(t).toMatchObject({ key: 'root', label: '某句话', kept: false, nodeId: null, children: [] })

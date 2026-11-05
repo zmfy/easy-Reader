@@ -33,7 +33,7 @@
           </div>
           <div v-if="selectedKey === node.key" class="mind-actions" @click.stop>
             <button v-if="!node.kept && node.key !== 'root'" class="mind-btn primary" :disabled="locked" @click="keep(node.key)">保留</button>
-            <button v-if="!expansions[node.key]" class="mind-btn" :disabled="busy || expanding[node.key]" @click="expand(node.key)">继续展开</button>
+            <button v-if="!expansions[node.key] && depth < MAX_EXPAND_DEPTH" class="mind-btn" :disabled="busy || expanding[node.key]" @click="expand(node.key)">继续展开</button>
             <button v-if="node.source" class="mind-btn" :class="{ later: node.source.later }" @click="jump(node)">{{ sourceText(node) }}</button>
             <button v-if="node.kept && node.key !== 'root'" class="mind-btn danger" :disabled="locked" @click="remove(node)">删除</button>
           </div>
@@ -54,6 +54,9 @@ import { buildMindTree, chainTo, pathTo, keyMoves, type TreeNode } from '../util
 
 const props = defineProps<{ bookId: string; highlight: Highlight; chapters: Array<{ index: number; title: string }>; modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; jump: [payload: { chapterIndex: number; label: string }] }>()
+
+// 保留链最多 10 级（根为第 0 级）：第 10 级节点再展开出的候选无法保留，不再提供「继续展开」
+const MAX_EXPAND_DEPTH = 10
 
 const KIND_LABEL: Record<MindNode['kind'], string> = { highlight: '划线', event: '事件', concept: '概念', person: '人物', custom: '自定义' }
 
@@ -113,8 +116,8 @@ function chapterTitle(index: number): string {
 
 function sourceText(node: TreeNode): string {
   const s = node.source!
-  // 已保留节点的 chapterTitle 为空，用目录补；later 不重算（第二期统一按非后文显示）
-  const title = s.chapterTitle || chapterTitle(s.chapterIndex)
+  // 章节名一律按目录（含手动修正的章节名）显示；已保留节点的 later 由服务端按当前阅读边界算出
+  const title = chapterTitle(s.chapterIndex)
   return s.later ? `📖 后文·${title}` : `📖 ${title}`
 }
 
@@ -239,8 +242,15 @@ async function remove(node: TreeNode) {
   }
 }
 
-function jump(node: TreeNode) {
+async function jump(node: TreeNode) {
   if (!node.source) return
+  if (node.source.later) {
+    try {
+      await ElMessageBox.confirm('这是你还没读到的后文，跳转后阅读进度会移到那一章。确定跳转吗？', '跳转到后文', { confirmButtonText: '跳转到后文', type: 'warning' })
+    } catch {
+      return
+    }
+  }
   emit('jump', { chapterIndex: node.source.chapterIndex, label: node.label })
   if (isNarrow.value) visible.value = false
 }

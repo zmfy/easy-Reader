@@ -50,7 +50,6 @@ export function clearHighlights(content: HTMLElement): void {
 // 这些元素的直接子节点里的纯空白只是排版换行，不能包 mark
 const STRUCTURAL_TAGS = new Set(['UL', 'OL', 'DL', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGROUP'])
 
-/** 先清除已有 mark.hl，再按 items 包裹；每段文本节点包成 <mark class="hl" data-hl-id>，有批注的加 has-note */
 // 把正文中 [start, end) 的文本逐个文本节点包进 makeMark() 创建的元素，返回这些元素
 function wrapTextRange(content: HTMLElement, { start, end }: TextAnchor, makeMark: () => HTMLElement): HTMLElement[] {
   if (end <= start) return []
@@ -79,6 +78,7 @@ function wrapTextRange(content: HTMLElement, { start, end }: TextAnchor, makeMar
   })
 }
 
+/** 先清除已有 mark.hl，再按 items 包裹；每段文本节点包成 <mark class="hl" data-hl-id>，有批注的加 has-note */
 export function applyHighlights(
   content: HTMLElement,
   items: Array<{ id: string; anchor: TextAnchor; hasNote: boolean }>,

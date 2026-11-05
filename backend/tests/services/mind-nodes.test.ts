@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { HIGHLIGHTS_DDL, createHighlight } from '../../src/services/highlights';
-import { MIND_DDL, keepChain, listMindNodes, deleteMindSubtree } from '../../src/services/mind-nodes';
+import { MIND_DDL, keepChain, listMindNodes, deleteMindSubtree, migrateMindTables } from '../../src/services/mind-nodes';
 
 function setup() {
   const d = new Database(':memory:');
@@ -53,5 +53,18 @@ describe('mind-nodes service', () => {
     const left = listMindNodes(d, 'u1', 'b1');
     expect(left).toHaveLength(1);
     expect(left[0].kind).toBe('highlight');
+  });
+
+  it('migrateMindTables drops an old ai_expansions without ctx columns', () => {
+    const d = new Database(':memory:');
+    d.exec(`CREATE TABLE ai_expansions (book_id TEXT, center TEXT, chapter_index INTEGER, result TEXT,
+      PRIMARY KEY (book_id, center, chapter_index))`);
+    migrateMindTables(d);
+    d.exec(MIND_DDL);
+    const cols = (d.prepare("PRAGMA table_info('ai_expansions')").all() as Array<{ name: string }>).map(c => c.name);
+    expect(cols).toEqual(expect.arrayContaining(['ctx_from', 'ctx_to']));
+    d.prepare("INSERT INTO ai_expansions (book_id, center, chapter_index, ctx_from, ctx_to, result) VALUES ('b', 'c', 0, 0, 1, '[]')").run();
+    migrateMindTables(d); // 新表不动
+    expect(d.prepare('SELECT COUNT(*) AS n FROM ai_expansions').get()).toEqual({ n: 1 });
   });
 });

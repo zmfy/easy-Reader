@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3';
 import {
   parseExpandResult, buildExpandPrompt, expandHighlight, AiBadOutputError,
-  locateHighlightParagraph, readingBoundary, buildExpandContext,
+  locateHighlightParagraph, readingBoundary, buildExpandContext, expandContextRange, listMindNodesWithLater,
 } from '../../src/services/mind-expand';
 import { HIGHLIGHTS_DDL, createHighlight } from '../../src/services/highlights';
-import { MIND_DDL } from '../../src/services/mind-nodes';
+import { MIND_DDL, keepChain } from '../../src/services/mind-nodes';
 import { clearBookTextCache } from '../../src/services/book-text';
 import { aiManager } from '../../src/ai/ai-manager';
 import { getReaderPlugin } from '../../src/plugins/plugin-manager';
@@ -14,6 +14,7 @@ jest.mock('../../src/ai/ai-manager', () => ({ aiManager: { chat: jest.fn() } }))
 jest.mock('../../src/plugins/plugin-manager', () => ({ getReaderPlugin: jest.fn() }));
 
 const chat = aiManager.chat as jest.Mock;
+const getChapterContent = jest.fn(async (i: number) => CHAPTERS[i].html);
 
 // 6 章；第 5 章（index 4）含「剧透」
 const CHAPTERS = [
@@ -49,9 +50,10 @@ beforeEach(() => {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, book_id TEXT NOT NULL,
     chapter_index INTEGER DEFAULT 0, paragraph_index INTEGER DEFAULT 0, UNIQUE(user_id, book_id))`);
   chat.mockReset();
+  getChapterContent.mockClear();
   (getReaderPlugin as jest.Mock).mockResolvedValue({
     getChapters: async () => CHAPTERS.map((c, index) => ({ index, title: c.title })),
-    getChapterContent: async (i: number) => CHAPTERS[i].html,
+    getChapterContent,
   });
 });
 
@@ -142,6 +144,12 @@ describe('boundary and context helpers', () => {
     expect(buildExpandContext(1, paras, 4, { chapterIndex: 1, paragraphIndex: 5 })).toBe('p1\np2\np3\np4\np5');
     expect(buildExpandContext(1, paras, 1, { chapterIndex: 1, paragraphIndex: 1 })).toBe('p0\np1');
   });
+
+  it('context range reports the paragraphs actually used', () => {
+    expect(expandContextRange(1, 8, 4, { chapterIndex: 2, paragraphIndex: 0 })).toEqual({ from: 1, to: 6 });
+    expect(expandContextRange(1, 8, 4, { chapterIndex: 1, paragraphIndex: 5 })).toEqual({ from: 1, to: 5 });
+    expect(expandContextRange(1, 0, 0, { chapterIndex: 1, paragraphIndex: 0 })).toEqual({ from: 0, to: -1 });
+  });
 });
 
 describe('expandHighlight', () => {
@@ -209,11 +217,12 @@ describe('expandHighlight', () => {
     ]);
   });
 
-  it('caches per book/center/chapter and force bypasses', async () => {
-    setProgress('u1', 2, 1);
-    setProgress('u2', 5, 0);
-    const h1 = hl('u1', 2, '灰雾之上');
-    const h2 = hl('u2', 2, '灰雾之上');
+  it('shares the cache when the context sent to AI is the same, recomputing later per user', async () => {
+    // 划线在第 3 章第 3 段（最后一段）：两人的上下文都是第 0–3 段，但边界不同
+    setProgress('u1', 5, 0);
+    setProgress('u2', 2, 3);
+    const h1 = hl('u1', 2, '甲段三');
+    const h2 = hl('u2', 2, '甲段三');
     chat.mockResolvedValue(aiJson([{ label: '剧透人物', kind: 'person', summary: 's' }]));
 
     const first = await expandHighlight(db, book, 'u1', { highlightId: h1.id });
@@ -223,21 +232,76 @@ describe('expandHighlight', () => {
     expect(again!.cached).toBe(true);
     expect(again!.candidates).toEqual(first!.candidates);
 
-    const stored = db.prepare('SELECT result FROM ai_expansions').get() as { result: string };
+    const stored = db.prepare('SELECT result, ctx_from, ctx_to FROM ai_expansions').get() as { result: string; ctx_from: number; ctx_to: number };
     expect(stored.result).not.toContain('later');
+    expect([stored.ctx_from, stored.ctx_to]).toEqual([0, 3]);
 
     const other = await expandHighlight(db, book, 'u2', { highlightId: h2.id });
     expect(chat).toHaveBeenCalledTimes(1);
     expect(other!.cached).toBe(true);
-    expect(other!.candidates[0].source!.later).toBe(false);
-    expect(again!.candidates[0].source!.later).toBe(true);
+    expect(other!.candidates[0].source!.later).toBe(true);
+    expect(again!.candidates[0].source!.later).toBe(false);
+  });
 
+  it('a user with an earlier boundary does not hit a cache whose context went further', async () => {
+    setProgress('u2', 5, 0);
+    setProgress('u1', 2, 1);
+    const h2 = hl('u2', 2, '灰雾之上');
+    const h1 = hl('u1', 2, '灰雾之上');
+    chat.mockResolvedValue(aiJson([{ label: '源堡', kind: 'concept', summary: 's' }]));
+
+    await expandHighlight(db, book, 'u2', { highlightId: h2.id });
+    expect(chat.mock.calls[0][0]).toContain('甲段二');
+    const mine = await expandHighlight(db, book, 'u1', { highlightId: h1.id });
+    expect(mine!.cached).toBe(false);
+    expect(chat).toHaveBeenCalledTimes(2);
+    expect(chat.mock.calls[1][0]).not.toContain('甲段二');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM ai_expansions').get()).toEqual({ n: 2 });
+  });
+
+  it('force bypasses and overwrites the cache', async () => {
+    const h1 = hl('u1', 2, '灰雾之上');
+    chat.mockResolvedValue(aiJson([{ label: '剧透人物', kind: 'person', summary: 's' }]));
+    await expandHighlight(db, book, 'u1', { highlightId: h1.id });
     chat.mockResolvedValue(aiJson([{ label: '梅丽莎', kind: 'person', summary: 's' }]));
     const forced = await expandHighlight(db, book, 'u1', { highlightId: h1.id, force: true });
     expect(chat).toHaveBeenCalledTimes(2);
     expect(forced!.cached).toBe(false);
     expect(forced!.candidates.map(c => c.label)).toEqual(['梅丽莎']);
     expect((await expandHighlight(db, book, 'u1', { highlightId: h1.id }))!.candidates.map(c => c.label)).toEqual(['梅丽莎']);
+  });
+
+  it('re-filters cached candidates by the current center and path', async () => {
+    const h = hl('u1', 2, '灰雾之上');
+    chat.mockResolvedValue(aiJson([
+      { label: '灰雾', kind: 'concept', summary: 's' },
+      { label: '梅丽莎', kind: 'person', summary: 's' },
+    ]));
+    await expandHighlight(db, book, 'u1', { highlightId: h.id, center: '源堡', path: ['灰雾之上'] });
+    const r = await expandHighlight(db, book, 'u1', { highlightId: h.id, center: '源堡', path: ['灰雾之上', '灰雾'] });
+    expect(r!.cached).toBe(true);
+    expect(r!.candidates.map(c => c.label)).toEqual(['梅丽莎']);
+  });
+
+  it('treats a corrupt cache row as a miss', async () => {
+    const h = hl('u1', 2, '灰雾之上');
+    chat.mockResolvedValue(aiJson([{ label: '梅丽莎', kind: 'person', summary: 's' }]));
+    await expandHighlight(db, book, 'u1', { highlightId: h.id });
+    db.prepare("UPDATE ai_expansions SET result = '{oops'").run();
+    const r = await expandHighlight(db, book, 'u1', { highlightId: h.id });
+    expect(r!.cached).toBe(false);
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads only the highlight chapter on a cache hit', async () => {
+    const h = hl('u1', 2, '灰雾之上');
+    chat.mockResolvedValue(aiJson([{ label: '梅丽莎', kind: 'person', summary: 's' }]));
+    await expandHighlight(db, book, 'u1', { highlightId: h.id });
+    clearBookTextCache();
+    getChapterContent.mockClear();
+    const r = await expandHighlight(db, book, 'u1', { highlightId: h.id });
+    expect(r!.cached).toBe(true);
+    expect(getChapterContent.mock.calls).toEqual([[2]]);
   });
 
   it('does not cache when AI output is unusable', async () => {
@@ -251,5 +315,34 @@ describe('expandHighlight', () => {
     const h = hl('u1', 2, '灰雾之上');
     expect(await expandHighlight(db, book, 'u2', { highlightId: h.id })).toBeNull();
     expect(chat).not.toHaveBeenCalled();
+  });
+});
+
+describe('listMindNodesWithLater', () => {
+  it('marks kept nodes whose source is beyond the reading boundary', async () => {
+    setProgress('u1', 2, 1);
+    const h = hl('u1', 2, '灰雾之上');
+    keepChain(db, 'u1', book.id, h.id, [
+      { label: '梅丽莎', kind: 'person', source: { chapterIndex: 0, paragraphIndex: 1 } },
+      { label: '剧透人物', kind: 'person', source: { chapterIndex: 4, paragraphIndex: 0 } },
+      { label: '全书没有', kind: 'concept', source: null },
+    ]);
+    const nodes = await listMindNodesWithLater(db, book, 'u1');
+    expect(nodes.map(n => [n.label, n.source_later])).toEqual([
+      ['灰雾之上', false], ['梅丽莎', false], ['剧透人物', true], ['全书没有', false],
+    ]);
+    // 同一划线只读一次其所在章
+    expect(getChapterContent.mock.calls).toEqual([[2]]);
+  });
+
+  it('uses the highlight position when progress is earlier', async () => {
+    setProgress('u1', 0, 0);
+    const h = hl('u1', 4, '幕后黑手');
+    keepChain(db, 'u1', book.id, h.id, [
+      { label: '剧透人物', kind: 'person', source: { chapterIndex: 4, paragraphIndex: 0 } },
+      { label: '丙', kind: 'concept', source: { chapterIndex: 5, paragraphIndex: 0 } },
+    ]);
+    const nodes = await listMindNodesWithLater(db, book, 'u1', h.id);
+    expect(nodes.map(n => n.source_later)).toEqual([false, false, true]);
   });
 });

@@ -7,8 +7,8 @@ import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
 import { listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../services/highlights';
-import { listMindNodes, keepChain, deleteMindSubtree } from '../services/mind-nodes';
-import { expandHighlight, AiBadOutputError } from '../services/mind-expand';
+import { keepChain, deleteMindSubtree } from '../services/mind-nodes';
+import { expandHighlight, AiBadOutputError, listMindNodesWithLater } from '../services/mind-expand';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
@@ -408,10 +408,17 @@ router.post('/:bookId/highlights/:id/expand', authMiddleware, async (req: Reques
   }
 });
 
-// GET /api/reader/:bookId/mind-nodes?highlightId=
-router.get('/:bookId/mind-nodes', authMiddleware, (req: Request, res: Response) => {
+// GET /api/reader/:bookId/mind-nodes?highlightId= — 每个节点附 source_later（出处在当前用户阅读边界之后）
+router.get('/:bookId/mind-nodes', authMiddleware, async (req: Request, res: Response) => {
   const highlightId = typeof req.query.highlightId === 'string' && req.query.highlightId ? req.query.highlightId : undefined;
-  successResponse(res, listMindNodes(getDb(), req.user!.userId, req.params.bookId, highlightId));
+  const book = findReadableBook(req.params.bookId, res);
+  if (!book) return;
+  try {
+    successResponse(res, await listMindNodesWithLater(getDb(), book, req.user!.userId, highlightId));
+  } catch (err) {
+    console.error(`[reader:mind-nodes] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '读取导图节点失败');
+  }
 });
 
 // POST /api/reader/:bookId/mind-nodes/keep — 保留一条知识点链

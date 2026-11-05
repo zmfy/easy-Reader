@@ -4,7 +4,8 @@ import Database from 'better-sqlite3';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
 import { cleanAiText, clipMiddle } from './ai-reading';
-import { getBookText } from './book-text';
+import { getBookText, getChapterText } from './book-text';
+import { listMindNodes, MindNode } from './mind-nodes';
 import { findSource, isAfter, Position, Source } from './mind-source';
 
 const CENTER_MAX = 30;      // 缺省中心词 = 划线原文前 30 字
@@ -110,23 +111,40 @@ export function readingBoundary(progress: Position | null, highlight: Position):
   return progress && isAfter(progress, highlight) ? progress : highlight;
 }
 
+/** 上下文段落范围 [from, to]：划线段落前 3 段 + 划线段落 + 后 2 段中不超过边界的部分；一段都没有时 to < from */
+export function expandContextRange(
+  chapterIndex: number, paragraphCount: number, highlightParagraph: number, boundary: Position
+): { from: number; to: number } {
+  const from = Math.max(0, highlightParagraph - CONTEXT_BEFORE);
+  const last = Math.min(paragraphCount - 1, highlightParagraph + CONTEXT_AFTER);
+  let to = from - 1;
+  for (let i = from; i <= last; i++) {
+    if (isAfter({ chapterIndex, paragraphIndex: i }, boundary)) break;
+    to = i;
+  }
+  return { from, to };
+}
+
 /** 划线段落前 3 段 + 划线段落 + 后 2 段中不超过边界的部分，整体截到 3000 字 */
 export function buildExpandContext(
   chapterIndex: number, paragraphs: string[], highlightParagraph: number, boundary: Position
 ): string {
-  const from = Math.max(0, highlightParagraph - CONTEXT_BEFORE);
-  const to = Math.min(paragraphs.length - 1, highlightParagraph + CONTEXT_AFTER);
-  const picked: string[] = [];
-  for (let i = from; i <= to; i++) {
-    if (isAfter({ chapterIndex, paragraphIndex: i }, boundary)) break;
-    picked.push(paragraphs[i]);
-  }
-  return clipMiddle(picked.join('\n'), CONTEXT_CLIP);
+  const { from, to } = expandContextRange(chapterIndex, paragraphs.length, highlightParagraph, boundary);
+  return clipMiddle(paragraphs.slice(from, to + 1).join('\n'), CONTEXT_CLIP);
+}
+
+/** 某用户的阅读进度；无记录 → null */
+function readProgress(db: Database.Database, userId: string, bookId: string): Position | null {
+  const row = db
+    .prepare('SELECT chapter_index, paragraph_index FROM reading_progress WHERE user_id = ? AND book_id = ?')
+    .get(userId, bookId) as { chapter_index: number | null; paragraph_index: number | null } | undefined;
+  return row ? { chapterIndex: row.chapter_index ?? 0, paragraphIndex: row.paragraph_index ?? 0 } : null;
 }
 
 /**
  * 展开划线（或其下某个知识点）。划线不存在 / 非本人 → null；AI 输出无法解析 → 抛 AiBadOutputError，不写缓存。
- * 缓存按 (book_id, center, 划线章节) 跨用户共享；later 每次按当前用户的阅读边界重算。
+ * 缓存按 (book_id, center, 划线章节, 实际送给 AI 的段落范围) 跨用户共享：边界更早的用户不会命中上下文更靠后的缓存。
+ * 只读划线所在章计算边界与上下文；整书文本只在未命中缓存、需要检索出处时才读。later 每次按当前用户的阅读边界重算。
  */
 export async function expandHighlight(db: Database.Database, book: Book, userId: string, input: {
   highlightId: string; center?: string; path?: string[]; force?: boolean
@@ -138,20 +156,16 @@ export async function expandHighlight(db: Database.Database, book: Book, userId:
 
   const center = input.center?.trim() || takeChars(hl.text.trim(), CENTER_MAX);
   const path = input.path ?? [];
-  const chapters = await getBookText(book);
-  const chapter = chapters[hl.chapter_index];
+  const exclude = new Set([center, ...path].map(s => s.trim()));
+  const chapter = await getChapterText(book, hl.chapter_index);
   const paragraphs = chapter?.paragraphs ?? [];
   const highlightPos: Position = {
     chapterIndex: hl.chapter_index,
     paragraphIndex: locateHighlightParagraph(paragraphs, hl.text),
   };
-  const progressRow = db
-    .prepare('SELECT chapter_index, paragraph_index FROM reading_progress WHERE user_id = ? AND book_id = ?')
-    .get(userId, book.id) as { chapter_index: number | null; paragraph_index: number | null } | undefined;
-  const progress = progressRow
-    ? { chapterIndex: progressRow.chapter_index ?? 0, paragraphIndex: progressRow.paragraph_index ?? 0 }
-    : null;
-  const boundary = readingBoundary(progress, highlightPos);
+  const boundary = readingBoundary(readProgress(db, userId, book.id), highlightPos);
+  const range = expandContextRange(hl.chapter_index, paragraphs.length, highlightPos.paragraphIndex, boundary);
+  const key = [book.id, center, hl.chapter_index, range.from, range.to] as const;
 
   const withLater = (stored: StoredCandidate[], cached: boolean) => ({
     cached,
@@ -163,9 +177,21 @@ export async function expandHighlight(db: Database.Database, book: Book, userId:
 
   if (!input.force) {
     const row = db
-      .prepare('SELECT result FROM ai_expansions WHERE book_id = ? AND center = ? AND chapter_index = ?')
-      .get(book.id, center, hl.chapter_index) as { result: string } | undefined;
-    if (row) return withLater(JSON.parse(row.result) as StoredCandidate[], true);
+      .prepare(`SELECT result FROM ai_expansions
+                WHERE book_id = ? AND center = ? AND chapter_index = ? AND ctx_from = ? AND ctx_to = ?`)
+      .get(...key) as { result: string } | undefined;
+    let stored: StoredCandidate[] | null = null;
+    if (row) {
+      try {
+        const parsed = JSON.parse(row.result);
+        if (Array.isArray(parsed)) stored = parsed as StoredCandidate[];
+      } catch {
+        // 缓存损坏按未命中处理
+      }
+    }
+    // 命中时按本次的中心词与路径再过滤一遍
+    const filtered = stored?.filter(c => c && typeof c.label === 'string' && !exclude.has(c.label.trim()));
+    if (filtered && filtered.length > 0) return withLater(filtered, true);
   }
 
   const prompt = buildExpandPrompt({
@@ -173,13 +199,60 @@ export async function expandHighlight(db: Database.Database, book: Book, userId:
     author: book.author,
     chapterTitle: chapter?.title ?? `第 ${hl.chapter_index + 1} 章`,
     highlight: hl.text,
-    context: buildExpandContext(hl.chapter_index, paragraphs, highlightPos.paragraphIndex, boundary),
+    context: clipMiddle(paragraphs.slice(range.from, range.to + 1).join('\n'), CONTEXT_CLIP),
     center,
     path,
   });
-  const candidates = parseExpandResult(await aiManager.chat(prompt, db), [center, ...path]);
+  const candidates = parseExpandResult(await aiManager.chat(prompt, db), [...exclude]);
+  const chapters = await getBookText(book);
   const stored: StoredCandidate[] = candidates.map(c => ({ ...c, source: findSource(chapters, c.label) }));
-  db.prepare('INSERT OR REPLACE INTO ai_expansions (book_id, center, chapter_index, result) VALUES (?, ?, ?, ?)')
-    .run(book.id, center, hl.chapter_index, JSON.stringify(stored));
+  db.prepare(`INSERT OR REPLACE INTO ai_expansions (book_id, center, chapter_index, ctx_from, ctx_to, result)
+              VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(...key, JSON.stringify(stored));
   return withLater(stored, false);
+}
+
+export type MindNodeWithLater = MindNode & { source_later: boolean };
+
+/**
+ * 导图节点列表，附 source_later：出处是否在当前用户的阅读边界之后。
+ * 边界 = max(阅读进度, 划线位置)，与展开时同一套算法；每个不同的划线只读一次其所在章。
+ */
+export async function listMindNodesWithLater(
+  db: Database.Database, book: Book, userId: string, highlightId?: string
+): Promise<MindNodeWithLater[]> {
+  const nodes = listMindNodes(db, userId, book.id, highlightId);
+  const progress = readProgress(db, userId, book.id);
+  const boundaries = new Map<string, Position | null>();
+  const hlStmt = db.prepare('SELECT chapter_index, text FROM highlights WHERE id = ? AND user_id = ? AND book_id = ?');
+
+  const boundaryOf = async (hid: string | null): Promise<Position | null> => {
+    if (!hid) return progress;
+    if (boundaries.has(hid)) return boundaries.get(hid)!;
+    const hl = hlStmt.get(hid, userId, book.id) as { chapter_index: number; text: string } | undefined;
+    let b: Position | null = progress;
+    if (hl) {
+      let paragraphs: string[] = [];
+      try {
+        paragraphs = (await getChapterText(book, hl.chapter_index))?.paragraphs ?? [];
+      } catch (err) {
+        console.error(`[mind-nodes] book=${book.id} chapter=${hl.chapter_index} 读取失败`, err);
+      }
+      b = readingBoundary(progress, { chapterIndex: hl.chapter_index, paragraphIndex: locateHighlightParagraph(paragraphs, hl.text) });
+    }
+    boundaries.set(hid, b);
+    return b;
+  };
+
+  const result: MindNodeWithLater[] = [];
+  for (const n of nodes) {
+    let later = false;
+    if (n.source_chapter != null) {
+      const b = await boundaryOf(n.highlight_id);
+      const src = { chapterIndex: n.source_chapter, paragraphIndex: n.source_paragraph ?? 0 };
+      later = b ? isAfter(src, b) : false;
+    }
+    result.push({ ...n, source_later: later });
+  }
+  return result;
 }

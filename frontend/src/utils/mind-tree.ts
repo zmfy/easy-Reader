@@ -9,7 +9,7 @@ export interface TreeNode {
   summary: string | null
   kept: boolean
   nodeId: string | null
-  /** 已保留节点由 source_chapter/paragraph 还原（chapterTitle 留空、later 为 false，由调用方补） */
+  /** 已保留节点由 source_chapter/paragraph 与 source_later 还原（chapterTitle 留空，由调用方按目录补） */
   source: ExpandedCandidate['source']
   children: TreeNode[]
 }
@@ -18,7 +18,7 @@ const byOrder = (a: MindNode, b: MindNode) => a.sort - b.sort || a.created_at.lo
 
 function keptSource(n: MindNode): ExpandedCandidate['source'] {
   if (n.source_chapter === null) return null
-  return { chapterIndex: n.source_chapter, paragraphIndex: n.source_paragraph ?? 0, chapterTitle: '', later: false }
+  return { chapterIndex: n.source_chapter, paragraphIndex: n.source_paragraph ?? 0, chapterTitle: '', later: n.source_later === true }
 }
 
 /** 已保留节点（同一划线）建树；candidates: 父 key → 本次展开的候选；与已保留子节点同 label 的候选不重复出现 */
