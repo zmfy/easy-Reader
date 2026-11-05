@@ -42,6 +42,7 @@
           <div class="nav-actions">
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+            <button v-if="highlightable" class="nav-btn" title="笔记" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" :class="{ on: onShelf }" :title="shelfLabel" :aria-label="shelfLabel" :aria-pressed="onShelf" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
             <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" :title="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
@@ -60,6 +61,9 @@
           </el-tooltip>
           <el-tooltip content="书签（B 添加当前位置）" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书签（B 添加当前位置）" :class="{ on: tocVisible && tocTab === 'bookmark' }" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
+          </el-tooltip>
+          <el-tooltip v-if="highlightable" content="笔记" placement="left" :show-after="300">
+            <button class="side-tool" aria-label="笔记" :class="{ on: tocVisible && tocTab === 'note' }" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="书籍详情" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书籍详情" @click="router.push(`/book/${bookId}`)"><IconBook2 :size="20" :stroke-width="1.75" /></button>
@@ -385,15 +389,16 @@
             <div class="toc-seg">
               <button :class="{ active: tocTab === 'toc' }" @click="switchTocTab('toc')">目录</button>
               <button :class="{ active: tocTab === 'bookmark' }" @click="switchTocTab('bookmark')">书签</button>
+              <button v-if="highlightable" :class="{ active: tocTab === 'note' }" @click="switchTocTab('note')">笔记</button>
             </div>
             <button class="toc-icon-btn" title="关闭（Esc）" @click="tocVisible = false"><IconX :size="18" :stroke-width="1.75" /></button>
           </div>
           <div class="toc-sub">
-            <span class="toc-status">{{ tocTab === 'toc' ? tocStatus : `${reader.bookmarks.value.length} 个书签` }}</span>
+            <span class="toc-status">{{ tocTab === 'toc' ? tocStatus : tocTab === 'note' ? `${reader.highlights.value.length} 条笔记` : `${reader.bookmarks.value.length} 个书签` }}</span>
             <button v-if="tocTab === 'toc'" class="toc-action" @click="tocReversed = !tocReversed">
               <IconArrowsSort :size="15" :stroke-width="1.75" />{{ tocReversed ? '正序' : '倒序' }}
             </button>
-            <button v-else class="toc-action" @click="handleAddBookmark">
+            <button v-else-if="tocTab === 'bookmark'" class="toc-action" @click="handleAddBookmark">
               <IconBookmarkPlus :size="15" :stroke-width="1.75" />添加当前位置
             </button>
           </div>
@@ -421,6 +426,16 @@
                 </a>
               </li>
             </ul>
+            <template v-else-if="tocTab === 'note'">
+              <div v-if="highlightGroups.length === 0" class="toc-empty">还没有划线。选中正文文字即可划线或写批注</div>
+              <section v-for="g in highlightGroups" :key="g.chapterIndex" class="note-group">
+                <div class="note-group-title">{{ g.chapterTitle }}</div>
+                <a v-for="h in g.items" :key="h.id" class="note-item" @click="jumpToHighlight(h)">
+                  <span class="note-text">{{ h.text }}</span>
+                  <span v-if="h.note" class="note-note">{{ h.note }}</span>
+                </a>
+              </section>
+            </template>
             <template v-else>
               <div v-if="reader.bookmarks.value.length === 0" class="toc-empty">还没有书签<br>阅读时按 B 或点上方「添加当前位置」</div>
               <ul v-else class="toc-list">
@@ -458,7 +473,8 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import HighlightMenu from '@/components/HighlightMenu.vue'
 import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, type TextAnchor } from '@/utils/highlight-anchor'
-import type { ReaderTheme, ReadingAnchor } from '@/types'
+import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
+import { groupHighlightsByChapter } from '@/utils/highlight-list'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
@@ -466,7 +482,7 @@ import { settingsApi } from '@/api/settings'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHighlight, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -484,7 +500,7 @@ const settingsPanelVisible = ref(false)
 
 // ── 目录面板 ─────────────────────────────────────────────────
 const tocVisible = ref(false)
-const tocTab = ref<'toc' | 'bookmark'>('toc')
+const tocTab = ref<'toc' | 'bookmark' | 'note'>('toc')
 const tocReversed = ref(false)
 const tocBodyRef = ref<HTMLElement | null>(null)
 
@@ -1078,6 +1094,34 @@ async function jumpToChapter(index: number) {
   }
 }
 
+// 笔记页签：按章分组
+const highlightGroups = computed(() => groupHighlightsByChapter(reader.highlights.value, reader.chapters.value))
+
+// 点笔记 → 跳到所在章 → 等正文渲染并绘制完成后滚到划线处并闪一下；
+// 重试到超时仍找不到才认为原文已变化（跳章后正文可能异步渲染）
+async function jumpToHighlight(h: Highlight) {
+  await jumpToChapter(h.chapter_index)
+  if (!await scrollToHighlightMark(h)) ElMessage.warning('原文已变化，无法定位这条划线')
+}
+
+async function scrollToHighlightMark(h: Highlight): Promise<boolean> {
+  const sel = `mark.hl[data-hl-id="${h.id}"]`
+  for (let i = 0; i < 15; i++) {
+    await nextTick()
+    if (!loading.value) refreshHighlights()
+    const marks = contentRef.value?.querySelectorAll<HTMLElement>(sel)
+    if (marks && marks.length) {
+      await document.fonts.ready
+      marks[0].scrollIntoView({ block: 'center' })
+      marks.forEach(m => m.classList.add('hl-flash'))
+      setTimeout(() => marks.forEach(m => m.classList.remove('hl-flash')), 1600)
+      return true
+    }
+    await new Promise(r => setTimeout(r, 100))
+  }
+  return false
+}
+
 // 瀑布流模式下容器里同时有多个章节，书签保存相对当前章节顶部的偏移
 function getWaterfallChapterTop(index: number): number {
   const el = contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${index}"]`)
@@ -1157,8 +1201,8 @@ function expandTocToCurrent() {
 const tocStatus = computed(() =>
   [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
 
-// 点「目录 / 书签」：同一个 Tab 再点一次关闭，否则打开并切到该 Tab
-function openToc(tab: 'toc' | 'bookmark') {
+// 点「目录 / 书签 / 笔记」：同一个 Tab 再点一次关闭，否则打开并切到该 Tab
+function openToc(tab: 'toc' | 'bookmark' | 'note') {
   if (tocVisible.value && tocTab.value === tab) {
     tocVisible.value = false
     return
@@ -1169,7 +1213,7 @@ function openToc(tab: 'toc' | 'bookmark') {
   scrollTocToCurrent()
 }
 
-function switchTocTab(tab: 'toc' | 'bookmark') {
+function switchTocTab(tab: 'toc' | 'bookmark' | 'note') {
   tocTab.value = tab
   if (tab === 'toc') expandTocToCurrent()
   scrollTocToCurrent()
@@ -2022,6 +2066,41 @@ onUnmounted(() => {
 .toc-link:hover .toc-del,
 .toc-del:focus-visible { opacity: 1; }
 .toc-del:hover { color: #e5484d; background: var(--reader-active-bg); }
+.note-group { padding: 4px 0 8px; }
+.note-group-title {
+  padding: 8px 8px 4px;
+  font-size: 12px;
+  color: var(--reader-text-secondary);
+}
+.note-item {
+  display: block;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.note-item:hover { background: var(--reader-active-bg); }
+.note-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--reader-text);
+  border-left: 3px solid var(--reader-hl-bg);
+  padding-left: 8px;
+}
+.note-note {
+  display: block;
+  margin-top: 4px;
+  padding-left: 11px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--reader-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .toc-empty {
   padding: 64px 16px;
   text-align: center;
@@ -2036,6 +2115,13 @@ onUnmounted(() => {
   background: var(--reader-hl-bg);
   border-radius: 2px;
   cursor: pointer;
+}
+.chapter-content :deep(mark.hl.hl-flash) {
+  animation: hl-flash 1.6s ease-out;
+}
+@keyframes hl-flash {
+  0%, 40% { background: var(--reader-accent-weak); box-shadow: 0 0 0 4px var(--reader-accent-weak); }
+  100% { box-shadow: 0 0 0 4px transparent; }
 }
 .chapter-content :deep(mark.hl.has-note) {
   text-decoration: underline dashed;
