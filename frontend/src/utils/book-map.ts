@@ -63,13 +63,25 @@ export function buildBookMap(input: {
     })
   }
   const orphans: MapNode = { id: 'orphans', type: 'orphans', label: '未归类', hasNotes: true, children: [] }
+  // 父链成环（a→b→a，或挂在环下面）的节点从根走不到，统一放进未归类，避免丢失
+  const nodeById = new Map(nodes.map(n => [n.id, n]))
+  const cyclic = (n: MindNode): boolean => {
+    const seen = new Set<string>()
+    let cur: MindNode | undefined = n
+    while (cur && cur.parent_id) {
+      if (seen.has(cur.id)) return true
+      seen.add(cur.id)
+      cur = nodeById.get(cur.parent_id)
+    }
+    return false
+  }
   for (const n of [...nodes].sort(bySortThenCreated)) {
     const self = mindById.get(n.id)!
     const parent = n.parent_id
       ? mindById.get(n.parent_id)
       : skeleton.get(n.chapter_index)
-    // 父缺失（或章节不在当前目录，或章节序号落在分组行上）→ 未归类
-    const target = parent && parent !== self && (n.parent_id || parent.type === 'chapter') ? parent : orphans
+    // 父缺失（或章节不在当前目录，或章节序号落在分组行上）、父链成环 → 未归类
+    const target = !cyclic(n) && parent && parent !== self && (n.parent_id || parent.type === 'chapter') ? parent : orphans
     target.children.push(self)
   }
 

@@ -76,6 +76,35 @@ describe('book-map', () => {
     expect(buildBookMap({ bookTitle: '书', chapters: flat, nodes: [], highlights: [] }).children.some(c => c.id === 'orphans')).toBe(false)
   })
 
+  it('puts nodes in parent cycles under 未归类 exactly once', () => {
+    const nodes = [
+      mind('a', { parent_id: 'b' }),
+      mind('b', { parent_id: 'a' }),
+      mind('c', { parent_id: 'a' }),
+    ]
+    const root = buildBookMap({ bookTitle: '书', chapters: flat, nodes, highlights: [] })
+    const orphans = root.children[root.children.length - 1]
+    expect(orphans.id).toBe('orphans')
+    const all: string[] = []
+    const walk = (n: MapNode) => { if (n.type === 'mind') all.push(n.id); n.children.forEach(walk) }
+    walk(root)
+    expect(all.sort()).toEqual(['a', 'b', 'c'])
+    expect(orphans.children.map(c => c.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('puts a null-parent node on a group row index under 未归类', () => {
+    const chapters = [{ index: 0, title: '一', level: 1, groupTitle: '部' }]
+    const root = buildBookMap({ bookTitle: '书', chapters, nodes: [mind('g', { chapter_index: -1 })], highlights: [] })
+    expect(ids(root.children[root.children.length - 1])).toEqual(['g'])
+    expect(root.children[root.children.length - 1].id).toBe('orphans')
+  })
+
+  it('falls back to node.label when the highlight row is missing', () => {
+    const nodes = [mind('h', { kind: 'highlight', highlight_id: 'nope', label: '原标签' })]
+    const root = buildBookMap({ bookTitle: '书', chapters: flat, nodes, highlights: [] })
+    expect(root.children[0].children[0].label).toBe('原标签')
+  })
+
   it('marks hasNotes up the ancestors and pruneEmpty keeps only noted branches', () => {
     const chapters = [
       { index: 0, title: '序' },
