@@ -44,8 +44,8 @@ https://easyreader.ucool.uk/
 ### 1. 克隆项目
 
 ```bash
-git clone <repo-url>
-cd easyReader
+git clone https://github.com/zmfy/easy-Reader.git
+cd easy-Reader
 ```
 
 ### 2. 配置环境变量
@@ -80,6 +80,18 @@ docker compose up -d --build
 | `admin` | `admin123` |
 
 首次用默认密码登录后必须先修改密码，改完才能使用其他功能（API 客户端同样如此）。之后所有用户都可以在侧栏「修改密码」中自己改密码。
+
+### 版本与升级
+
+每个版本的变化见 [CHANGELOG.md](CHANGELOG.md) 和 [GitHub Releases](https://github.com/zmfy/easy-Reader/releases)。Docker Hub 镜像 `dls7788/easy-reader` 提供这些 tag：
+
+| tag | 内容 |
+|---|---|
+| `latest` | 最新发布的正式版本 |
+| `1.0.0`、`1.0` 等 | 固定版本 / 固定次版本（只接收修订更新） |
+| `edge` | `main` 分支最新代码，尝鲜用，可能不稳定 |
+
+升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。
 
 ---
 
