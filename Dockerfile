@@ -22,5 +22,6 @@ WORKDIR /app
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/dist ./dist
 COPY --from=frontend-builder /app/dist ./public
+COPY docs/api.md ./docs/api.md
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

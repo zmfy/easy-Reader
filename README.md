@@ -111,6 +111,10 @@ docker compose up -d --build
 
 侧边工具栏有「前情提要」和「问书」两个按钮（鼠标悬停可见名称），前者快速回顾剧情，后者可就剧情、人物提问。两者都只会读取你当前位置之前的内容，不会剧透后文。
 
+### 自己开发客户端（API）
+
+网页版的全部读者功能都可以通过 JSON API 使用，可以据此开发手机 / 桌面阅读 App。接口文档见 [`docs/api.md`](docs/api.md)，部署后也可以在 `http://<服务器地址>/api/docs` 在线查看。第三方客户端请使用带版本的 `/api/v1`。
+
 ---
 
 ## 环境变量
@@ -121,6 +125,7 @@ docker compose up -d --build
 | `PORT` | 否 | `3000` | 容器内监听端口（对外映射见 `docker-compose.yml`） |
 | `BOOKS_DIR` | 否 | `/app/books` | 书库目录（容器内路径） |
 | `DATA_DIR` | 否 | `/app/data` | 数据库目录（容器内路径） |
+| `CORS_ORIGINS` | 否 | — | 允许跨域访问 API 的网页来源，逗号分隔（如 `https://reader.example.com`）；只有运行在其他网址上的网页客户端需要，原生 App 不需要 |
 
 NAS 上的实际路径在 `docker-compose.yml` 的 `volumes` 里配置：
 

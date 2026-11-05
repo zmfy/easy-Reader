@@ -15,6 +15,8 @@ import auditLogRoutes from './routes/audit-log';
 import shelfRoutes from './routes/shelf';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
+import { parseCorsOrigins } from './utils/cors-origins';
+import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,9 +44,10 @@ app.use('/covers', (req: express.Request, res: express.Response, next: express.N
 
 // Security middleware
 app.use(helmet({ contentSecurityPolicy: false }));
-const frontendUrl = process.env.FRONTEND_URL;
-if (frontendUrl) {
-  app.use(cors({ origin: frontendUrl, credentials: true }));
+// 网页版（FRONTEND_URL）与网页类第三方客户端（CORS_ORIGINS，逗号分隔）；原生 App 不受跨域限制
+const corsOrigins = parseCorsOrigins(process.env.FRONTEND_URL, process.env.CORS_ORIGINS);
+if (corsOrigins.length) {
+  app.use(cors({ origin: corsOrigins, credentials: true }));
 }
 
 // Serve frontend static files (when built into the same container)
@@ -63,16 +66,32 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/library/manual-overrides', manualOverridesRoutes);
-app.use('/api/library/scan-batches', scanBatchesRoutes);
-app.use('/api/library/series', seriesRoutes);
-app.use('/api/library/audit-log', auditLogRoutes);
-app.use('/api/library', libraryRoutes);
-app.use('/api/shelf', shelfRoutes);
-app.use('/api/reader', readerRoutes);
-app.use('/api/settings', settingsRoutes);
+// Routes：/api/v1 是给第三方客户端的稳定版本，与网页版使用的 /api 是同一组路由
+const api = express.Router();
+api.use('/auth', authLimiter, authRoutes);
+api.use('/library/manual-overrides', manualOverridesRoutes);
+api.use('/library/scan-batches', scanBatchesRoutes);
+api.use('/library/series', seriesRoutes);
+api.use('/library/audit-log', auditLogRoutes);
+api.use('/library', libraryRoutes);
+api.use('/shelf', shelfRoutes);
+api.use('/reader', readerRoutes);
+api.use('/settings', settingsRoutes);
+
+// API 文档（docs/api.md）：/api/docs 网页查看，/api/docs.md 原文
+api.get('/docs.md', (_req: express.Request, res: express.Response) => {
+  const md = readApiDocs();
+  if (md === null) { res.status(404).json({ success: false, code: 'RESOURCE_NOT_FOUND', message: '文档不存在' }); return; }
+  res.type('text/markdown; charset=utf-8').send(md);
+});
+api.get('/docs', (_req: express.Request, res: express.Response) => {
+  const md = readApiDocs();
+  if (md === null) { res.status(404).json({ success: false, code: 'RESOURCE_NOT_FOUND', message: '文档不存在' }); return; }
+  res.type('html').send(renderApiDocsPage(md));
+});
+
+app.use('/api/v1', api);
+app.use('/api', api);
 
 // Health check
 app.get('/health', (_req, res) => {

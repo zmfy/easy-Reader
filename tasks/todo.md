@@ -365,3 +365,16 @@
 - [x] composables/useShelfToggle.ts（测试先行，6 个用例）：状态查询、加入 / 移出、在别处已加入（409）/ 已移出（404）时同步实际状态；书页改用它（行为不变）
 - [x] Reader.vue：右侧工具栏「书籍详情」下、手机顶栏书签旁新增书架按钮（IconBooks），已在书架时高亮，提示「加入书架 / 已在书架（点击移出）」
 - [x] 验证：vitest 86、vue-tsc；Chrome 桌面加入 → 刷新保持 → 移出，接口状态一致；手机 390 宽顶栏 6 个按钮无横向滚动；书页加入 / 移出正常
+
+# 第三方客户端 API（第一期）
+
+决定（用户）：章节格式只做 blocks；登录只用现有 JWT（不做 API 令牌）；文档为项目内 md（docs/api.md），站点 /api/docs 在线查看
+
+- [x] /api/v1 别名：与 /api 共用同一组路由（index.ts 挂同一个 Router）
+- [x] 章节 `?format=blocks`：HTML → [{type:'h',level,text} | {type:'p',text} | {type:'img',src,alt?}]（utils/content-blocks，测试先行 10 个用例）；其他 format 值 422
+- [x] 追加：每块带 anchor = 网页版段落计数（Reader.vue ANCHOR_SELECTOR，空段落也计数）中的序号，App 用它保存 paragraphIndex，与网页互相接着读不偏；真实书对照（吴思 5 章、水浒 3 章、柯南 2 页）全部一致
+- [x] CORS_ORIGINS：逗号分隔多个来源，与 FRONTEND_URL 合并、去尾斜杠去重（3 个用例）；临时后端实测允许的来源回 Allow-Origin，其他不回
+- [x] docs/api.md：读者端接口（登录续期、书库、系列、书架、目录、章节、进度、书签、阅读偏好、封面与图片），不含管理员接口
+- [x] /api/docs（marked 渲染，跟随深色模式）与 /api/docs.md（原文）；Dockerfile 复制 docs/api.md、.dockerignore 放行（临时镜像实测能复制进去）；手机 390 宽长行内代码换行、无横向滚动
+- [x] README、.env.example、docker-compose 加 CORS_ORIGINS；更新说明 11-05「第三方客户端 API」
+- [x] 验证：jest 46 suites / 408、vitest 86、前后端 tsc；/api 与 /api/v1 登录、书库、书架、目录、章节均正常，网页版不受影响

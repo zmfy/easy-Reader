@@ -604,6 +604,15 @@ const changelogTagLabels: Record<ChangelogTag, string> = {
 const changelog: ChangelogRelease[] = [
   {
     date: '2026-11-05',
+    title: '第三方客户端 API',
+    items: [
+      { tag: 'infra', text: '开放 API，可自行开发手机 / 桌面阅读客户端：接口文档在站点的 /api/docs（项目中为 docs/api.md），涵盖登录续期、书库、书架、目录、章节、阅读进度、书签与阅读偏好；第三方客户端使用带版本的 /api/v1，保证向后兼容' },
+      { tag: 'reader', text: '章节内容可按结构化格式获取（format=blocks：标题 / 段落 / 图片），App 不必解析 HTML 就能排版；进度位置与网页版一致，在手机和网页之间接着读不会错位' },
+      { tag: 'infra', text: '新增环境变量 CORS_ORIGINS（逗号分隔），允许运行在其他网址上的网页客户端跨域访问；原生 App 无需配置' },
+    ],
+  },
+  {
+    date: '2026-11-05',
     title: '多层目录、漫画阅读优化与阅读器加入书架',
     items: [
       { tag: 'reader', text: '多层目录可折叠：套装 EPUB（如《吴思历史经典三部曲》）按原书目录分成「书 → 部分 → 篇」，原目录没有分册、只在「总目录」页列出各册的套装（如《新中国70年长篇小说典藏》50 册）按总目录分册，漫画 EPUB（如《名侦探柯南》）分成「卷 → 话 → 各页」，TXT 按「第 X 部 / 第 X 卷」分组；点箭头展开或收起，点标题跳转，打开目录时只展开当前章节所在的那一支；倒序时同一层内倒序。单层目录的书不变' },
