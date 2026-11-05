@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { readerApi } from '@/api/reader'
-import type { Chapter, Bookmark, ReadingProgress, ReadingAnchor } from '@/types'
+import type { Chapter, Bookmark, Highlight, ReadingProgress, ReadingAnchor } from '@/types'
+import type { TextAnchor } from '@/utils/highlight-anchor'
 import { ElMessage } from 'element-plus'
 
 export function useReader(bookId: string) {
@@ -8,6 +9,7 @@ export function useReader(bookId: string) {
   const currentChapterIndex = ref(0)
   const currentContent = ref('')
   const bookmarks = ref<Bookmark[]>([])
+  const highlights = ref<Highlight[]>([])
   const progress = ref<ReadingProgress>({ chapterIndex: 0, scrollTop: 0 })
   const loading = ref(false)
   const bookFormat = ref('')
@@ -74,6 +76,30 @@ export function useReader(bookId: string) {
     ElMessage.success('书签已删除')
   }
 
+  // ── 划线 / 批注 ──
+  async function loadHighlights() {
+    const resp = await readerApi.getHighlights(bookId)
+    highlights.value = resp.data.data || []
+  }
+
+  async function addHighlight(chapterIndex: number, anchor: TextAnchor, text: string, note?: string): Promise<Highlight> {
+    const resp = await readerApi.createHighlight(bookId, { chapterIndex, startOffset: anchor.start, endOffset: anchor.end, text, note })
+    const created = resp.data.data!
+    highlights.value = [...highlights.value, created]
+    return created
+  }
+
+  async function setHighlightNote(id: string, note: string | null) {
+    const resp = await readerApi.updateHighlightNote(bookId, id, note)
+    const updated = resp.data.data!
+    highlights.value = highlights.value.map(h => h.id === id ? updated : h)
+  }
+
+  async function removeHighlight(id: string) {
+    await readerApi.deleteHighlight(bookId, id)
+    highlights.value = highlights.value.filter(h => h.id !== id)
+  }
+
   async function fetchChapterContent(index: number): Promise<string> {
     const resp = await readerApi.getChapterContent(bookId, index)
     return resp.data.data?.content || ''
@@ -98,5 +124,6 @@ export function useReader(bookId: string) {
     loading, currentChapter, bookFormat, pdfUsePlugin,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
+    highlights, loadHighlights, addHighlight, setHighlightNote, removeHighlight,
   }
 }

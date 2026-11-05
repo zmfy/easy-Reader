@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights } from './highlight-anchor'
+import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights } from './highlight-anchor'
 
 const HTML = '<p>项羽者，下相人也。</p><p>字羽。初起时，年二十四。</p><p>其季父项梁。</p>'
 let content: HTMLElement
@@ -86,5 +86,24 @@ describe('applyHighlights', () => {
   it('marks notes', () => {
     applyHighlights(content, [{ id: 'h1', anchor: span, hasNote: true }])
     expect(content.querySelector('mark.hl')!.classList.contains('has-note')).toBe(true)
+  })
+})
+
+describe('pickChapterHighlights', () => {
+  const full = '项羽者，下相人也。字羽。初起时，年二十四。'
+  const h = (id: string, text: string, start: number, createdAt: string, note: string | null = null) =>
+    ({ id, start_offset: start, end_offset: start + text.length, text, note, created_at: createdAt })
+
+  it('locates, drops unlocatable ones, and keeps the earlier of two overlapping', () => {
+    const items = [
+      h('late', '人也。字', 5, '2026-11-05 10:00:02'),
+      h('early', '下相人', 4, '2026-11-05 10:00:01', '批注'),
+      h('gone', '不存在', 0, '2026-11-05 10:00:00'),
+      h('moved', '初起时', 0, '2026-11-05 10:00:03'),
+    ]
+    expect(pickChapterHighlights(full, items)).toEqual([
+      { id: 'early', anchor: { start: 4, end: 7 }, hasNote: true },
+      { id: 'moved', anchor: { start: 12, end: 15 }, hasNote: false },
+    ])
   })
 })

@@ -80,3 +80,21 @@ export function applyHighlights(
     }
   }
 }
+
+/**
+ * 本章要渲染的划线：按创建先后逐条定位，定位不到的、与先创建的重叠的丢弃（避免嵌套 mark）；
+ * 返回结果按位置排序，供 applyHighlights 与新选区的重叠检查共用
+ */
+export function pickChapterHighlights(
+  fullText: string,
+  stored: Array<{ id: string; start_offset: number; end_offset: number; text: string; note: string | null; created_at: string }>,
+): Array<{ id: string; anchor: TextAnchor; hasNote: boolean }> {
+  const accepted: Array<{ id: string; anchor: TextAnchor; hasNote: boolean }> = []
+  const byCreation = [...stored].sort((a, b) => a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
+  for (const h of byCreation) {
+    const anchor = locateHighlight(fullText, { start: h.start_offset, end: h.end_offset, text: h.text })
+    if (!anchor || accepted.some(a => overlaps(a.anchor, anchor))) continue
+    accepted.push({ id: h.id, anchor, hasNote: !!h.note })
+  }
+  return accepted.sort((a, b) => a.anchor.start - b.anchor.start)
+}

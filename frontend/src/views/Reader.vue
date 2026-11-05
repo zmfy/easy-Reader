@@ -111,6 +111,7 @@
               v-html="hideLeadingTitle(reader.currentContent.value, chapterTitle)"
               :style="contentStyle"
               @click.capture="handleContentClick"
+              @pointerup="onContentPointerUp"
             />
             <!-- 章末导航：上一章 · 目录 · 下一章 -->
             <nav class="chapter-end" @click.stop>
@@ -137,7 +138,7 @@
             <div v-if="isPdfRender" class="chapter-content pdf-chapter">
               <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
             </div>
-            <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
+            <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" @pointerup="onContentPointerUp" />
           </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
             <el-icon class="is-loading"><Loading /></el-icon> 加载中…
@@ -148,6 +149,19 @@
         </template>
       </div>
     </div>
+
+    <!-- 划线 / 批注浮层 -->
+    <HighlightMenu
+      v-if="hlMenu"
+      :x="hlMenu.x"
+      :y="hlMenu.y"
+      :mode="hlMenu.mode"
+      :has-note="hlMenu.hasNote"
+      @highlight="onHlHighlight"
+      @note="onHlNote"
+      @delete="onHlDelete"
+      @close="hlMenu = null"
+    />
 
     <!-- Settings Panel -->
     <el-drawer
@@ -435,11 +449,14 @@ import { formatServerTime } from '@/utils/time'
 import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Loading } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
+import HighlightMenu from '@/components/HighlightMenu.vue'
+import { rangeToAnchor, overlaps, applyHighlights, pickChapterHighlights, type TextAnchor } from '@/utils/highlight-anchor'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
@@ -533,6 +550,8 @@ const readerStyle = computed(() => ({
   // 纸张宽度：「页面宽度」百分比，最宽 1120px，并给右侧工具栏留出位置；顶栏与工具栏定位共用
   '--paper-w': `min(${readerStore.settings.pageWidth}%, 1120px, calc(100% - 152px))`,
   ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor),
+  // 划线底色：日间浅黄，夜间半透明暖色
+  '--reader-hl-bg': isDarkReaderTheme(readerStore.settings.theme) ? 'rgba(255, 190, 90, 0.26)' : '#fff1a8',
   color: 'var(--reader-text)',
 }))
 
@@ -822,6 +841,7 @@ function buildHrefIndexMap(): Map<string, number> {
 }
 
 function handleContentClick(e: MouseEvent) {
+  if (openExistingHighlightMenu(e)) return
   const target = (e.target as HTMLElement).closest('a')
   if (!target) return
   const href = target.getAttribute('href')
@@ -840,6 +860,135 @@ function handleContentClick(e: MouseEvent) {
   if (idx !== undefined) {
     jumpToChapter(idx)
   }
+}
+
+// ── 划线 / 批注（PDF 不支持）────────────────────────────────
+interface HlMenuState {
+  x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean
+  chapterIndex: number; anchor?: TextAnchor; text?: string; id?: string
+}
+const hlMenu = ref<HlMenuState | null>(null)
+const highlightable = computed(() => !isPdf.value && !isPdfRender.value)
+
+// 正文所属章节：翻页模式为当前章，瀑布流取所在 section
+function chapterIndexOf(content: HTMLElement): number {
+  if (readerStore.settings.pageMode === 'scroll') return reader.currentChapterIndex.value
+  const attr = content.closest('section[data-chapter-index]')?.getAttribute('data-chapter-index')
+  return attr == null ? -1 : Number(attr)
+}
+
+// 本章划线在当前正文中的位置（与屏幕上渲染的一致）
+function locatedHighlights(content: HTMLElement, chapterIndex: number) {
+  return pickChapterHighlights(content.textContent || '', reader.highlights.value.filter(h => h.chapter_index === chapterIndex))
+}
+
+function refreshHighlights() {
+  if (!highlightable.value) return
+  contentRef.value?.querySelectorAll<HTMLElement>('.chapter-content').forEach(content => {
+    const idx = chapterIndexOf(content)
+    if (idx >= 0) applyHighlights(content, locatedHighlights(content, idx))
+  })
+}
+
+// 正文重新渲染（换章、加载完成、瀑布流增删章节）或划线变化后重绘；flush: 'post' 即在 DOM 更新之后
+watch(
+  [() => reader.currentContent.value, loading, () => waterfallChapters.value.length, () => reader.highlights.value],
+  () => { hlMenu.value = null; refreshHighlights() },
+  { flush: 'post' },
+)
+
+// 浮层位置：目标顶部中点，避开顶栏与屏幕左右边缘
+function menuPoint(rect: DOMRect): { x: number; y: number } {
+  return {
+    x: Math.min(Math.max(rect.left + rect.width / 2, 100), window.innerWidth - 100),
+    y: Math.max(rect.top, 64),
+  }
+}
+
+// 选区 → 菜单：此处立即算出锚点与原文保存下来，之后重绘划线会使 Range 失效
+function onContentPointerUp(e: PointerEvent) {
+  if (!highlightable.value) return
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
+  const content = e.currentTarget as HTMLElement
+  const range = sel.getRangeAt(0)
+  const picked = rangeToAnchor(content, range)
+  const chapterIndex = chapterIndexOf(content)
+  if (!picked || chapterIndex < 0) return
+  if (locatedHighlights(content, chapterIndex).some(h => overlaps(h.anchor, picked.anchor))) {
+    ElMessage.warning('与已有划线重叠')
+    return
+  }
+  if (picked.text.length > 1000) {
+    ElMessage.warning('一次最多划 1000 字')
+    return
+  }
+  hlMenu.value = { ...menuPoint(range.getBoundingClientRect()), mode: 'new', hasNote: false, chapterIndex, ...picked }
+}
+
+// 点击已有划线：打开「写批注 / 删除划线」菜单；正在选字时不处理
+function openExistingHighlightMenu(e: MouseEvent): boolean {
+  if (!highlightable.value || window.getSelection()?.isCollapsed === false) return false
+  const mark = (e.target as HTMLElement).closest<HTMLElement>('mark.hl')
+  const h = mark && reader.highlights.value.find(x => x.id === mark.dataset.hlId)
+  if (!mark || !h) return false
+  e.preventDefault()
+  e.stopPropagation()
+  // 跨行的划线取被点中的那一行
+  const rects = [...mark.getClientRects()]
+  const rect = rects.find(r => e.clientY >= r.top && e.clientY <= r.bottom) || mark.getBoundingClientRect()
+  hlMenu.value = { ...menuPoint(rect), mode: 'existing', hasNote: !!h.note, chapterIndex: h.chapter_index, id: h.id }
+  return true
+}
+
+function promptNote(title: string, initial = ''): Promise<string | null> {
+  return ElMessageBox.prompt('', title, {
+    inputType: 'textarea',
+    inputValue: initial,
+    confirmButtonText: '保存批注',
+    cancelButtonText: '取消',
+    inputValidator: (v: string) => (v ?? '').length <= 2000 || '批注最多 2000 字',
+  }).then(r => (r as { value: string }).value ?? '', () => null)
+}
+
+async function onHlHighlight() {
+  const m = hlMenu.value
+  hlMenu.value = null
+  if (!m?.anchor || !m.text) return
+  window.getSelection()?.removeAllRanges()
+  try { await reader.addHighlight(m.chapterIndex, m.anchor, m.text) } catch { ElMessage.error('划线保存失败') }
+}
+
+async function onHlNote() {
+  const m = hlMenu.value
+  hlMenu.value = null
+  if (!m) return
+  if (m.mode === 'new') {
+    if (!m.anchor || !m.text) return
+    const note = await promptNote('写批注')
+    if (note === null) return
+    window.getSelection()?.removeAllRanges()
+    try { await reader.addHighlight(m.chapterIndex, m.anchor, m.text, note.trim() ? note : undefined) } catch { ElMessage.error('划线保存失败') }
+    return
+  }
+  const h = reader.highlights.value.find(x => x.id === m.id)
+  if (!h) return
+  const note = await promptNote(h.note ? '编辑批注' : '写批注', h.note || '')
+  if (note === null) return
+  try { await reader.setHighlightNote(h.id, note.trim() ? note : null) } catch { ElMessage.error('批注保存失败') }
+}
+
+async function onHlDelete() {
+  const m = hlMenu.value
+  hlMenu.value = null
+  const h = m && reader.highlights.value.find(x => x.id === m.id)
+  if (!h) return
+  if (h.note) {
+    try {
+      await ElMessageBox.confirm('删除后批注也会一起删除，确定删除这条划线吗？', '删除划线', { confirmButtonText: '删除划线', cancelButtonText: '取消', type: 'warning' })
+    } catch { return }
+  }
+  try { await reader.removeHighlight(h.id) } catch { ElMessage.error('删除划线失败') }
 }
 
 // ── Chapter navigation (scroll mode) ────────────────────────
@@ -1316,6 +1465,7 @@ onMounted(async () => {
 
   await reader.loadProgress()
   reader.loadBookmarks()
+  if (!isPdfRender.value) reader.loadHighlights()
   // 隔了几天再打开：提示前情提要（不自动调用 AI）
   aiStatus.then(() => {
     const p = reader.progress.value
@@ -1826,6 +1976,19 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.8;
   color: var(--reader-text-secondary);
+}
+
+/* ── 划线 / 批注 ── */
+.chapter-content :deep(mark.hl) {
+  color: inherit;
+  background: var(--reader-hl-bg);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.chapter-content :deep(mark.hl.has-note) {
+  text-decoration: underline dashed;
+  text-decoration-color: color-mix(in srgb, var(--reader-text) 50%, transparent);
+  text-underline-offset: 4px;
 }
 
 /* ── 听书 ── */
