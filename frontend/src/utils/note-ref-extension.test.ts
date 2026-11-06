@@ -33,7 +33,10 @@ describe('noteRef', () => {
     const editor = new Editor({ extensions: [StarterKit, NoteRef], content: doc })
     const el = editor.view.dom.querySelector('span.note-ref')
     expect(el?.getAttribute('data-ref')).toBe('h:abc-1')
-    expect(el?.textContent).toBe('📖')
+    expect(el?.querySelector('svg')).not.toBeNull()
+    expect(el?.innerHTML).not.toContain('📖')
+    expect(el?.getAttribute('aria-label')).toBe('原文')
+    expect(el?.getAttribute('title')).toBe('查看原文')
     editor.destroy()
   })
 

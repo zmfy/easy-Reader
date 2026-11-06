@@ -27,6 +27,18 @@ export interface NoteRefOptions {
   allowedRefs: () => string[]
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+// Tabler「book」图标（outline）
+const BOOK_ICON: any = [
+  `${SVG_NS} svg`,
+  { viewBox: '0 0 24 24', width: '1em', height: '1em', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+  [`${SVG_NS} path`, { d: 'M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0' }],
+  [`${SVG_NS} path`, { d: 'M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0' }],
+  [`${SVG_NS} path`, { d: 'M3 6l0 13' }],
+  [`${SVG_NS} path`, { d: 'M12 6l0 13' }],
+  [`${SVG_NS} path`, { d: 'M21 6l0 13' }],
+]
+
 // 原文引用：只能由系统/AI 生成，用户可删除，不能手写或粘贴伪造
 export const NoteRef = Node.create<NoteRefOptions>({
   name: 'noteRef',
@@ -54,7 +66,7 @@ export const NoteRef = Node.create<NoteRefOptions>({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['span', mergeAttributes({ class: 'note-ref' }, HTMLAttributes), '📖']
+    return ['span', mergeAttributes({ class: 'note-ref', 'aria-label': '原文', title: '查看原文' }, HTMLAttributes), BOOK_ICON]
   },
 
   addProseMirrorPlugins() {

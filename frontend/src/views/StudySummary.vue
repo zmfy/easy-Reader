@@ -142,7 +142,7 @@
 <script setup lang="ts">
 /**
  * 单本书的学习总结：AI 后台生成/更新（轮询进度）、所见即所得编辑与自动保存（修订号冲突处理）、
- * 修改记录（查看/恢复）、📖 引用悬停看原文与跳转阅读器、导出 Markdown、删除总结。
+ * 修改记录（查看/恢复）、书本图标引用悬停看原文与跳转阅读器、导出 Markdown、删除总结。
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'

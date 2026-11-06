@@ -141,8 +141,10 @@ const buttons = computed(() => {
 .se-content :deep(pre code) { padding: 0; background: transparent; }
 .se-content :deep(.note-ref) {
   display: inline-block; margin: 0 2px; padding: 0 3px; border-radius: 4px; cursor: pointer; user-select: none;
+  color: var(--accent); line-height: 1;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+.se-content :deep(.note-ref svg) { display: block; vertical-align: -0.125em; }
 .se-content :deep(.note-ref:hover),
 .se-content :deep(.note-ref.ProseMirror-selectednode) { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 @media (max-width: 768px) {
