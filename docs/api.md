@@ -432,6 +432,205 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 删除节点及其子树，返回 `{ deleted: 数量 }`；不存在返回 404。
 
+### 学习总结（学习版）
+
+把一本书的划线与导图节点（统称「笔记」）交给 AI 整理成按主题分组的学习总结，用户可以继续手动编辑，每次变化都会留下可恢复的版本。接口前缀为 `/api/v1/study`，全部需要登录，只能访问自己的总结。
+
+整体流程：
+
+1. `GET /study/summaries` 看哪些书有笔记、哪些已有总结。
+2. `POST /study/books/:bookId/summary/jobs` 启动整理任务（后台执行，返回 202），再轮询 `GET .../summary/jobs/current` 直到任务结束。
+3. `GET /study/books/:bookId/summary` 读取总结；`PUT` 手动保存；`.../versions` 查看与恢复历史版本。
+
+#### 文档模型
+
+总结正文（`doc`）是 Tiptap（ProseMirror）风格的 JSON 树，根节点为 `{ "type": "doc", "content": [...] }`。**节点类型白名单**（其他类型保存时返回 422）：
+
+| type | 说明 | attrs / 备注 |
+|---|---|---|
+| `doc` | 根节点 | 仅作根 |
+| `heading` | 标题 | `attrs.level` 必须是 `2` 或 `3`；AI 生成的「主题」是 2 级标题 |
+| `paragraph` | 段落 | 内含 `text`、`hardBreak`、`noteRef` |
+| `bulletList` / `orderedList` | 无序 / 有序列表 | `orderedList` 可带 `attrs.start`（整数）；内含 `listItem` |
+| `listItem` | 列表项 | 内含段落与嵌套列表 |
+| `codeBlock` | 代码块 | 可带 `attrs.language`（字符串） |
+| `hardBreak` | 换行 | — |
+| `text` | 文字 | `text` 字段；可带 `marks`，类型只能是 `bold`、`italic`、`code` |
+| `noteRef` | 引用某条笔记 | `attrs.ref`：引用标识，格式见下 |
+
+示例：
+
+```json
+{
+  "type": "doc",
+  "content": [
+    { "type": "heading", "attrs": { "level": 2 }, "content": [{ "type": "text", "text": "渔夫的坚持" }] },
+    { "type": "paragraph", "content": [
+      { "type": "text", "text": "老人连续八十四天没有捕到鱼，", "marks": [{ "type": "bold" }] },
+      { "type": "text", "text": "仍然出海。" },
+      { "type": "noteRef", "attrs": { "ref": "h:21904119-cdb3-40f7-8175-11b208951f81" } }
+    ] }
+  ]
+}
+```
+
+文档限制：嵌套深度不超过 20 层、节点总数不超过 20000、序列化后不超过 2MB。不允许出现未列出的节点类型、属性或 marks。
+
+**引用标识（ref）**：`h:<划线 id>` 指向一条划线，`n:<导图节点 id>` 指向一个导图节点（非划线类）。id 是 UUID。引用对应的笔记可能后来被删除，客户端应容错（见 `refs` 接口）。
+
+**blocks 结构**：不想解析 Tiptap 树的客户端（小程序、原生 App）用 `?format=blocks` 获得扁平化的块列表：
+
+```json
+[
+  { "type": "h", "level": 2, "text": "渔夫的坚持" },
+  { "type": "p", "parts": [
+    { "text": "老人连续八十四天没有捕到鱼，", "bold": true },
+    { "text": "仍然出海。" },
+    { "ref": "h:21904119-cdb3-40f7-8175-11b208951f81" }
+  ] },
+  { "type": "list", "ordered": false, "items": [[{ "text": "要点一" }], [{ "text": "要点二" }]] },
+  { "type": "code", "text": "print('hi')" }
+]
+```
+
+块类型为 `h`（`level` 为 2 或 3）、`p`、`list`（`ordered`，`items` 是若干个 `parts` 数组；嵌套层级用行首空格 `text` 表示）、`code`。`parts` 的元素是 `{ text, bold?, italic?, code? }`（文字，样式字段只在为真时出现）或 `{ ref }`（引用）。
+
+#### GET /api/v1/study/summaries
+
+可选查询参数 `q`：按书名或总结正文模糊过滤。返回有笔记或有总结的书，按总结更新时间倒序（没有总结的排在最后）：
+
+```json
+[{
+  "bookId": "e36eaa58-…", "bookTitle": "老人与海", "hasSummary": true,
+  "themes": ["渔夫的坚持", "与自然的关系"],
+  "noteCount": 12, "newNoteCount": 3,
+  "updatedAt": "2026-11-06 04:01:28", "lastSource": "ai_update",
+  "job": null
+}]
+```
+
+`noteCount` 为全部笔记数，`newNoteCount` 为尚未被总结纳入的新笔记数；`bookTitle` 为 `null` 表示书已被删除；`lastSource` 见下文「版本」；`job` 为该书最近一次任务（见下）或 `null`。
+
+#### GET /api/v1/study/books/:bookId/summary
+
+查询参数 `format`：`json`（默认）、`blocks`、`markdown`，其他值返回 422。
+
+```json
+{
+  "summary": {
+    "id": "…", "book_id": "…", "revision": 3,
+    "included_refs": ["h:…", "n:…"],
+    "created_at": "2026-11-06 04:01:28", "updated_at": "2026-11-06 04:20:00",
+    "doc": { "type": "doc", "content": [] }
+  },
+  "bookTitle": "老人与海", "noteCount": 12, "newNoteCount": 3,
+  "job": null
+}
+```
+
+- 还没有总结时 `summary` 为 `null`（仍返回笔记数与 `job`）。
+- `format=blocks` 时 `summary.doc` 换成 `summary.blocks`；`format=markdown` 时换成 `summary.markdown`（字符串，标题为「书名 · 学习总结」，引用输出为「（出自：书名 章节标题）」，章节标题取不到时用「第 N 章」，已删除的笔记写「原笔记已删除」）。
+- `revision` 是修订号，保存时要原样带回（见下）。`included_refs` 是已被总结纳入的笔记引用，用来计算新笔记。
+
+#### PUT /api/v1/study/books/:bookId/summary
+
+手动保存整篇文档：
+
+```json
+{ "doc": { "type": "doc", "content": [] }, "revision": 3 }
+```
+
+成功返回 200 与最新 `summary`（`revision` 加 1）。
+
+**修订号与 409**：`revision` 必须等于服务器当前修订号，否则说明总结已在别处（另一个客户端、AI 任务）被改过，返回 409 `BUSINESS_CONFLICT`，`data` 为最新的 `summary`：
+
+```json
+{ "success": false, "code": "BUSINESS_CONFLICT", "message": "总结已在别处更新", "data": { "id": "…", "revision": 4, "doc": {} } }
+```
+
+`message` 有两种：「总结已在别处更新」（修订号过期）与「正在整理中，请稍后再改」（该书有 AI 任务正在运行）。客户端的处理：用 `data` 里的最新内容让用户决定（放弃本地修改、或在最新内容上重新编辑后再保存），再用新的 `revision` 提交；整理中则等任务结束后重试。
+
+其他错误：`doc` 不合法（含非白名单节点）或超过 2MB 返回 422；该书还没有总结返回 404。
+
+#### POST /api/v1/study/books/:bookId/summary/jobs
+
+启动后台整理任务：
+
+```json
+{ "kind": "generate" }
+```
+
+`kind` 为 `generate`（首次生成，已有总结时不可用）或 `update`（把新笔记并入已有总结，只追加，不改动已有内容）。**还没有总结时请求 `update` 会按 `generate` 处理**。成功返回 **202**，`data` 为任务对象；该书已有任务在运行时不会重复启动，同样返回 202 与那个任务。
+
+错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；书不存在（含书已被删除）404；422 `VALIDATION_ERROR`，`message` 为「这本书还没有笔记」「没有新笔记」或「已有总结，请使用更新」。
+
+**任务对象**：
+
+```json
+{ "id": "…", "book_id": "…", "kind": "generate", "status": "running", "done": 1, "total": 3,
+  "error": null, "created_at": "2026-11-06 04:01:28", "finished_at": null }
+```
+
+`status` 取值：`running`（进行中，`done / total` 为已完成批次与总批次）、`done`（成功，总结已写入）、`failed`（失败，`error` 为原因）。服务重启时遗留的运行中任务会被标记为 `failed`。
+
+**客户端轮询流程**：启动任务（202）后，每约 2 秒请求一次 `GET /study/books/:bookId/summary/jobs/current`，用 `done / total` 显示进度；`status` 变为 `done` 后重新读取总结；变为 `failed` 则显示 `error`，允许用户重试。进入页面时也先查一次 `jobs/current`，若为 `running` 就直接接着轮询。任务运行期间手动保存、恢复版本、删除总结都会被拒绝（409）。
+
+#### GET /api/v1/study/books/:bookId/summary/jobs/current
+
+返回该书最近一次任务（任务对象，见上），没有任何任务时 `data` 为 `null`。
+
+#### DELETE /api/v1/study/books/:bookId/summary
+
+删除总结及其全部版本，返回 `{ "deleted": true }`；没有总结 404；有任务正在运行 409。
+
+#### 版本
+
+每次总结内容变化都会记一个版本，用于查看与恢复。版本的 `source` 取值：
+
+| source | 含义 |
+|---|---|
+| `ai_generate` | AI 首次生成 |
+| `ai_update` | AI 追加新笔记 |
+| `user` | 用户手动保存 |
+| `restore` | 恢复到某个旧版本 |
+
+**30 分钟内连续的手动保存会合并为一个版本**（滑动窗口：每次手动保存都会刷新该版本的 `updated_at`，只要距上一次手动保存不超过 30 分钟，就覆盖同一个 `user` 版本而不新增；上一个版本不是 `user`，或已超过 30 分钟，则新建）。因此版本的时间以 `updated_at` 为准。
+
+#### GET /api/v1/study/books/:bookId/summary/versions
+
+按时间倒序返回版本列表（不含正文）：
+
+```json
+[{ "id": "…", "source": "user", "description": "手动修改", "created_at": "…", "updated_at": "…" }]
+```
+
+#### GET /api/v1/study/books/:bookId/summary/versions/:versionId
+
+返回单个版本：`{ id, doc, source, description, updated_at }`；不存在 404。
+
+#### POST /api/v1/study/books/:bookId/summary/versions/:versionId/restore
+
+```json
+{ "revision": 3 }
+```
+
+把总结恢复为该版本的内容，并新增一个 `source` 为 `restore` 的版本（不会删除其他版本）。返回 200 与最新 `summary`。`revision` 与 409 的规则同 `PUT`；总结或版本不存在 404。
+
+#### GET /api/v1/study/books/:bookId/refs/:ref
+
+解析总结里的一个引用标识（`:ref` 形如 `h:<id>` 或 `n:<id>`），用来在界面上显示出处、跳转回原文：
+
+```json
+{ "exists": true, "type": "node", "text": "概念甲：说明",
+  "target": { "chapter": 3, "find": "概念甲" }, "later": true, "canOpen": true }
+```
+
+- `exists: false`：笔记已被删除、不属于当前用户或标识不合法，此时没有其他字段（`{ "exists": false }`）。
+- `type`：`highlight`（划线）或 `node`（导图节点）；`text` 为划线原文或「名称：摘要」，最长 200 字。
+- `target`（跳转目标）：划线为 `{ "highlight": "<划线 id>" }`；导图节点为 `{ "chapter": 章节序号(0 起), "find": "要在章内查找的文字" }`，没有记录出处的节点只有 `chapter`（取节点所在章）。章节序号与 `reader/:bookId/chapters` 的 `index` 一致。
+- `later`：该节点的出处是否在用户阅读边界之后（可能剧透，客户端建议提示或折叠）；划线恒为 `false`。
+- `canOpen`：书与书文件是否可读；为 `false` 时只能显示 `text`，不能跳转。
+
 ## 9. 阅读偏好
 
 每个用户一份，由客户端自行定义内容（字号、主题等），网页版也存在这里。

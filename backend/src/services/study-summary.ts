@@ -3,7 +3,9 @@ import crypto from 'crypto';
 import { DocNode, docText, listThemes } from './summary-doc';
 import { StudyNote } from './summary-ai';
 import { listHighlights } from './highlights';
-import { listMindNodes } from './mind-nodes';
+import { listMindNodes, MindNode } from './mind-nodes';
+import { listMindNodesWithLater } from './mind-expand';
+import { Book } from '../types';
 
 // 建表 SQL：db.ts 初始化与测试共用
 export const STUDY_SUMMARY_DDL = `
@@ -259,4 +261,68 @@ export function listSummaryOverview(db: Database.Database, userId: string, q?: s
 export function failStaleSummaryJobs(db: Database.Database): void {
   db.prepare("UPDATE study_summary_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'")
     .run('service restarted while task was running');
+}
+
+const REF_PARSE = /^(h|n):([\w-]{1,64})$/;
+const clip200 = (s: string) => Array.from(s).slice(0, 200).join('');
+
+/** 引用指向的笔记：划线或导图节点；不存在 / 非本人本书 → null。chapterIndex 为笔记所在章（0 起） */
+export function findRefNote(
+  db: Database.Database, userId: string, bookId: string, ref: string
+): { type: 'highlight'; text: string; chapterIndex: number; id: string } | { type: 'node'; text: string; chapterIndex: number; node: MindNode } | null {
+  const m = REF_PARSE.exec(ref);
+  if (!m) return null;
+  if (m[1] === 'h') {
+    const h = db.prepare('SELECT id, chapter_index, text FROM highlights WHERE id = ? AND user_id = ? AND book_id = ?')
+      .get(m[2], userId, bookId) as { id: string; chapter_index: number; text: string } | undefined;
+    return h ? { type: 'highlight', text: h.text, chapterIndex: h.chapter_index, id: h.id } : null;
+  }
+  const n = db.prepare('SELECT * FROM mind_nodes WHERE id = ? AND user_id = ? AND book_id = ?')
+    .get(m[2], userId, bookId) as MindNode | undefined;
+  return n ? { type: 'node', text: n.summary ? `${n.label}：${n.summary}` : n.label, chapterIndex: n.chapter_index, node: n } : null;
+}
+
+export type ResolvedRef =
+  | { exists: false }
+  | {
+    exists: true; type: 'highlight' | 'node'; text: string;
+    target: { highlight: string } | { chapter: number; find?: string }; later: boolean; canOpen: boolean;
+  };
+
+/**
+ * 解析总结中的引用标识（h:划线id / n:节点id）。
+ * book 为 null（书已删除或文件不存在）→ canOpen=false；later 仅在书可读时判断（读书文件失败按 false）。
+ */
+export async function resolveRef(
+  db: Database.Database, userId: string, book: Book | null, ref: string
+): Promise<ResolvedRef> {
+  const m = REF_PARSE.exec(ref);
+  const bookId = book ? book.id : null;
+  // book 为 null 时无法从参数得知书 id：先按 id 反查所属书
+  let bid = bookId;
+  if (!bid && m) {
+    const row = (m[1] === 'h'
+      ? db.prepare('SELECT book_id FROM highlights WHERE id = ? AND user_id = ?')
+      : db.prepare('SELECT book_id FROM mind_nodes WHERE id = ? AND user_id = ?')).get(m[2], userId) as { book_id: string } | undefined;
+    bid = row ? row.book_id : null;
+  }
+  if (!bid) return { exists: false };
+  const note = findRefNote(db, userId, bid, ref);
+  if (!note) return { exists: false };
+  const canOpen = !!book;
+  if (note.type === 'highlight') {
+    return { exists: true, type: 'highlight', text: clip200(note.text), target: { highlight: note.id }, later: false, canOpen };
+  }
+  const n = note.node;
+  const target = n.source_chapter != null ? { chapter: n.source_chapter, find: n.label } : { chapter: n.chapter_index };
+  let later = false;
+  if (book && n.source_chapter != null) {
+    try {
+      const nodes = await listMindNodesWithLater(db, book, userId, n.highlight_id || undefined);
+      later = !!nodes.find(x => x.id === n.id)?.source_later;
+    } catch (err) {
+      console.error(`[study-summary] resolveRef later book=${book.id}`, err);
+    }
+  }
+  return { exists: true, type: 'node', text: clip200(note.text), target, later, canOpen };
 }

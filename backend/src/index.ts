@@ -14,6 +14,7 @@ import auditLogRoutes from './routes/audit-log';
 import shelfRoutes from './routes/shelf';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
+import studySummaryRoutes from './routes/study-summary';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
@@ -72,6 +73,7 @@ api.use('/library', libraryRoutes);
 api.use('/shelf', shelfRoutes);
 api.use('/reader', readerRoutes);
 api.use('/settings', settingsRoutes);
+api.use('/study', studySummaryRoutes);
 
 // API 文档（docs/api.md）：/api/docs 网页查看，/api/docs.md 原文
 api.get('/docs.md', (_req: express.Request, res: express.Response) => {
