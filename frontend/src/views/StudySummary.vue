@@ -13,7 +13,7 @@
         <el-tag v-if="ready && bookTitle === null" size="small" type="info">书已不存在</el-tag>
       </h1>
       <div v-if="ready" class="sum-tools">
-        <span v-if="summary && saveText" class="save-state" :class="{ error: saveState === 'error' }">
+        <span v-if="summary && (saveText || saveState === 'error')" class="save-state" :class="{ error: saveState === 'error' }">
           <template v-if="saveState === 'error'">保存失败，<el-button link type="primary" @click="save">重试</el-button></template>
           <template v-else>{{ saveText }}</template>
         </span>
@@ -52,10 +52,17 @@
             <el-button size="small" type="primary" :disabled="bookTitle === null" @click="startJob(failedJob.kind)">重试</el-button>
           </div>
 
+          <el-alert v-if="conflictLocal" class="conflict-bar" type="warning" show-icon @close="conflictLocal = null">
+            <template #title>
+              你有一段未保存的内容被替换了
+              <el-button link type="primary" @click="conflictDialog = true">查看我未保存的内容</el-button>
+            </template>
+          </el-alert>
+
           <SummaryEditor
             v-if="summary"
             :model-value="doc"
-            :readonly="running"
+            :readonly="running || leaving"
             @update:model-value="onEdit"
             @ref-click="onRefClick"
             @ref-hover="onRefHover"
@@ -101,6 +108,20 @@
       <template #footer>
         <el-button @click="versionDialog = false">关闭</el-button>
         <el-button type="primary" :disabled="!viewing || running || !summary" :loading="restoring" @click="restore">恢复此版本</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="conflictDialog"
+      title="未保存的内容"
+      :width="isNarrow ? '94%' : '760px'"
+      top="5vh"
+    >
+      <div v-if="conflictLocal" class="version-body">
+        <SummaryEditor :model-value="conflictLocal" :readonly="true" />
+      </div>
+      <template #footer>
+        <el-button @click="conflictDialog = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -265,8 +286,11 @@ async function checkJob() {
 }
 
 async function startJob(kind: 'generate' | 'update') {
-  // 先把未保存的编辑存掉，否则任务写入后修订号变化，本地改动保存会冲突
-  await flushSave()
+  // 先把未保存的编辑存掉，否则任务写入后修订号变化，本地改动保存会冲突；存不上就不启动
+  if (!(await flushSave())) {
+    ElMessage.error('有修改尚未保存，请先重试保存')
+    return
+  }
   failedJob.value = null
   try {
     const resp = await studyApi.startJob(bookId, kind)
@@ -303,9 +327,21 @@ function onEdit(d: DocNode) {
   saveTimer = setTimeout(save, SAVE_DEBOUNCE)
 }
 
-/** 冲突：载入服务器最新内容并提示 */
-function onConflict(err: unknown) {
+const conflictLocal = ref<DocNode | null>(null)
+const conflictDialog = ref(false)
+let conflictCount = 0
+
+/** 冲突：载入服务器最新内容并提示；keepLocal 时先留存被替换掉的本地内容，供用户查看复制 */
+function onConflict(err: unknown, keepLocal: boolean) {
+  conflictCount++
   const latest = (err as { response?: { data?: { data?: StudySummary | null } } }).response?.data?.data
+  if (keepLocal) {
+    const local = doc.value
+    // 提示条未关闭前又冲突：追加在后面，不丢前一段
+    conflictLocal.value = conflictLocal.value
+      ? { type: 'doc', content: [...(conflictLocal.value.content || []), ...(local.content || [])] }
+      : local
+  }
   if (latest) applySummary(latest)
   saveState.value = 'idle'
   ElMessage.warning(errorText(err, '总结已在别处更新'))
@@ -328,7 +364,7 @@ async function doSave() {
     if (showVersions.value) loadVersions()
   } catch (err) {
     if (errorStatus(err) === 409) {
-      onConflict(err)
+      onConflict(err, true)
     } else {
       dirty.value = true
       saveState.value = 'error'
@@ -354,18 +390,31 @@ function save(): Promise<void> {
   return savingPromise
 }
 
-/** 立即保存所有未保存改动并等待完成 */
-async function flushSave() {
+/** 立即保存所有未保存改动并等待完成；返回 false 表示没存上（保存失败或冲突后本地内容被替换） */
+async function flushSave(): Promise<boolean> {
+  const before = conflictCount
   clearSaveTimer()
   while (savingPromise) {
     pendingSave = false
     await savingPromise
   }
   if (dirty.value) await save()
+  return !dirty.value && conflictCount === before
 }
 
+const leaving = ref(false)
+
 onBeforeRouteLeave(async () => {
-  await flushSave()
+  // 保存期间编辑器只读，避免新输入在卸载时丢失
+  leaving.value = true
+  if (await flushSave()) return true
+  try {
+    await ElMessageBox.confirm('修改还没保存，离开会丢失这些修改。确定离开吗？', '离开页面', { confirmButtonText: '离开', cancelButtonText: '取消', type: 'warning' })
+    return true
+  } catch {
+    leaving.value = false
+    return false
+  }
 })
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
@@ -431,7 +480,10 @@ async function restore() {
   } catch {
     return
   }
-  await flushSave()
+  if (!(await flushSave())) {
+    ElMessage.error('有修改尚未保存，请先重试保存')
+    return
+  }
   restoring.value = true
   try {
     const resp = await studyApi.restoreVersion(bookId, v.id, revision.value)
@@ -443,7 +495,7 @@ async function restore() {
   } catch (err) {
     if (errorStatus(err) === 409) {
       versionDialog.value = false
-      onConflict(err)
+      onConflict(err, false)
     } else {
       ElMessage.error(errorText(err, '恢复失败'))
     }
@@ -734,6 +786,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .version-desc { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); word-break: break-all; }
+.conflict-bar { margin-bottom: 12px; }
 .version-body { max-height: 65vh; overflow-y: auto; }
 .ref-pop-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
 

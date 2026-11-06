@@ -47,7 +47,8 @@ const editor = new Editor({
   onUpdate: ({ editor: e }) => emit('update:modelValue', e.getJSON() as DocNode),
 })
 
-watch(() => props.readonly, v => editor.setEditable(!v))
+// 第二个参数 false：切换只读不触发 update，否则父组件会当成一次编辑去保存
+watch(() => props.readonly, v => editor.setEditable(!v, false))
 
 // 外部载入新内容；内容与编辑器一致时跳过，避免丢失光标；false 表示不触发 update
 watch(() => props.modelValue, v => {
