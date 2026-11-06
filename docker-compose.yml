@@ -3,12 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # 默认国内源；在海外或想用官方源时，在 .env 里设为
-      #   NODE_IMAGE=node:22-slim  NPM_REGISTRY=https://registry.npmjs.org  DEBIAN_MIRROR=
+      # 默认官方源；国内网络可在 .env 里改用国内源（见 .env.example）
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-docker.m.daocloud.io/library/node:22-slim}
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        DEBIAN_MIRROR: ${DEBIAN_MIRROR-http://mirrors.aliyun.com}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-}
     container_name: novel-reader
     restart: unless-stopped
     ports:
