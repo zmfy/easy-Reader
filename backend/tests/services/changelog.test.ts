@@ -108,6 +108,34 @@ describe('parseChangelog', () => {
   });
 });
 
+describe('version heading formats', () => {
+  it('accepts en/em dash separators and trailing text after the date', () => {
+    const md = [
+      '## [1.3.0] – 2026-11-08',
+      '- a',
+      '## [1.2.0] — 2026-11-07（热修复）',
+      '- b',
+      '## [1.1.0] - 2026-11-06 补发',
+      '- c',
+      '## [1.0.0] 首个版本',
+      '- d',
+    ].join('\n');
+    const rs = parseChangelog(md, '');
+    expect(rs.map(r => [r.version, r.date])).toEqual([
+      ['1.3.0', '2026-11-08'],
+      ['1.2.0', '2026-11-07'],
+      ['1.1.0', '2026-11-06'],
+      ['1.0.0', null],
+    ]);
+  });
+
+  it('suffix is still bounded by the closing bracket', () => {
+    const md = '## [1.2.0-study] – 2026-11-07 学习版\n\n## [1.1.0] — 2026-11-06 看书版\n\n## [1.0.0-studyx] - 2026-11-05\n';
+    expect(parseChangelog(md, '').map(r => r.version)).toEqual(['1.1.0']);
+    expect(parseChangelog(md, '-study').map(r => [r.version, r.date])).toEqual([['1.2.0', '2026-11-07']]);
+  });
+});
+
 describe('comment stripping', () => {
   it('strips normal comments and runs in linear time on unclosed ones', () => {
     const md = '## [1.0.1] - 2026-11-06\n\n### 修复\n\n<!-- 注释\n多行 -->\n- a <!-- x --> b\n';
@@ -133,7 +161,9 @@ describe('versions', () => {
     expect(newerReleases([mk('1.1.0'), mk('1.3.0'), mk('1.2.0')], '1.0.0').map(r => r.version)).toEqual(['1.3.0', '1.2.0', '1.1.0']);
   });
 
-  it('newerReleases returns [] when current is null', () => {
-    expect(newerReleases(parseChangelog(SAMPLE, ''), null)).toEqual([]);
+  it('newerReleases returns all remote releases when current is unknown', () => {
+    const mk = (version: string) => ({ version, date: null, intro: '', sections: [] });
+    expect(newerReleases([mk('1.1.0'), mk('1.3.0'), mk('1.2.0')], null).map(r => r.version)).toEqual(['1.3.0', '1.2.0', '1.1.0']);
+    expect(newerReleases([], null)).toEqual([]);
   });
 });

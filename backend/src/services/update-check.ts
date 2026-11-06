@@ -122,6 +122,8 @@ async function fetchOne(url: string, fetchImpl: FetchImpl, timeoutMs: number): P
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    // 非 2xx / 内容无效时响应体未读完，中止以释放连接（已读完时无副作用）
+    controller.abort();
   }
 }
 
@@ -210,15 +212,22 @@ function stopTimers(): void {
 // 已在运行则不重复启动，保证任何时候最多一组定时器
 function startTimers(db: Database.Database, delayMs: number): void {
   if (firstTimer || intervalTimer) return;
+  const warn = (e: unknown) => console.warn('[update-check] 检查失败:', e instanceof Error ? e.message : e);
+  // 定时回调里同步的 SQLite 调用也可能抛错，必须整体兜住，否则成为 uncaughtException 使进程退出
   const run = () => {
-    if (!isNoticeEnabled(db)) return;
-    checkForUpdates(db).catch(e => console.warn('[update-check] 检查失败:', e instanceof Error ? e.message : e));
+    try {
+      if (!isNoticeEnabled(db)) return;
+      checkForUpdates(db).catch(warn);
+    } catch (e) {
+      warn(e);
+    }
   };
   firstTimer = setTimeout(() => {
     firstTimer = null;
-    run();
+    // 先建周期定时器再检查，首次检查出错也不影响之后的每日检查
     intervalTimer = setInterval(run, CHECK_INTERVAL_MS);
     intervalTimer.unref();
+    run();
   }, delayMs);
   firstTimer.unref();
 }

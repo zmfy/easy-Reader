@@ -43,11 +43,12 @@ function sectionKind(title: string): ReleaseSection['kind'] {
   return 'other';
 }
 
-/** 解析 CHANGELOG.md，只取 `## [X.Y.Z<suffix>]` 的版本节（suffix 精确匹配），按文件顺序（新→旧）返回。
+/** 解析 CHANGELOG.md，只取 `## [X.Y.Z<suffix>]` 的版本节（suffix 由紧跟的 `]` 精确限定），按文件顺序（新→旧）返回。
+ *  日期分隔符可为 `-`、`–`、`—`，日期后允许其他文字。
  *  条目文字中的「【需操作】」前缀会被去掉，由 actionRequired 标记表示。 */
 export function parseChangelog(md: string, suffix: string): Release[] {
   const text = stripHtmlComments(md.replace(/\r\n?/g, '\n'));
-  const headRe = new RegExp('^## \\[(\\d{1,6}\\.\\d{1,6}\\.\\d{1,6})' + escapeRegExp(suffix) + '\\](?:\\s*-\\s*(\\d{4}-\\d{2}-\\d{2}))?\\s*$');
+  const headRe = new RegExp('^## \\[(\\d{1,6}\\.\\d{1,6}\\.\\d{1,6})' + escapeRegExp(suffix) + '\\](?:\\s*[-–—]\\s*(\\d{4}-\\d{2}-\\d{2}))?.*$');
   const releases: Release[] = [];
   let release: Release | null = null;
   let section: ReleaseSection | null = null;
@@ -111,11 +112,10 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** 比当前版本新的发布；current 为 null（本站无版本）时返回 []，避免误报 */
+/** 比当前版本新的发布，按版本降序；current 为 null（本站版本未知，如学习版尚无 -study 版本节）时返回远端全部版本 */
 export function newerReleases(remote: Release[], current: string | null): Release[] {
-  if (!current) return [];
   return remote
-    .filter(r => compareVersions(r.version, current) > 0)
+    .filter(r => !current || compareVersions(r.version, current) > 0)
     .sort((a, b) => compareVersions(b.version, a.version));
 }
 

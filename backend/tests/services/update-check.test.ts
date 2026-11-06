@@ -12,16 +12,20 @@ import {
   isNoticeEnabled,
   applyUpdateCheckerSetting,
 } from '../../src/services/update-check';
+import { UPDATE_BRANCH, VERSION_SUFFIX } from '../../src/edition';
+
+// 版本节标题带上当前版本线的后缀，study 分支（EDITION='study'）下同样成立
+const V = VERSION_SUFFIX;
 
 const REMOTE_MD = `# 更新日志
 
-## [1.2.0] - 2026-11-10
+## [1.2.0${V}] - 2026-11-10
 
 ### 新增
 
 - 【需操作】新功能
 
-## [1.1.0] - 2026-11-01
+## [1.1.0${V}] - 2026-11-01
 
 ### 修复
 
@@ -35,7 +39,7 @@ const LOCAL_MD = `# 更新日志
 
 - 未发布
 
-## [1.1.0] - 2026-11-01
+## [1.1.0${V}] - 2026-11-01
 
 ### 修复
 
@@ -71,7 +75,7 @@ describe('fetchRemoteChangelog', () => {
     const fetchImpl = jest.fn((url: string) => (url.includes('githubusercontent') ? never() : Promise.resolve(ok(REMOTE_MD))));
     const r = await fetchRemoteChangelog(updateSources(), fetchImpl as any, 20);
     expect(r.source).toContain('jsdelivr');
-    expect(r.text).toContain('## [1.2.0]');
+    expect(r.text).toContain(`## [1.2.0${V}]`);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -110,8 +114,8 @@ describe('updateSources', () => {
   test('defaults use branch', () => {
     const s = updateSources();
     expect(s).toHaveLength(2);
-    expect(s[0]).toContain('raw.githubusercontent.com/zmfy/easy-Reader/main/CHANGELOG.md');
-    expect(s[1]).toContain('cdn.jsdelivr.net/gh/zmfy/easy-Reader@main/CHANGELOG.md');
+    expect(s[0]).toContain(`raw.githubusercontent.com/zmfy/easy-Reader/${UPDATE_BRANCH}/CHANGELOG.md`);
+    expect(s[1]).toContain(`cdn.jsdelivr.net/gh/zmfy/easy-Reader@${UPDATE_BRANCH}/CHANGELOG.md`);
   });
 });
 
@@ -130,7 +134,7 @@ describe('checkForUpdates / getUpdateStatus', () => {
     expect(st.checkedAt).not.toBeNull();
     const cached = getUpdateStatus(db);
     expect(cached.newer.map(r => r.version)).toEqual(['1.2.0']);
-    expect(cached.branch).toBe('main');
+    expect(cached.branch).toBe(UPDATE_BRANCH);
     expect(cached.enabled).toBe(true);
   });
 
@@ -153,7 +157,7 @@ describe('checkForUpdates / getUpdateStatus', () => {
     expect(st.newer.map(r => r.version)).toEqual(['1.2.0']);
   });
 
-  test('no current version means no newer', async () => {
+  test('unknown current version lists all remote releases', async () => {
     delete process.env.CHANGELOG_PATH;
     fs.rmSync(path.join(tmp, 'CHANGELOG.md'));
     const sub = path.join(tmp, 'sub');
@@ -162,7 +166,7 @@ describe('checkForUpdates / getUpdateStatus', () => {
     const db = makeDb();
     const st = await checkForUpdates(db, (async () => ok(REMOTE_MD)) as any);
     expect(st.currentVersion).toBeNull();
-    expect(st.newer).toEqual([]);
+    expect(st.newer.map(r => r.version)).toEqual(['1.2.0', '1.1.0']);
   });
 
   test('getUpdateStatus on empty db', () => {
@@ -287,6 +291,24 @@ describe('startUpdateChecker', () => {
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     fetchSpy.mockRestore();
+  });
+
+  test('db error in scheduled run does not crash and keeps the interval', () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((async () => ok(REMOTE_MD)) as any);
+    const db = makeDb();
+    startUpdateChecker(db);
+    // 定时回调里的同步 SQLite 调用抛错（连接已关闭）
+    db.close();
+    expect(() => jest.advanceTimersByTime(60000)).not.toThrow();
+    expect(jest.getTimerCount()).toBe(1);
+    // better-sqlite3 的原生错误与 jest 沙箱不同 realm，instanceof Error 不成立，这里只断言已记录
+    expect(warn).toHaveBeenCalledWith('[update-check] 检查失败:', expect.anything());
+    expect(() => jest.advanceTimersByTime(24 * 60 * 60 * 1000)).not.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    warn.mockRestore();
   });
 
   test('env off overrides setting', () => {

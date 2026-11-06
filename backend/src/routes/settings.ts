@@ -67,8 +67,8 @@ router.get('/changelog', authMiddleware, adminMiddleware, (_req: Request, res: R
 // GET /api/settings
 router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  // reader_prefs_* 是各用户的个人阅读设置，不属于系统设置
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\'").all() as Array<{ key: string; value: string }>;
+  // reader_prefs_* 是各用户的个人阅读设置，update_check_* / update_checked_at 是更新检查的内部缓存，都不属于系统设置
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'update\\_check\\_%' ESCAPE '\\' AND key <> 'update_checked_at'").all() as Array<{ key: string; value: string }>;
   const settings: Record<string, string> = {};
   for (const row of rows) {
     if (row.key === 'smtp_pass') {
