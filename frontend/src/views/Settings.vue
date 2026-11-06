@@ -142,7 +142,7 @@
                     <div v-for="(item, i) in section.items" :key="i" class="changelog-item">
                       <div class="changelog-main">
                         <span v-if="item.actionRequired" class="changelog-tag">需操作</span>
-                        <span class="changelog-text">{{ item.text }}</span>
+                        <span class="changelog-text"><template v-for="(seg, k) in boldSegments(item.text)" :key="k"><strong v-if="seg.bold">{{ seg.text }}</strong><template v-else>{{ seg.text }}</template></template></span>
                       </div>
                     </div>
                   </div>
@@ -464,6 +464,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { settingsApi } from '@/api/settings'
+import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
 import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'

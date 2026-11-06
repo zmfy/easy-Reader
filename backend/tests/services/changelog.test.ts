@@ -128,6 +128,11 @@ describe('versions', () => {
     expect(newerReleases(rs, '1.2.0')).toEqual([]);
   });
 
+  it('newerReleases sorts descending regardless of file order', () => {
+    const mk = (version: string) => ({ version, date: null, intro: '', sections: [] });
+    expect(newerReleases([mk('1.1.0'), mk('1.3.0'), mk('1.2.0')], '1.0.0').map(r => r.version)).toEqual(['1.3.0', '1.2.0', '1.1.0']);
+  });
+
   it('newerReleases returns [] when current is null', () => {
     expect(newerReleases(parseChangelog(SAMPLE, ''), null)).toEqual([]);
   });

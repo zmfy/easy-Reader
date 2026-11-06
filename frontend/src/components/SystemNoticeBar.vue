@@ -24,16 +24,16 @@
           v{{ release.version }}<template v-if="release.date"> · <span class="nb-date">{{ release.date }}</span></template>
         </div>
         <div v-if="release.intro" class="nb-intro">{{ release.intro }}</div>
-        <div v-for="item in actionItems(release)" :key="'a' + item.text" class="nb-item">
+        <div v-for="(item, ai) in actionItems(release)" :key="'a' + ai" class="nb-item">
           <span class="nb-tag">需操作</span>
-          <span class="nb-text">{{ item.text }}</span>
+          <span class="nb-text"><template v-for="(seg, k) in boldSegments(item.text)" :key="k"><strong v-if="seg.bold">{{ seg.text }}</strong><template v-else>{{ seg.text }}</template></template></span>
         </div>
         <div v-for="(section, si) in release.sections" :key="si">
           <template v-if="section.items.some(i => !i.actionRequired)">
             <div class="nb-section-title">{{ section.title }}</div>
             <template v-for="(item, i) in section.items" :key="i">
               <div v-if="!item.actionRequired" class="nb-item">
-                <span class="nb-text">{{ item.text }}</span>
+                <span class="nb-text"><template v-for="(seg, k) in boldSegments(item.text)" :key="k"><strong v-if="seg.bold">{{ seg.text }}</strong><template v-else>{{ seg.text }}</template></template></span>
               </div>
             </template>
           </template>
@@ -49,6 +49,7 @@ import { useRouter } from 'vue-router'
 import { IconAlertTriangle, IconInfoCircle, IconX } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { isDismissed, dismiss } from '@/utils/notice-dismiss'
+import { boldSegments } from '@/utils/inline-bold'
 import type { Release, ReleaseItem, UpdateStatus } from '@/types'
 
 const router = useRouter()
@@ -59,6 +60,7 @@ const dismissed = ref(false)
 const dialogVisible = ref(false)
 
 const latest = computed<Release | null>(() => status.value?.newer?.[0] ?? null)
+// 任一未升级版本含【需操作】即按会话级关闭——需操作事项在升级前一直存在
 const hasActionRequired = computed(
   () => !!status.value?.newer?.some(r => r.sections.some(s => s.items.some(i => i.actionRequired))),
 )

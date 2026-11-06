@@ -114,7 +114,9 @@ export function compareVersions(a: string, b: string): number {
 /** 比当前版本新的发布；current 为 null（本站无版本）时返回 []，避免误报 */
 export function newerReleases(remote: Release[], current: string | null): Release[] {
   if (!current) return [];
-  return remote.filter(r => compareVersions(r.version, current) > 0);
+  return remote
+    .filter(r => compareVersions(r.version, current) > 0)
+    .sort((a, b) => compareVersions(b.version, a.version));
 }
 
 export function hasActionRequired(releases: Release[]): boolean {
