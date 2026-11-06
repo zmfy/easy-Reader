@@ -826,8 +826,11 @@ watch(selectedAiPlugin, (plugin) => {
 const aiConfigWarning = ref<string | null>(null)
 
 async function loadAiConfigWarning() {
-  const resp = await settingsApi.getAiStatus()
-  aiConfigWarning.value = resp.data.data?.config_warning ?? null
+  // 刷新失败静默处理，保持旧提醒，不影响保存提示与其他加载
+  try {
+    const resp = await settingsApi.getAiStatus()
+    aiConfigWarning.value = resp.data.data?.config_warning ?? null
+  } catch { /* ignore */ }
 }
 
 async function loadSettings() {
@@ -991,7 +994,8 @@ async function deleteUser(id: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSettings(), loadPlugins(), loadUsers(), loadAiConfigWarning()])
+  loadAiConfigWarning()
+  await Promise.all([loadSettings(), loadPlugins(), loadUsers()])
 })
 </script>
 

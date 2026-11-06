@@ -22,7 +22,7 @@ async function apiError(resp: { status: number; text(): Promise<string> }, confi
   const errText = await resp.text();
   let code: unknown;
   try { code = JSON.parse(errText)?.base_resp?.status_code; } catch { /* 非 JSON */ }
-  if (code === 2069 || /\b2069\b/.test(errText)) {
+  if (code === 2069 || /"status_code"\s*:\s*"?2069"?/.test(errText)) {
     return new Error(`MiniMax 模型「${config.model || DEFAULT_MODEL}」已下线或不可用，请到「设置 → AI 插件」重新选择模型`);
   }
   return new Error(`MiniMax API error: ${resp.status} - ${errText}`);

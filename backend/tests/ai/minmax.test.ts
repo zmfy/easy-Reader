@@ -98,6 +98,12 @@ describe('minmax plugin', () => {
       await expect(minmaxPlugin.chat('hi', { apiKey: 'k' })).rejects.toThrow('「MiniMax-M3.1-Flash」');
     });
 
+    it('does not mistake an unrelated 2069 in the body for the offline-model error', async () => {
+      const body = '{"base_resp":{"status_code":1004},"trace_id":"abc-2069-def"}';
+      mockError(401, body);
+      await expect(minmaxPlugin.chat('hi', { apiKey: 'k' })).rejects.toThrow(`MiniMax API error: 401 - ${body}`);
+    });
+
     it('keeps the original format for other errors', async () => {
       mockError(401, '{"base_resp":{"status_code":1004}}');
       await expect(minmaxPlugin.chat('hi', { apiKey: 'k' }))
