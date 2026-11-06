@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
+import { Slice } from '@tiptap/pm/model'
 import { NoteRef, summaryExtensions } from './note-ref-extension'
 import type { DocNode } from '../types/study'
 
@@ -52,6 +53,61 @@ describe('noteRef', () => {
     editor.view.pasteHTML(html)
     expect(JSON.stringify(editor.getJSON())).not.toContain('noteRef')
     expect(JSON.stringify(editor.getJSON())).toContain('x')
+    editor.destroy()
+  })
+})
+
+describe('noteRef allowed set', () => {
+  const two: DocNode = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: '甲' }, { type: 'noteRef', attrs: { ref: 'h:abc-1' } }] },
+      { type: 'paragraph', content: [{ type: 'text', text: '乙' }] },
+    ],
+  }
+  const refsOf = (e: Editor) => (JSON.stringify(e.getJSON()).match(/"ref":"[^"]+"/g) || [])
+  // 与 prosemirror-view handleDrop / 粘贴一致：经 transformPasted 处理后插入
+  const transform = (e: Editor, slice: Slice) => e.view.someProp('transformPasted', f => f(slice, e.view, false)) || slice
+
+  it('dragging a paragraph inside the editor keeps its refs', () => {
+    const editor = new Editor({ extensions: summaryExtensions(), content: two })
+    const first = editor.state.doc.child(0)
+    const slice = editor.state.doc.slice(0, first.nodeSize)
+    const out = transform(editor, slice)
+    expect(JSON.stringify(out.content.toJSON())).toContain('h:abc-1')
+    // 拖到第二段之后（move）
+    const end = editor.state.doc.content.size
+    editor.chain().insertContentAt(end, out.content.toJSON()).deleteRange({ from: 0, to: first.nodeSize }).run()
+    expect(refsOf(editor)).toEqual(['"ref":"h:abc-1"'])
+    expect(editor.state.doc.child(0).textContent).toBe('乙')
+    editor.destroy()
+  })
+
+  it('copy-paste of an existing ref keeps it', () => {
+    const editor = new Editor({ extensions: summaryExtensions(), content: two })
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    editor.view.pasteHTML('<p>x<span class="note-ref" data-ref="h:abc-1">📖</span>y</p>')
+    expect(refsOf(editor)).toHaveLength(2)
+    editor.destroy()
+  })
+
+  it('cut then paste keeps refs listed in allowedRefs', () => {
+    const editor = new Editor({ extensions: summaryExtensions({ allowedRefs: () => ['h:abc-1'] }), content: two })
+    const first = editor.state.doc.child(0)
+    editor.commands.deleteRange({ from: 0, to: first.nodeSize })
+    expect(refsOf(editor)).toEqual([])
+    editor.view.pasteHTML('<p>x<span class="note-ref" data-ref="h:abc-1">📖</span>y</p>')
+    expect(refsOf(editor)).toEqual(['"ref":"h:abc-1"'])
+    editor.destroy()
+  })
+
+  it('forged refs outside the allowed set are still dropped', () => {
+    const editor = new Editor({ extensions: summaryExtensions({ allowedRefs: () => ['h:abc-1'] }), content: two })
+    editor.view.pasteHTML('<p>x<span class="note-ref" data-ref="h:forged">📖</span>y</p>')
+    expect(JSON.stringify(editor.getJSON())).not.toContain('h:forged')
+    expect(JSON.stringify(editor.getJSON())).toContain('x')
+    const forged = Slice.fromJSON(editor.schema, { content: [{ type: 'paragraph', content: [{ type: 'noteRef', attrs: { ref: 'n:zzz' } }] }] })
+    expect(JSON.stringify(transform(editor, forged).content.toJSON())).not.toContain('n:zzz')
     editor.destroy()
   })
 })

@@ -1,22 +1,40 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { Plugin } from '@tiptap/pm/state'
-import { Fragment, Slice } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as PmNode } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
+import ListItem from '@tiptap/extension-list-item'
 
-// 递归丢弃 slice 中所有 noteRef（与 HTML 写法无关）
-function stripNoteRefs(fragment: Fragment): Fragment {
-  const out: any[] = []
+// 递归丢弃 slice 中不在允许集合里的 noteRef（与 HTML 写法无关）
+function stripNoteRefs(fragment: Fragment, allowed: Set<string>): Fragment {
+  const out: PmNode[] = []
   fragment.forEach(node => {
-    if (node.type.name === 'noteRef') return
-    out.push(node.isLeaf ? node : node.copy(stripNoteRefs(node.content)))
+    if (node.type.name === 'noteRef' && !allowed.has(node.attrs.ref)) return
+    out.push(node.isLeaf ? node : node.copy(stripNoteRefs(node.content, allowed)))
   })
   return Fragment.fromArray(out)
 }
 
+function docRefs(doc: PmNode): string[] {
+  const refs: string[] = []
+  doc.descendants(n => {
+    if (n.type.name === 'noteRef' && typeof n.attrs.ref === 'string') refs.push(n.attrs.ref)
+  })
+  return refs
+}
+
+export interface NoteRefOptions {
+  /** 额外允许粘贴/拖放的引用（如总结的 included_refs），用于剪切后再粘贴 */
+  allowedRefs: () => string[]
+}
+
 // 原文引用：只能由系统/AI 生成，用户可删除，不能手写或粘贴伪造
-export const NoteRef = Node.create({
+export const NoteRef = Node.create<NoteRefOptions>({
   name: 'noteRef',
   inline: true,
+
+  addOptions() {
+    return { allowedRefs: () => [] }
+  },
   group: 'inline',
   atom: true,
   selectable: true,
@@ -40,26 +58,37 @@ export const NoteRef = Node.create({
   },
 
   addProseMirrorPlugins() {
+    const getAllowed = this.options.allowedRefs
     return [
       new Plugin({
         props: {
-          // 粘贴/拖放进来的内容一律不保留 noteRef（含编辑器内复制的 📖，直接丢弃）
-          transformPasted: slice => new Slice(stripNoteRefs(slice.content), slice.openStart, slice.openEnd),
+          // 粘贴/拖放（含编辑器内拖动）：只保留当前文档已有或总结已收录的引用，其余视为伪造丢弃
+          transformPasted: (slice, view) => {
+            const allowed = new Set([...docRefs(view.state.doc), ...getAllowed()])
+            return new Slice(stripNoteRefs(slice.content, allowed), slice.openStart, slice.openEnd)
+          },
         },
       }),
     ]
   },
 })
 
-// 只产出后端 isValidDoc 白名单内的节点与标记
-export function summaryExtensions() {
+// listItem 内容与后端内容模型一致：首个为段落，之后只能是段落、列表、代码块（不含标题）
+const SummaryListItem = ListItem.extend({
+  content: 'paragraph (paragraph | bulletList | orderedList | codeBlock)*',
+})
+
+// 只产出后端 isValidDoc 白名单与内容模型内的节点与标记
+export function summaryExtensions(opts: Partial<NoteRefOptions> = {}) {
   return [
     StarterKit.configure({
       heading: { levels: [2, 3] },
       blockquote: false,
       horizontalRule: false,
       strike: false,
+      listItem: false,
     }),
-    NoteRef,
+    SummaryListItem,
+    opts.allowedRefs ? NoteRef.configure({ allowedRefs: opts.allowedRefs }) : NoteRef,
   ]
 }

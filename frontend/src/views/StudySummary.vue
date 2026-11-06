@@ -62,7 +62,8 @@
           <SummaryEditor
             v-if="summary"
             :model-value="doc"
-            :readonly="running || leaving"
+            :readonly="running || leaving || restoring"
+            :allowed-refs="summary.included_refs"
             @update:model-value="onEdit"
             @ref-click="onRefClick"
             @ref-hover="onRefHover"
