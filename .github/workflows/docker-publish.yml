@@ -1,13 +1,13 @@
 name: Build and Push to Docker Hub
 
-# 学习版（study 分支）镜像发布，与 main 的看书版共用同一个 Docker Hub 仓库，靠 -study 后缀区分：
-#   推送 study 分支        → edge-study、sha-xxxxxxx-study（开发版，尝鲜用）
-#   推送 study-vX.Y.Z tag → X.Y.Z-study、X.Y-study、latest-study，
+# 学习版（study 分支）镜像发布到独立的 Docker Hub 仓库 easy-learner，与看书版 easy-reader 完全分开：
+#   推送 study 分支        → edge、sha-xxxxxxx（开发版，尝鲜用）
+#   推送 study-vX.Y.Z tag → X.Y.Z、X.Y、latest，
 #                           并用 CHANGELOG.md 中「## [X.Y.Z-study]」一节创建 GitHub Release
-# 不会覆盖看书版的 latest / edge / X.Y.Z 等 tag。
-# main 的工作流只监听 'v*.*.*' tag；GitHub 的 tag 过滤从名称开头匹配，
-# 所以 study-vX.Y.Z 不会触发 main 的发布。
-# DOCKERHUB.md 仓库说明只由 main 的工作流同步，本工作流不同步，避免学习版覆盖看书版的说明。
+#   推送 tag 或手动运行    → 用 DOCKERHUB-study.md 更新 easy-learner 的仓库说明
+# git 仍是同一个仓库：发版 tag 用 study-vX.Y.Z，避免与看书版的 vX.Y.Z 冲突；
+# main 的工作流只监听 'v*.*.*' tag（GitHub 的 tag 过滤从名称开头匹配），study-vX.Y.Z 不会触发看书版的发布。
+# 首次推送时 Docker Hub 会自动创建 easy-learner 仓库（DOCKERHUB_TOKEN 需要 Read & Write 权限）。
 on:
   push:
     branches:
@@ -58,10 +58,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/easy-reader
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/easy-learner
           flavor: |
             latest=false
-            suffix=-study
           tags: |
             type=raw,value=${{ steps.version.outputs.base }},enable=${{ startsWith(github.ref, 'refs/tags/study-v') }}
             type=raw,value=${{ steps.version.outputs.minor }},enable=${{ startsWith(github.ref, 'refs/tags/study-v') }}
@@ -78,7 +77,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # 6. 创建 GitHub Release
+      # 6. 发版或手动运行时把 DOCKERHUB-study.md 同步为 easy-learner 的仓库说明
+      #    需要 DOCKERHUB_TOKEN 具有 Read, Write, Delete 权限，否则这一步会失败（镜像已推送，不受影响）
+      - name: Update Docker Hub description
+        if: startsWith(github.ref, 'refs/tags/study-v') || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/easy-learner
+          readme-filepath: ./DOCKERHUB-study.md
+          short-description: 简单书房学习版：NAS 自托管小说阅读器 + 划线批注、学习导图、AI 展开知识点与笔记整理
+
+      # 7. 创建 GitHub Release
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/study-v')
         uses: softprops/action-gh-release@v2

@@ -8,7 +8,7 @@
 
 Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`1.0`），`latest` 指向最新发布的版本。
 
-学习版（`study` 分支）的版本记为 `X.Y.Z-study`，发版用 tag `study-vX.Y.Z`，镜像 tag 为 `X.Y.Z-study`、`X.Y-study` 与 `latest-study`（不会占用看书版的 `latest`）；学习版的 GitHub Release 不标记为 Latest。
+学习版（`study` 分支）的版本记为 `X.Y.Z-study`，发版用 tag `study-vX.Y.Z`，镜像发布到独立仓库 `dls7788/easy-learner`（tag 为 `X.Y.Z`、`X.Y` 与 `latest`）；学习版的 GitHub Release 不标记为 Latest。
 <!-- 本文件同时是站点的更新提醒来源：站点会读取远端 CHANGELOG，把比本站版本新的版本节展示给管理员，格式要保持一致。
 - 版本节标题：`## [x.y.z] - YYYY-MM-DD`；`## [Unreleased]` 是未发布内容，不参与提醒。
 - 版本节内用 `### 新增`、`### 修复` 分组，条目写成 `- **模块**：说明`。

@@ -416,7 +416,7 @@
 
 # 分支策略：学习版作为 main 的长期衍生分支（用户决定 A）
 
-规则：main 主打看书，study 主打看书 + 学习；只从 main 单向合并进 study，绝不反向；通用改动先进 main 再合并；学习代码尽量放独立文件；学习版镜像用同一仓库加 `-study` 后缀，不碰 `latest`。
+规则：main 主打看书，study 主打看书 + 学习；只从 main 单向合并进 study，绝不反向；通用改动先进 main 再合并；学习代码尽量放独立文件；学习版镜像发布到独立仓库 `dls7788/easy-learner`（用户 11-06 决定，原为同仓库加 `-study` 后缀）；git 同库 study 分支，发版 tag `study-vX.Y.Z`，CHANGELOG 版本节 `X.Y.Z-study`。
 
 - [x] 当前分支 feat/study-notes-phase1 本地已改名为长期分支 `study`（远端改名/删除旧分支待用户确认）
 - [x] 通用提交挪到 main：Docker 国内源 beb29e7、913c5a8、6a10f68、d441aae（cherry-pick 到 main，main 上验证构建）
