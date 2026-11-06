@@ -203,4 +203,4 @@ DeepSeek 和 Ollama 可以在设置里填自定义 Base URL；MiniMax 的地址�
 
 ## 许可证
 
-MIT
+本学习版整体以 [AGPL-3.0](LICENSE) 发布。其中源自看书版（main 分支）的代码最初依 MIT 许可证授权，其版权与许可声明见 [NOTICE](NOTICE)。
