@@ -1,10 +1,10 @@
 <template>
-  <div class="pwd-page">
-    <div class="pwd-card">
-      <div class="pwd-header">
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-header">
         <span v-if="!forced" class="pwd-icon"><IconKey :size="22" :stroke-width="1.75" /></span>
-        <h1>{{ forced ? '设置新密码' : '修改密码' }}</h1>
-        <p v-if="!forced" class="pwd-tip">修改后，此账号在其他设备上的登录会失效，需要重新登录。</p>
+        <h1 class="auth-title">{{ forced ? '设置新密码' : '修改密码' }}</h1>
+        <p v-if="!forced" class="auth-subtitle">修改后，此账号在其他设备上的登录会失效，需要重新登录。</p>
       </div>
 
       <!-- 默认密码账号：说明为什么必须改、改了会怎样，避免老用户以为出了故障 -->
@@ -21,32 +21,32 @@
         </ul>
       </div>
 
-      <form class="pwd-form" @submit.prevent="submit">
-        <label v-if="!currentPrefilled" class="field">
+      <form class="auth-form" @submit.prevent="submit">
+        <label v-if="!currentPrefilled" class="auth-field">
           <span>当前密码</span>
-          <el-input v-model="form.current" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" />
+          <el-input size="large" v-model="form.current" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" />
         </label>
-        <label class="field">
+        <label class="auth-field">
           <span>新密码</span>
-          <el-input v-model="form.next" type="password" show-password autocomplete="new-password" placeholder="请输入新密码" />
+          <el-input size="large" v-model="form.next" type="password" show-password autocomplete="new-password" placeholder="请输入新密码" />
         </label>
-        <label class="field">
+        <label class="auth-field">
           <span>确认新密码</span>
-          <el-input v-model="form.confirm" type="password" show-password autocomplete="new-password" placeholder="再次输入新密码" />
+          <el-input size="large" v-model="form.confirm" type="password" show-password autocomplete="new-password" placeholder="再次输入新密码" />
         </label>
 
         <ul class="rules">
           <li v-for="r in ruleList" :key="r.key" :class="rules[r.key] ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ rules[r.key] ? '✓' : '✗' }}</span>{{ r.label }}
+            <component :is="rules[r.key] ? IconCheck : IconX" :size="14" :stroke-width="2.5" class="rule-icon" />{{ r.label }}
           </li>
         </ul>
 
-        <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+        <div v-if="errorMsg" class="auth-error">{{ errorMsg }}</div>
 
         <div class="actions">
-          <el-button v-if="forced" @click="logout">退出登录</el-button>
-          <el-button v-else @click="goBack">返回</el-button>
-          <el-button type="primary" native-type="submit" :loading="loading" :disabled="!canSubmit">确认修改</el-button>
+          <el-button v-if="forced" size="large" @click="logout">退出登录</el-button>
+          <el-button v-else size="large" @click="goBack">返回</el-button>
+          <el-button type="primary" size="large" native-type="submit" :loading="loading" :disabled="!canSubmit">确认修改</el-button>
         </div>
       </form>
     </div>
@@ -57,7 +57,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { IconCheck, IconKey, IconShieldLock } from '@tabler/icons-vue'
+import { IconCheck, IconKey, IconShieldLock, IconX } from '@tabler/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { passwordRules, passwordValid, type PasswordRules } from '@/utils/password-policy'
 
@@ -112,28 +112,8 @@ async function logout() {
 </script>
 
 <style scoped>
-.pwd-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
-  background: var(--bg-0);
-}
-
-.pwd-card {
-  width: 100%;
-  max-width: 440px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
-  padding: 32px;
-}
-
-.pwd-header { margin-bottom: 20px; }
-
 .pwd-icon {
+  margin-bottom: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -142,21 +122,6 @@ async function logout() {
   border-radius: 12px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.pwd-header h1 {
-  margin: 12px 0 6px;
-  font-size: 20px;
-  color: var(--text-0);
-}
-
-.pwd-header h1:first-child { margin-top: 0; }
-
-.pwd-tip {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-2);
 }
 
 .notice {
@@ -221,20 +186,6 @@ async function logout() {
 .notice li { display: flex; align-items: flex-start; gap: 6px; line-height: 1.6; }
 .notice li svg { flex: none; margin-top: 3px; color: var(--accent); }
 
-.pwd-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-1);
-}
-
 .rules {
   list-style: none;
   margin: 0;
@@ -248,14 +199,9 @@ async function logout() {
 }
 
 .rules li { display: flex; align-items: center; gap: 8px; transition: color 0.2s ease; }
-.rules li.pass { color: #22c55e; }
+.rules li.pass { color: var(--success); }
 .rules li.fail { color: var(--text-2); }
-.rule-icon { width: 14px; font-size: 12px; font-weight: 700; flex-shrink: 0; }
-
-.error-msg {
-  font-size: 13px;
-  color: var(--danger);
-}
+.rule-icon { flex: none; }
 
 .actions {
   display: flex;
@@ -264,7 +210,4 @@ async function logout() {
   margin-top: 4px;
 }
 
-@media (max-width: 480px) {
-  .pwd-card { padding: 24px 18px; }
-}
 </style>

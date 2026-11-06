@@ -624,3 +624,92 @@ html.dark {
   .segmented,
   .el-radio-group:has(> .el-radio-button) { display: flex; }
 }
+
+/* ===== 认证页（登录 / 注册 / 修改密码共用）=====
+   选择全局类而非共享组件：三页只有头部与表单项不同，样式一致，类即可复用且不改模板结构 */
+.auth-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--bg-0);
+}
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 32px;
+  animation: auth-rise 0.3s ease;
+}
+.auth-card.shake { animation: auth-shake 0.5s ease; }
+@keyframes auth-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes auth-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+.auth-header { margin-bottom: 20px; }
+.auth-header--center { text-align: center; }
+.auth-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000));
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.auth-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-0);
+}
+.auth-header--center .auth-title { letter-spacing: 2px; }
+.auth-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.auth-field .required { color: var(--danger); }
+.auth-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.auth-submit.el-button { width: 100%; margin: 4px 0 0; letter-spacing: 2px; font-weight: 600; }
+.auth-footer { text-align: center; font-size: 13px; color: var(--text-2); }
+@media (max-width: 480px) {
+  .auth-card { padding: 24px 18px; }
+}
