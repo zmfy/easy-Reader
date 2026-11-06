@@ -4,6 +4,7 @@ import fs from 'fs';
 import { backfillFingerprintVersion } from './services/scan-versions';
 import { HIGHLIGHTS_DDL } from './services/highlights';
 import { MIND_DDL, migrateMindTables } from './services/mind-nodes';
+import { STUDY_SUMMARY_DDL, failStaleSummaryJobs } from './services/study-summary';
 import { cleanBookTitle } from './utils/book-title';
 import { DEFAULT_ADMIN_PASSWORD, markDefaultPasswordUsers } from './utils/password-policy';
 
@@ -277,6 +278,7 @@ function initSchema(): void {
   database.exec(HIGHLIGHTS_DDL);
   migrateMindTables(database);
   database.exec(MIND_DDL);
+  database.exec(STUDY_SUMMARY_DDL);
 
   // === Plan 3 schema: audit_log ===
   database.exec(`
@@ -298,6 +300,7 @@ function initSchema(): void {
   database.prepare(
     "UPDATE scan_tasks SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'"
   ).run('service restarted while task was running');
+  failStaleSummaryJobs(database);
 
   // Insert default admin if not exists
   const adminExists = database.prepare('SELECT id FROM users WHERE role = ?').get('admin');
