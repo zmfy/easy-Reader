@@ -675,11 +675,24 @@ async function onMore(cmd: string) {
 
 function goBack() {
   if (window.history.state?.back) router.back()
-  else router.push(`/book/${bookId}`)
+  else router.push(bookTitle.value === null ? '/notes' : `/book/${bookId}`)
 }
 
-onMounted(() => {
-  loadSummary()
+/** 入口页带 ?start=update|generate 跳来：条件满足就自动开始任务，随后去掉参数 */
+async function autoStart() {
+  const start = route.query.start
+  if (start === undefined) return
+  const { start: _drop, ...rest } = route.query
+  if (ready.value && bookTitle.value !== null && !running.value) {
+    if (start === 'generate' && !summary.value) await startJob('generate')
+    else if (start === 'update' && summary.value && newNoteCount.value > 0) await startJob('update')
+  }
+  if (!disposed) router.replace({ path: route.path, query: rest })
+}
+
+onMounted(async () => {
+  await loadSummary()
+  autoStart()
   window.addEventListener('beforeunload', onBeforeUnload)
 })
 

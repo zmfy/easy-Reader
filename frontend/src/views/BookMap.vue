@@ -8,6 +8,7 @@
         <el-button size="small" :disabled="!ready" @click="canvasRef?.collapseAll()">折叠全部</el-button>
         <el-button size="small" :disabled="!ready" @click="canvasRef?.expandAll()">展开全部</el-button>
         <el-button size="small" :disabled="!ready" @click="canvasRef?.fit()">适应窗口</el-button>
+        <el-button size="small" :icon="IconNotebook" @click="router.push(`/book/${bookId}/summary`)">学习总结</el-button>
         <el-dropdown trigger="click" :disabled="!ready" @command="onExport">
           <el-button size="small" type="primary" :loading="exporting">
             导出<el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -102,6 +103,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { IconNotebook } from '@tabler/icons-vue'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, ArrowDown } from '@element-plus/icons-vue'
 import { ElDrawer, ElMessage, ElMessageBox } from 'element-plus'

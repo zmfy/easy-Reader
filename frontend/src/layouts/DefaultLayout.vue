@@ -73,7 +73,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
@@ -135,6 +135,7 @@ onUnmounted(() => {
 const navItems = [
   { path: '/library', label: '书库', icon: IconBooks },
   { path: '/shelf', label: '书架', icon: IconBookmarks },
+  { path: '/notes', label: '学习总结', icon: IconNotebook },
   ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: IconSettings2 }] : []),
 ]
 
