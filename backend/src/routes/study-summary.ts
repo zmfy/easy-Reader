@@ -53,8 +53,8 @@ async function loadChapterTitles(book: Book): Promise<Map<number, string>> {
 
 type SaveFail = { ok: false; reason: 'conflict' | 'busy' | 'not_found'; summary?: StudySummary };
 function failSave(res: Response, userId: string, bookId: string, r: SaveFail): void {
-  if (r.reason === 'not_found') { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '总结或版本不存在'); return; }
-  const msg = r.reason === 'busy' ? '正在整理中，请稍后再改' : '总结已在别处更新';
+  if (r.reason === 'not_found') { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '笔记整理或版本不存在'); return; }
+  const msg = r.reason === 'busy' ? '正在整理中，请稍后再改' : '整理内容已在别处更新';
   // 409 的 data 为最新总结，客户端据此重新加载
   const latest = r.summary || getSummary(getDb(), userId, bookId);
   res.status(409).json({
@@ -113,7 +113,7 @@ router.get('/books/:bookId/summary', authMiddleware, async (req: Request, res: R
     });
   } catch (err) {
     console.error(`[study:summary] book=${req.params.bookId}`, err);
-    errorResponse(res, 500, 'INTERNAL_ERROR', '读取学习总结失败');
+    errorResponse(res, 500, 'INTERNAL_ERROR', '读取笔记整理失败');
   }
 });
 
@@ -136,7 +136,7 @@ router.delete('/books/:bookId/summary', authMiddleware, (req: Request, res: Resp
   const db = getDb();
   const userId = req.user!.userId;
   if (deleteSummary(db, userId, req.params.bookId)) { successResponse(res, { deleted: true }); return; }
-  if (!getSummary(db, userId, req.params.bookId)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '总结不存在'); return; }
+  if (!getSummary(db, userId, req.params.bookId)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '笔记整理不存在'); return; }
   errorResponse(res, 409, 'BUSINESS_CONFLICT', '正在整理中，请稍后再删');
 });
 
@@ -151,7 +151,7 @@ router.post('/books/:bookId/summary/jobs', authMiddleware, (req: Request, res: R
   const r = startSummaryJob(db, req.user!.userId, book.id, book.title, parsed.data.kind);
   if ('error' in r) {
     const msg = r.error === 'no_notes' ? '这本书还没有笔记'
-      : r.error === 'no_new_notes' ? '没有新笔记' : '已有总结，请使用更新';
+      : r.error === 'no_new_notes' ? '没有新笔记' : '已经整理过，请使用更新';
     errorResponse(res, 422, 'VALIDATION_ERROR', msg); return;
   }
   successResponse(res, r.job, '任务已启动', 202);

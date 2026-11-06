@@ -28,7 +28,7 @@
           <el-button size="small" :icon="IconDots" aria-label="更多" />
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="delete" :disabled="running">删除总结</el-dropdown-item>
+              <el-dropdown-item command="delete" :disabled="running">删除整理</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -39,7 +39,7 @@
       <main class="sum-main">
         <div v-if="loading" class="sum-loading"><el-skeleton :rows="8" animated /></div>
         <div v-else-if="loadFailed" class="sum-error">
-          <span>学习总结加载失败</span>
+          <span>笔记整理加载失败</span>
           <el-button size="small" @click="loadSummary">重试</el-button>
         </div>
         <div v-else class="sum-paper">
@@ -71,8 +71,8 @@
           <div v-else-if="!running" class="sum-empty">
             <template v-if="noteCount === 0">这本书还没有笔记，先在阅读器里划线或在学习导图里添加知识点。</template>
             <template v-else>
-              <p>还没有学习总结。AI 会根据这本书的 {{ noteCount }} 条笔记按主题整理。</p>
-              <el-button v-if="bookTitle !== null" type="primary" :icon="IconSparkles" @click="startJob('generate')">生成总结</el-button>
+              <p>还没有整理。AI 会把这本书的 {{ noteCount }} 条笔记按主题整理成文。</p>
+              <el-button v-if="bookTitle !== null" type="primary" :icon="IconSparkles" @click="startJob('generate')">开始整理</el-button>
             </template>
           </div>
         </div>
@@ -141,7 +141,7 @@
 
 <script setup lang="ts">
 /**
- * 单本书的学习总结：AI 后台生成/更新（轮询进度）、所见即所得编辑与自动保存（修订号冲突处理）、
+ * 单本书的笔记整理：AI 后台生成/更新（轮询进度）、所见即所得编辑与自动保存（修订号冲突处理）、
  * 修改记录（查看/恢复）、书本图标引用悬停看原文与跳转阅读器、导出 Markdown、删除总结。
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -182,8 +182,8 @@ const exporting = ref(false)
 const running = computed(() => job.value?.status === 'running')
 const jobPercent = computed(() => (job.value && job.value.total > 0 ? Math.round((job.value.done / job.value.total) * 100) : 0))
 const pageTitle = computed(() => {
-  if (!ready.value) return '… · 学习总结'
-  return bookTitle.value === null ? '学习总结' : `${bookTitle.value} · 学习总结`
+  if (!ready.value) return '… · 笔记整理'
+  return bookTitle.value === null ? '笔记整理' : `${bookTitle.value} · 笔记整理`
 })
 
 function errorText(err: unknown, fallback: string): string {
@@ -235,7 +235,7 @@ async function loadSummary() {
     if (showVersions.value) loadVersions()
   } catch (err) {
     if (!ready.value) loadFailed.value = true
-    ElMessage.error(errorText(err, '学习总结加载失败'))
+    ElMessage.error(errorText(err, '笔记整理加载失败'))
   } finally {
     loading.value = false
   }
@@ -344,7 +344,7 @@ function onConflict(err: unknown, keepLocal: boolean) {
   }
   if (latest) applySummary(latest)
   saveState.value = 'idle'
-  ElMessage.warning(errorText(err, '总结已在别处更新'))
+  ElMessage.warning(errorText(err, '整理内容已在别处更新'))
   if (showVersions.value) loadVersions()
   checkJob()
 }
@@ -639,10 +639,10 @@ async function onExport() {
     const resp = await studyApi.getSummaryMarkdown(bookId)
     const md = resp.data.data?.summary?.markdown
     if (md === undefined) {
-      ElMessage.warning('还没有学习总结')
+      ElMessage.warning('还没有整理')
       return
     }
-    download(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${safeFileName(bookTitle.value || '')}-学习总结.md`)
+    download(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${safeFileName(bookTitle.value || '')}-笔记整理.md`)
   } catch (err) {
     ElMessage.error(errorText(err, '导出失败'))
   } finally {
@@ -653,7 +653,7 @@ async function onExport() {
 async function onMore(cmd: string) {
   if (cmd !== 'delete') return
   try {
-    await ElMessageBox.confirm('删除后总结与全部修改记录都会删除，笔记本身不受影响。确定删除吗？', '删除总结', { confirmButtonText: '删除总结', cancelButtonText: '取消', type: 'warning' })
+    await ElMessageBox.confirm('删除后整理内容与全部修改记录都会删除，笔记本身不受影响。确定删除吗？', '删除整理', { confirmButtonText: '删除整理', cancelButtonText: '取消', type: 'warning' })
   } catch {
     return
   }

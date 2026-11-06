@@ -165,7 +165,7 @@ onUnmounted(() => {
 const navItems = [
   { path: '/library', label: '书库', icon: IconBooks },
   { path: '/shelf', label: '书架', icon: IconBookmarks },
-  { path: '/notes', label: '学习总结', icon: IconNotebook },
+  { path: '/notes', label: '笔记', icon: IconNotebook },
   ...(authStore.isAdmin ? [{ path: '/settings', label: '设置', icon: IconSettings2 }] : []),
 ]
 

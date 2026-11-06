@@ -30,7 +30,7 @@
               </el-button>
               <el-button @click="router.push(`/book/${book.id}/summary`)">
                 <IconNotebook :size="16" :stroke-width="1.75" />
-                学习总结
+                笔记整理
               </el-button>
               <!-- 已在书架时显示状态，再点一次移出书架 -->
               <el-button

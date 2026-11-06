@@ -281,7 +281,7 @@ function partsToMd(parts: Parts, refLabel: (ref: string) => string): string {
 }
 
 export function docToMarkdown(title: string, doc: DocNode, refLabel: (ref: string) => string): string {
-  const lines: string[] = [`# ${title} · 学习总结`, ''];
+  const lines: string[] = [`# ${title} · 笔记整理`, ''];
   for (const b of toFlatBlocks(doc)) {
     if (b.type === 'h') {
       lines.push(`${'#'.repeat(b.level)} ${escapeMd(b.text)}`, '');

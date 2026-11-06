@@ -486,9 +486,9 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 删除节点及其子树，返回 `{ deleted: 数量 }`；不存在返回 404。
 
-### 学习总结（学习版）
+### 笔记整理（学习版）
 
-把一本书的划线与导图节点（统称「笔记」）交给 AI 整理成按主题分组的学习总结，用户可以继续手动编辑，每次变化都会留下可恢复的版本。接口前缀为 `/api/v1/study`，全部需要登录，只能访问自己的总结。
+把一本书的划线与导图节点（统称「笔记」）交给 AI 整理成按主题分组的文档（界面上叫「笔记整理」，下文简称「总结」），用户可以继续手动编辑，每次变化都会留下可恢复的版本。接口前缀为 `/api/v1/study`，全部需要登录，只能访问自己的总结。
 
 整体流程：
 
@@ -596,7 +596,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 ```
 
 - 还没有总结时 `summary` 为 `null`（仍返回笔记数与 `job`）。
-- `format=blocks` 时 `summary.doc` 换成 `summary.blocks`；`format=markdown` 时换成 `summary.markdown`（字符串，标题为「书名 · 学习总结」，引用输出为「（出自：书名 章节标题）」，章节标题取不到时用「第 N 章」，已删除的笔记写「原笔记已删除」）。
+- `format=blocks` 时 `summary.doc` 换成 `summary.blocks`；`format=markdown` 时换成 `summary.markdown`（字符串，标题为「书名 · 笔记整理」，引用输出为「（出自：书名 章节标题）」，章节标题取不到时用「第 N 章」，已删除的笔记写「原笔记已删除」）。
 - `revision` 是修订号，保存时要原样带回（见下）。`included_refs` 是已被总结纳入的笔记引用，用来计算新笔记。
 
 #### PUT /api/v1/study/books/:bookId/summary
@@ -612,10 +612,10 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 **修订号与 409**：`revision` 必须等于服务器当前修订号，否则说明总结已在别处（另一个客户端、AI 任务）被改过，返回 409 `BUSINESS_CONFLICT`，`data` 为最新的 `summary`：
 
 ```json
-{ "success": false, "code": "BUSINESS_CONFLICT", "message": "总结已在别处更新", "data": { "id": "…", "revision": 4, "doc": {} } }
+{ "success": false, "code": "BUSINESS_CONFLICT", "message": "整理内容已在别处更新", "data": { "id": "…", "revision": 4, "doc": {} } }
 ```
 
-`message` 有两种：「总结已在别处更新」（修订号过期）与「正在整理中，请稍后再改」（该书有 AI 任务正在运行）。客户端的处理：用 `data` 里的最新内容让用户决定（放弃本地修改、或在最新内容上重新编辑后再保存），再用新的 `revision` 提交；整理中则等任务结束后重试。
+`message` 有两种：「整理内容已在别处更新」（修订号过期）与「正在整理中，请稍后再改」（该书有 AI 任务正在运行）。客户端的处理：用 `data` 里的最新内容让用户决定（放弃本地修改、或在最新内容上重新编辑后再保存），再用新的 `revision` 提交；整理中则等任务结束后重试。
 
 其他错误：`doc` 不合法（含非白名单节点、不符合内容模型）或序列化后超过 2,000,000 字符返回 422；该书还没有总结返回 404。
 
@@ -629,7 +629,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 `kind` 为 `generate`（首次生成，已有总结时不可用）或 `update`（把新笔记并入已有总结，只追加，不改动已有内容）。**还没有总结时请求 `update` 会按 `generate` 处理**。成功返回 **202**，`data` 为任务对象；该书已有任务在运行时不会重复启动，同样返回 202 与那个任务。
 
-错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；书不存在（含书已被删除）404；422 `VALIDATION_ERROR`，`message` 为「这本书还没有笔记」「没有新笔记」或「已有总结，请使用更新」。
+错误：未配置 AI 返回 400 `AI_NOT_CONFIGURED`；书不存在（含书已被删除）404；422 `VALIDATION_ERROR`，`message` 为「这本书还没有笔记」「没有新笔记」或「已经整理过，请使用更新」。
 
 **任务对象**：
 

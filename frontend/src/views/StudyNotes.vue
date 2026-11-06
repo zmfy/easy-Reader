@@ -1,10 +1,10 @@
 <template>
   <DefaultLayout>
     <div class="page page--narrow">
-      <PageHeader title="学习总结" :count="loaded ? `${items.length} 本` : undefined" />
+      <PageHeader title="笔记" :count="loaded ? `${items.length} 本` : undefined" />
 
       <div class="toolbar">
-        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、总结内容" clearable>
+        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、整理内容" clearable>
           <template #prefix>
             <IconSearch :size="16" :stroke-width="1.75" />
           </template>
@@ -26,10 +26,10 @@
 
       <div v-else-if="sorted.length === 0" class="empty-state">
         <IconNotebook class="empty-icon" :size="48" :stroke-width="1.5" />
-        <div v-if="keyword.trim()" class="empty-state-title">没有匹配的学习总结</div>
+        <div v-if="keyword.trim()" class="empty-state-title">没有匹配的笔记</div>
         <template v-else>
-          <div class="empty-state-title">还没有学习总结</div>
-          <div class="empty-state-desc">在阅读器里划线、或在学习导图里添加知识点后，这里就能生成学习总结。</div>
+          <div class="empty-state-title">还没有笔记</div>
+          <div class="empty-state-desc">在阅读器里划线、或在学习导图里添加知识点后，这里就能让 AI 把笔记按主题整理成文。</div>
         </template>
       </div>
 
@@ -46,13 +46,13 @@
           <div class="card-actions">
             <template v-if="isRunning(item)">
               <el-button size="small" disabled>整理中…</el-button>
-              <el-button size="small" type="primary" @click="open(item)">打开总结</el-button>
+              <el-button size="small" type="primary" @click="open(item)">查看整理</el-button>
             </template>
             <template v-else-if="item.hasSummary">
-              <el-button size="small" type="primary" @click="open(item)">打开总结</el-button>
+              <el-button size="small" type="primary" @click="open(item)">查看整理</el-button>
               <el-button v-if="item.newNoteCount > 0 && item.bookTitle !== null" size="small" @click="open(item, 'update')">更新</el-button>
             </template>
-            <el-button v-else-if="item.bookTitle !== null" size="small" type="primary" @click="open(item, 'generate')">生成总结</el-button>
+            <el-button v-else-if="item.bookTitle !== null" size="small" type="primary" @click="open(item, 'generate')">整理笔记</el-button>
           </div>
         </div>
       </div>
@@ -62,7 +62,7 @@
 
 <script setup lang="ts">
 /**
- * 学习总结入口页：列出所有有笔记或有总结的书，可搜索；更新/生成跳到总结页并自动开始任务。
+ * 笔记入口页：列出所有有笔记或已整理的书，可搜索；更新/整理跳到笔记整理页并自动开始任务。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -105,7 +105,7 @@ function isRunning(item: SummaryOverview): boolean {
 }
 
 function metaText(item: SummaryOverview): string {
-  if (!item.hasSummary) return `还没有总结 · ${item.noteCount} 条笔记`
+  if (!item.hasSummary) return `还没有整理 · ${item.noteCount} 条笔记`
   const parts = [`${item.themes.length} 个主题`, `${item.noteCount} 条笔记`]
   const d = item.updatedAt ? parseServerTime(item.updatedAt) : null
   if (d && item.lastSource) {
@@ -141,7 +141,7 @@ async function load() {
   } catch (err: any) {
     if (my !== seq) return
     if (!loaded.value) loadFailed.value = true
-    ElMessage.error(err?.response?.data?.message || '学习总结加载失败')
+    ElMessage.error(err?.response?.data?.message || '笔记加载失败')
   } finally {
     if (my === seq) loading.value = false
   }
