@@ -16,6 +16,7 @@ import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
+import { startUpdateChecker } from './services/update-check';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
 
 const app = express();
@@ -116,6 +117,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 app.listen(PORT, () => {
   console.log(`Novel Reader Backend running on port ${PORT}`);
+  if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) startUpdateChecker();
 });
 
 export default app;
