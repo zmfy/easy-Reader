@@ -86,7 +86,9 @@
             </div>
 
             <div class="detail-actions">
-              <el-button v-if="sourceText(selected)" @click="goSource(selected)">{{ sourceText(selected) }}</el-button>
+              <el-button v-if="sourceText(selected)" class="source-btn" :title="sourceText(selected)" @click="goSource(selected)">
+                <IconBook2 :size="16" :stroke-width="1.75" /><span class="source-label">{{ sourceText(selected) }}</span>
+              </el-button>
               <el-button :disabled="busy" @click="addChild(selected)">添加子节点</el-button>
               <el-button type="danger" plain :disabled="busy" @click="remove(selected)">删除</el-button>
             </div>
@@ -103,7 +105,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconChevronDown, IconChevronLeft, IconNotebook } from '@tabler/icons-vue'
+import { IconBook2, IconChevronDown, IconChevronLeft, IconNotebook } from '@tabler/icons-vue'
 import { useMediaQuery } from '@vueuse/core'
 import { ElDrawer, ElMessage, ElMessageBox } from 'element-plus'
 import MindMapCanvas from '@/components/MindMapCanvas.vue'
@@ -289,9 +291,9 @@ function readChapter(n: MapNode) {
 function sourceText(n: MapNode): string {
   const m = n.node
   if (!m) return ''
-  if (m.kind === 'highlight') return n.highlight ? '📖 去原文' : ''
+  if (m.kind === 'highlight') return n.highlight ? '去原文' : ''
   if (m.source_chapter === null) return ''
-  return m.source_later ? `📖 后文·${chapterTitle(m.source_chapter)}` : '📖 去原文'
+  return m.source_later ? `后文·${chapterTitle(m.source_chapter)}` : '去原文'
 }
 
 async function goSource(n: MapNode) {
@@ -424,6 +426,10 @@ async function onExport(cmd: 'png' | 'md') {
 .note-save { margin-top: 8px; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .detail-actions .el-button + .el-button { margin-left: 0; }
+/* 出处按钮：章节名过长时省略，不超出面板 */
+.source-btn { max-width: 100%; }
+.source-btn :deep(> span) { min-width: 0; gap: 4px; }
+.source-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 节点类型标签：淡底 + 同色字，各主题下都清晰（与 MindExpandPanel 一致） */
 .mind-kind { --kind: var(--text-2); flex-shrink: 0; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 4px; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
 .mind-kind.kind-highlight { --kind: var(--warning); }

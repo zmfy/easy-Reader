@@ -34,7 +34,9 @@
           <div v-if="selectedKey === node.key" class="mind-actions" @click.stop>
             <el-button v-if="!node.kept && node.key !== 'root'" size="small" type="primary" :disabled="locked" @click="keep(node.key)">保留</el-button>
             <el-button v-if="!expansions[node.key] && depth < MAX_EXPAND_DEPTH" size="small" :disabled="busy || expanding[node.key]" @click="expand(node.key)">继续展开</el-button>
-            <el-button v-if="node.source" size="small" :class="{ later: node.source.later }" @click="jump(node)">{{ sourceText(node) }}</el-button>
+            <el-button v-if="node.source" size="small" class="source-btn" :class="{ later: node.source.later }" :title="sourceText(node)" @click="jump(node)">
+              <IconBook2 :size="14" :stroke-width="1.75" /><span class="source-label">{{ sourceText(node) }}</span>
+            </el-button>
             <el-button v-if="node.kept && node.key !== 'root'" size="small" type="danger" plain :disabled="locked" @click="remove(node)">删除</el-button>
           </div>
         </div>
@@ -46,7 +48,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
-import { IconLoader2 } from '@tabler/icons-vue'
+import { IconBook2, IconLoader2 } from '@tabler/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { readerApi } from '../api/reader'
 import type { Highlight, MindNode, ExpandedCandidate } from '../types'
@@ -118,7 +120,7 @@ function sourceText(node: TreeNode): string {
   const s = node.source!
   // 章节名一律按目录（含手动修正的章节名）显示；已保留节点的 later 由服务端按当前阅读边界算出
   const title = chapterTitle(s.chapterIndex)
-  return s.later ? `📖 后文·${title}` : `📖 ${title}`
+  return s.later ? `后文·${title}` : title
 }
 
 async function fetchKept(): Promise<MindNode[]> {
@@ -288,6 +290,10 @@ async function jump(node: TreeNode) {
 .mind-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
 .mind-actions .el-button + .el-button { margin-left: 0; }
 .mind-actions .el-button.later { color: var(--text-2); }
+/* 出处按钮：章节名过长时省略，不超出面板 */
+.mind-actions .source-btn { max-width: 100%; }
+.mind-actions .source-btn :deep(> span) { min-width: 0; gap: 4px; }
+.source-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mind-link { border: none; background: none; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
 .mind-link:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
