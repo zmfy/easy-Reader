@@ -40,22 +40,24 @@
             :show-arrow="false"
             :offset="8"
             popper-class="user-menu-popper"
+            @show="focusFirstItem"
+            @hide="moreBtnRef?.focus()"
           >
             <template #reference>
-              <button class="more-btn" type="button" aria-label="更多"><IconDots :size="18" :stroke-width="1.75" /></button>
+              <button ref="moreBtnRef" class="more-btn" type="button" aria-label="更多"><IconDots :size="18" :stroke-width="1.75" /></button>
             </template>
-            <div class="user-menu" role="menu">
-              <div class="menu-row" role="menuitem" tabindex="0" @click="toggleKeepAlive" @keydown.enter.prevent="toggleKeepAlive">
+            <div ref="menuRef" class="user-menu">
+              <div class="menu-row" role="switch" :aria-checked="keepAlive" tabindex="0" @click="toggleKeepAlive" @keydown.enter.prevent="toggleKeepAlive" @keydown.space.prevent="toggleKeepAlive">
                 <IconPlugConnected class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>保持连接</span>
-                <el-switch :model-value="keepAlive" size="small" tabindex="-1" class="menu-switch" />
+                <el-switch :model-value="keepAlive" size="small" tabindex="-1" aria-hidden="true" class="menu-switch" />
               </div>
-              <router-link to="/change-password" class="menu-row" role="menuitem" @click="closeMenu(); sidebarOpen = false">
+              <router-link to="/change-password" class="menu-row" @click="closeMenu(); sidebarOpen = false">
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
               </router-link>
               <div class="menu-sep" />
-              <div class="menu-row menu-row--danger" role="menuitem" tabindex="0" @click="closeMenu(); handleLogout()" @keydown.enter.prevent="closeMenu(); handleLogout()">
+              <div class="menu-row menu-row--danger" role="button" tabindex="0" @click="closeMenu(); handleLogout()" @keydown.enter.prevent="closeMenu(); handleLogout()" @keydown.space.prevent="closeMenu(); handleLogout()">
                 <IconLogout class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>退出登录</span>
               </div>
@@ -84,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -106,7 +108,10 @@ const showBell = computed(() => authStore.isAdmin && noticeStore.enabled)
 const siteName = ref('简单书房')
 const sidebarOpen = ref(false)
 const moreRef = ref<{ hide: () => void } | null>(null)
+const moreBtnRef = ref<HTMLButtonElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
 function closeMenu() { moreRef.value?.hide() }
+function focusFirstItem() { nextTick(() => menuRef.value?.querySelector<HTMLElement>('.menu-row')?.focus()) }
 const keepAlive = ref(localStorage.getItem('keepAlive') === 'true')
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null
 
@@ -423,7 +428,7 @@ async function handleLogout() {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-soft);
   max-width: calc(100vw - 24px);
 }
 .user-menu-popper .menu-row {
@@ -446,7 +451,7 @@ async function handleLogout() {
 .user-menu-popper .menu-switch { pointer-events: none; flex: none; }
 .user-menu-popper .menu-sep { height: 1px; margin: 4px 6px; background: var(--card-border); }
 .user-menu-popper .menu-row--danger,
-.user-menu-popper .menu-row--danger .menu-icon { color: var(--el-color-danger); }
+.user-menu-popper .menu-row--danger .menu-icon { color: var(--danger, #ef4444); }
 .user-menu-popper .menu-row--danger:hover,
-.user-menu-popper .menu-row--danger:focus-visible { background: color-mix(in srgb, var(--el-color-danger) 10%, transparent); }
+.user-menu-popper .menu-row--danger:focus-visible { background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent); }
 </style>
