@@ -7,9 +7,9 @@ easy-Reader 由各个用户自行部署（NAS / Docker）。作者发了新版�
 
 ## 目标
 
-1. 站点后台定期检查仓库中的 `CHANGELOG.md`，发现比本站更新的已发布版本时，在页面顶部提示**管理员**：「有新版本 x.y.z（当前 a.b.c）」，可展开查看更新内容。
+1. 站点后台定期检查仓库中的 `CHANGELOG.md`，发现比本站更新的已发布版本时，以侧栏铃铛提醒**管理员**：「有新版本 x.y.z（当前 a.b.c）」，可展开查看更新内容。
 2. 更新内容按 `### 新增`、`### 修复` 等小标题分类显示；条目以「【需操作】」开头的单独置顶、醒目显示。
-3. 本机检测到的配置问题（目前是 AI 插件的 `config_warning`，如 MiniMax 旧模型）也用同一个提示条告诉管理员（统一的「系统警告」入口）。
+3. 本机检测到的配置问题（目前是 AI 插件的 `config_warning`，如 MiniMax 旧模型）也通过同一个铃铛告诉管理员（统一的「系统警告」入口）。
 4. 设置页「更新说明」不再写死在前端代码里，改为读取本站自带的同一份 `CHANGELOG.md`（显示最近 5 个版本），与远端提醒用同一份内容、同一套解析。
 5. 看书版与学习版各自只检查自己的更新：看书版读 main 分支的 CHANGELOG，学习版读 study 分支的 CHANGELOG（学习版版本节为 `## [X.Y.Z-study]`）。
 
@@ -88,9 +88,9 @@ easy-Reader 由各个用户自行部署（NAS / Docker）。作者发了新版�
 
 ## 接口（管理员，`authMiddleware` + `adminMiddleware`，挂 `/api` 与 `/api/v1`）
 
-- `GET /api/settings/update-status` → `{ currentVersion, branch, enabled, checkedAt, error, newer: Release[] }`（`Release = { version, date, sections: [{ title, kind: 'added'|'fixed'|'other', items: [{ text, actionRequired }] }] }`）。
+- `GET /api/settings/update-status` → `{ currentVersion, branch, enabled, noticeEnabled, envDisabled, checkedAt, error, newer: Release[] }`（`noticeEnabled`：「系统提醒」开关是否生效（环境变量关闭时为 false）；`envDisabled`：是否被 `UPDATE_CHECK=off` 关闭；`currentVersion` 为 null 时 `newer` 为远端全部版本）（`Release = { version, date, sections: [{ title, kind: 'added'|'fixed'|'other', items: [{ text, actionRequired }] }] }`）。
 - `POST /api/settings/update-check` → 立即检查，返回同上。
-- `GET /api/settings/changelog` → 本站自带 CHANGELOG 解析结果 `{ currentVersion, releases: Release[] }`（最近 5 个）。
+- `GET /api/settings/changelog` → 本站自带 CHANGELOG 解析结果 `{ currentVersion, missing, releases: Release[] }`（最近 5 个；`missing` 为 true 表示找不到 CHANGELOG 文件）。
 - 补 `docs/api.md`。普通用户访问返回 403。
 
 ## 约束

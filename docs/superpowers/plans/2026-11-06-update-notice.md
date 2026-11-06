@@ -19,7 +19,7 @@
 - 版本：本站版本 = 本站 CHANGELOG 最新已发布版本节；main 只认 `## [X.Y.Z]`，study 只认 `## [X.Y.Z-study]`；`[Unreleased…]` 忽略；只比较 X.Y.Z 数字。
 - 条目以「【需操作】」开头为需操作；小标题 `### 新增` → kind `added`，`### 修复` → `fixed`，其他 → `other`（保留原标题，排在 added、fixed 之后）。
 - 本站 CHANGELOG 读取路径：`CHANGELOG_PATH` → `<cwd>/CHANGELOG.md` → `<cwd>/../CHANGELOG.md`；读不到返回 `releases: []` 与 `missing: true`。
-- 关闭规则：普通新版本关闭记 localStorage（按最新版本号）；含【需操作】的关闭记 sessionStorage；本机配置警告不可关闭；阅读器页面不显示提示条。
+- 已读规则：以 Task 5b 为准——打开铃铛面板即视为看过；普通新版本看过后不再计数，直到出现更新的版本（localStorage 按最新版本号记）；未升级的新版本含【需操作】或存在本机配置警告时一直计数。
 - API `{ success, code, data }`、`authMiddleware + adminMiddleware`，挂 `/api` 与 `/api/v1`，补 `docs/api.md`；前端 API 只经 `frontend/src/api/`；UI 中文；颜色用主题变量；Tabler 图标；手机 768px 无横向滚动。
 - 测试：后端 `npx jest`，前端 `npx vitest run`；纯函数测试先行。
 
@@ -137,5 +137,5 @@
 ### Task 6: 整体验收
 
 - [ ] **Step 1:** 后端 `npx jest && npx tsc --noEmit`；前端 `npx vitest run && npx vue-tsc --noEmit && npx vite build`。
-- [ ] **Step 2:** 开发服务器 + 数据副本 + 本地假更新源（`UPDATE_CHANGELOG_URL`）在 Chrome 实测：管理员看到新版本条与配置警告条（副本里保留 `MiniMax-M2`）、查看更新内容分类与【需操作】置顶、关闭规则（刷新后普通版本不再出现、【需操作】版本新会话再出现）、普通用户看不到、设置页更新说明与「立即检查」、`UPDATE_CHECK=off`、手机宽度。
+- [ ] **Step 2:** 开发服务器 + 数据副本 + 本地假更新源（`UPDATE_CHANGELOG_URL`）在 Chrome 实测：管理员看到铃铛与红点数量（新版本、配置警告各计 1，副本里保留 `MiniMax-M2`）、提醒面板（更新内容分类与【需操作】置顶）、已读（打开面板后普通版本不再计数、【需操作】版本一直计数）、「系统提醒」开关启停（关闭后铃铛隐藏、假源不再收到请求，开启后恢复）、普通用户无铃铛、手机宽度下顶部栏铃铛与底部抽屉、`UPDATE_CHECK=off`（开关禁用、无铃铛、不访问外网）、设置页更新说明与「立即检查」。
 - [ ] **Step 3:** `docker compose --env-file .env.example build`（国内源）确认镜像内有 `/app/CHANGELOG.md`；`CHANGELOG.md` 的 `[Unreleased]` 记一条「系统更新提醒」；推送与发版前向用户确认。

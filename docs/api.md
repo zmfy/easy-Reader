@@ -177,7 +177,7 @@
 }
 ```
 
-`currentVersion` 取自本站 CHANGELOG，读不到时为 `null`（此时 `newer` 为空）；`enabled` 为 `false` 表示用环境变量 `UPDATE_CHECK=off` 关闭了更新检查（此时 `envDisabled` 为 `true`）；`noticeEnabled` 为「系统提醒」开关的实际状态（环境变量关闭时恒为 `false`），关闭时前端隐藏铃铛、后台停止定时检查；`error` 是最近一次检查失败的原因（失败时 `newer` 仍保留上次成功的结果）。
+`currentVersion` 取自本站 CHANGELOG，读不到或其中没有本版本线的版本节时为 `null`（此时 `newer` 为远端全部版本，按版本降序）；`enabled` 为 `false` 表示用环境变量 `UPDATE_CHECK=off` 关闭了更新检查（此时 `envDisabled` 为 `true`）；`noticeEnabled` 为「系统提醒」开关的实际状态（环境变量关闭时恒为 `false`），关闭时前端隐藏铃铛、后台停止定时检查；`error` 是最近一次检查失败的原因（失败时 `newer` 仍保留上次成功的结果）。
 
 #### POST /api/v1/settings/update-check
 
