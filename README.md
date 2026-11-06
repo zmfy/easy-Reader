@@ -73,7 +73,7 @@ docker compose up -d --build
 
 首次构建约 3-5 分钟（需编译 C++ 原生模块），之后重建大部分层会命中缓存。
 
-构建默认使用官方源。国内网络拉取慢时，在 `.env` 里设置 `NODE_IMAGE`、`NPM_REGISTRY`、`DEBIAN_MIRROR` 改用国内源（`.env.example` 里有现成的 DaoCloud、npmmirror、阿里云示例，取消注释即可）。
+构建默认使用官方源。国内网络拉取慢时，在 `.env` 里设置 `NODE_IMAGE`、`NPM_REGISTRY`、`DEBIAN_MIRROR` 改用国内源（`.env.sample` 里是现成的 DaoCloud、npmmirror、阿里云配置，复制到 `.env` 即可）。
 
 访问 **http://localhost:8080**
 
