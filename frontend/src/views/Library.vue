@@ -22,15 +22,17 @@
           <el-input
             v-model="searchQuery"
             placeholder="搜索书名、作者"
-            :prefix-icon="Search"
             clearable
             class="search-input"
             @input="debouncedSearch"
           >
+            <template #prefix>
+              <IconSearch :size="16" :stroke-width="1.75" />
+            </template>
             <template #suffix>
               <el-popover placement="bottom-end" :width="320" trigger="click">
                 <template #reference>
-                  <el-icon class="search-help" title="搜索帮助"><QuestionFilled /></el-icon>
+                  <IconHelpCircle class="search-help" title="搜索帮助" :size="16" :stroke-width="1.75" />
                 </template>
                 <div class="search-help-pop">
                   <div class="help-title">搜索框用法</div>
@@ -62,7 +64,9 @@
           <!-- 窄屏：收进「筛选」弹出层；选了分类时按钮高亮 -->
           <el-popover placement="bottom-end" :width="240" trigger="click">
             <template #reference>
-              <el-button class="filter-btn" :type="selectedCategory ? 'primary' : 'default'" :icon="Filter" title="筛选与排序" />
+              <el-button class="filter-btn" :type="selectedCategory ? 'primary' : 'default'" title="筛选与排序">
+                <IconFilter :size="16" :stroke-width="1.75" />
+              </el-button>
             </template>
             <div class="filters-pop">
               <div class="filters-pop-label">分类</div>
@@ -84,7 +88,7 @@
           title="扫描导入"
           @click="handleScan"
         >
-          <el-icon v-if="!scanStore.isRunning"><Refresh /></el-icon>
+          <IconRefresh v-if="!scanStore.isRunning" class="scan-icon" :size="16" :stroke-width="1.75" />
           <span class="btn-text">扫描导入</span>
         </el-button>
       </div>
@@ -100,9 +104,9 @@
       </div>
 
       <div v-else-if="books.length === 0" class="empty-state">
-        <el-icon class="empty-icon"><Collection /></el-icon>
-        <div class="empty-title">书库空空如也</div>
-        <div class="empty-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
+        <IconBooks class="empty-icon" :size="48" :stroke-width="1.5" />
+        <div class="empty-state-title">书库空空如也</div>
+        <div class="empty-state-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
       </div>
 
       <div v-else class="books-grid">
@@ -136,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { Search, Refresh, QuestionFilled, Collection, Filter } from '@element-plus/icons-vue'
+import { IconSearch, IconHelpCircle, IconFilter, IconRefresh, IconBooks } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -349,13 +353,6 @@ onMounted(refreshPendingBatch)
   gap: 12px;
 }
 
-.page-title {
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--text-0);
-  letter-spacing: 1px;
-}
-
 .book-count {
   font-size: 14px;
   color: var(--text-2);
@@ -367,6 +364,12 @@ onMounted(refreshPendingBatch)
   gap: 12px;
   flex-wrap: wrap;
   margin-left: auto;   /* 宽屏：搜索与筛选靠右，紧挨扫描按钮 */
+}
+
+.scan-btn :deep(> span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .search-help {
@@ -434,6 +437,10 @@ onMounted(refreshPendingBatch)
 
 /* 手机：两列卡片，否则 172px 最小宽度只能排一列，每本书几乎占满一屏；
    搜索栏占满整行（flex 子项默认按内容宽度撑开，会超出右侧边距） */
+@media (max-width: 768px) {
+  .library-page { padding: 16px; }
+}
+
 @media (max-width: 480px) {
   /* 第一行：标题 + 扫描图标；第二行：搜索框 + 筛选按钮 */
   .page-header {
@@ -447,7 +454,7 @@ onMounted(refreshPendingBatch)
     padding: 8px 10px;
   }
   .scan-btn .btn-text { display: none; }
-  .scan-btn .el-icon { font-size: 18px; }
+  .scan-btn .scan-icon { width: 18px; height: 18px; }
   .header-actions {
     order: 3;
     margin-left: 0;
@@ -479,18 +486,7 @@ onMounted(refreshPendingBatch)
   to { opacity: 1; transform: translateY(0); }
 }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  gap: 12px;
-}
-
-.empty-icon { font-size: 64px; }
-.empty-title { font-size: 20px; color: var(--text-1); font-weight: 500; }
-.empty-desc { font-size: 14px; color: var(--text-2); }
+.empty-icon { color: var(--text-2); opacity: 0.6; }
 
 .pagination {
   display: flex;
