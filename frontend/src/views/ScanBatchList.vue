@@ -1,10 +1,9 @@
 <template>
   <DefaultLayout>
-    <div class="batch-list-page">
-      <div class="page-header">
-        <h1>扫描批次</h1>
-      </div>
+    <div class="page page--narrow">
+      <PageHeader title="扫描批次" />
 
+      <div class="section-card section-card--flush">
       <el-table v-loading="loading" :data="batches" empty-text="暂无批次">
         <el-table-column prop="id" label="批次 ID" width="280">
           <template #default="{ row }">
@@ -40,6 +39,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
     </div>
   </DefaultLayout>
 </template>
@@ -50,6 +50,7 @@ import { formatServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { scanBatchesApi } from '@/api/scan-batches'
 import type { ScanBatch } from '@/types'
 
@@ -92,7 +93,5 @@ onMounted(fetchBatches)
 </script>
 
 <style scoped>
-.batch-list-page { padding: 32px; }
-.page-header { margin-bottom: 24px; }
 .summary { font-size: 13px; color: var(--text-2); }
 </style>

@@ -1,12 +1,10 @@
 <template>
   <DefaultLayout>
-    <div class="audit-page">
-      <div class="page-header">
-        <el-button link @click="$router.push('/library')">← 返回书库</el-button>
-        <h1>审计日志</h1>
-        <div class="subtitle">admin 对书库的删除 / 应用 / 修正等操作记录</div>
-      </div>
+    <div class="page page--narrow">
+      <PageHeader title="审计日志" back="/library" />
+      <p class="page-subtitle">admin 对书库的删除 / 应用 / 修正等操作记录</p>
 
+      <div class="section-card section-card--flush">
       <el-table v-loading="loading" :data="logs" empty-text="暂无日志">
         <el-table-column prop="created_at" label="时间" width="180">
           <template #default="{ row }">{{ formatServerTime(row.created_at) }}</template>
@@ -37,6 +35,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <div v-if="total > pageSize" class="pagination">
         <el-pagination
@@ -56,6 +55,7 @@
 import { ref, onMounted } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { auditLogApi } from '@/api/audit-log'
 import type { AuditLog } from '@/types'
 
@@ -106,13 +106,10 @@ onMounted(fetchLogs)
 </script>
 
 <style scoped>
-.audit-page { padding: 24px 32px; }
-.page-header { display: block; margin-bottom: 16px; }
-.page-header h1 { margin: 8px 0 4px 0; }
-.subtitle { font-size: 13px; color: var(--text-2); }
+.page-subtitle { margin: -12px 0 16px; font-size: 13px; color: var(--text-2); }
 .pagination { margin-top: 24px; display: flex; justify-content: center; }
-.id-short { font-family: monospace; font-size: 12px; }
-.path { font-family: monospace; font-size: 12px; word-break: break-all; }
+.id-short { font-family: var(--font-mono); font-size: 12px; }
+.path { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
 .empty { color: var(--text-2); }
 pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
 </style>

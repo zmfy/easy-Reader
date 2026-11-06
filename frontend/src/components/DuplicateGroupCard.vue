@@ -16,7 +16,7 @@
           :plain="decision !== 'accepted'"
           @click="$emit('accept')"
         >
-          ✓ 删除重复书籍
+          <IconCheck :size="14" :stroke-width="1.75" />删除重复书籍
         </el-button>
         <el-button
           size="small"
@@ -24,7 +24,7 @@
           :plain="decision !== 'rejected'"
           @click="$emit('reject')"
         >
-          ✗ 非重复，加入书库
+          <IconX :size="14" :stroke-width="1.75" />非重复，加入书库
         </el-button>
       </div>
     </div>
@@ -70,6 +70,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { IconCheck, IconX } from '@tabler/icons-vue'
 import BatchItemPreview from './BatchItemPreview.vue'
 import type { DuplicateGroupPayload } from '@/types'
 
@@ -122,8 +123,8 @@ function emitModified(): void {
 
 <style scoped>
 .dup-card { margin-bottom: 12px; }
-.dup-card.rejected { border-left: 3px solid var(--el-color-info); opacity: 0.85; }
-.dup-card.accepted { border-left: 3px solid var(--el-color-danger); }
+.dup-card.rejected { border-left: 3px solid var(--text-2); opacity: 0.85; }
+.dup-card.accepted { border-left: 3px solid var(--danger); }
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -153,7 +154,7 @@ function emitModified(): void {
 }
 .member-row.canonical { background: var(--el-color-success-light-9); }
 .member-row.rejected .path { text-decoration: line-through; color: var(--text-2); }
-.canonical-label { color: var(--el-color-success); font-size: 12px; margin-left: 6px; }
-.path { font-family: monospace; font-size: 13px; }
+.canonical-label { color: var(--success); font-size: 12px; margin-left: 6px; }
+.path { font-family: var(--font-mono); font-size: 13px; }
 .member-actions { display: flex; gap: 8px; }
 </style>

@@ -302,6 +302,11 @@ html.dark {
 .el-pagination { --el-pagination-button-height: var(--el-component-size); }
 
 /* 主按钮 hover / active：在主色里混入少量正文色（浅色主题变深、深色主题变亮） */
+.el-button--danger.is-plain.is-disabled {
+  --el-button-disabled-text-color: color-mix(in srgb, var(--danger) 55%, var(--card-bg));
+  --el-button-disabled-bg-color: color-mix(in srgb, var(--danger) 6%, var(--card-bg));
+  --el-button-disabled-border-color: color-mix(in srgb, var(--danger) 35%, var(--card-bg));
+}
 .el-button--primary {
   --el-button-hover-bg-color: color-mix(in srgb, var(--accent) 88%, var(--text-0));
   --el-button-hover-border-color: color-mix(in srgb, var(--accent) 88%, var(--text-0));
@@ -457,6 +462,11 @@ html.dark {
 .section-card + .section-card { margin-top: 16px; }
 /* 包表格等需要贴边的内容 */
 .section-card--flush { padding: 0; overflow: hidden; }
+/* 表格首末列与卡片内边距对齐；卡片自带边框，去掉表格底线与末行下边线避免双线 */
+.section-card--flush .el-table__cell:first-child .cell { padding-left: 24px; }
+.section-card--flush .el-table__cell:last-child .cell { padding-right: 24px; }
+.section-card--flush .el-table__inner-wrapper::before { display: none; }
+.section-card--flush .el-table__body tr:last-child > td.el-table__cell { border-bottom: none; }
 .section-title {
   margin: 0 0 4px;
   font-size: 15px;
@@ -607,6 +617,8 @@ html.dark {
   .page-title { font-size: 20px; }
   .section-card { padding: 16px; }
   .section-card--flush { padding: 0; }
+  .section-card--flush .el-table__cell:first-child .cell { padding-left: 16px; }
+  .section-card--flush .el-table__cell:last-child .cell { padding-right: 16px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .segmented,
   .el-radio-group:has(> .el-radio-button) { display: flex; }
