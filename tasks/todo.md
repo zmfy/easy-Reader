@@ -400,7 +400,7 @@
 - [x] 测试：jest 54 suites / 484、vitest 158、前后端 tsc、vite build（本地 node_modules 缺 d3 三个包，按 lock 文件 npm install 补齐）
 - [x] Chrome 实测（开发服务器 + 数据副本，吴思三部曲）：书籍详情 / 阅读器入口；骨架三层且只显示有笔记的章节，关闭筛选后全部章节灰显；展开全部 / 适应窗口；节点详情；划线根节点不可改名、批注只读；改名、保存批注、添加子节点、删除（提示「下面的 2 个节点」，选中清空）；后文确认 → 阅读器查看模式跳到第 51 章、参数去掉、进度不变；划线 → 跳到划线并高亮；导出 Markdown（按筛选、批注为 > 行）与 PNG（2 倍）；手机 390 宽底部抽屉、无横向滚动
 - [x] 修复：BookMap / MindExpandPanel 的 4 个确认框补 cancelButtonText（原来显示英文 Cancel）
-- [ ] Docker 验收：Docker Hub 拉取 node:22-slim 网速接近 0，待网络恢复后 `docker compose up -d --build`
+- [x] Docker 验收：已改用国内源构建（.env.example 的参数），8080 已部署验收
 - [ ] 备注：关闭「只看有笔记」后树变大不会自动适配（d019e92 有意只在首次适配）；整图放不下时最小缩放 0.5，需拖动查看
 - [ ] 备注：其他旧页面（ManualOverridesAdmin、ScanBatchList、ScanBatchReview 等）确认框同样是英文 Cancel，根治可全局配置 Element Plus 中文语言包，未改
 
@@ -422,8 +422,17 @@
 - [x] 通用提交挪到 main：Docker 国内源 beb29e7、913c5a8、6a10f68、d441aae（cherry-pick 到 main，main 上验证构建）
 - [x] main 合并进 study（拿到版本号 / CHANGELOG / 发版工作流 / DOCKERHUB.md），解决冲突
 - [x] study 的发版：工作流在 study 分支推送 → `edge-study`；`study-vX.Y.Z` 标签 → `X.Y.Z-study`、`X.Y-study`、`latest-study`（具体 tag 名待定），main 的工作流不响应 study 标签；学习版更新日志的放法待定
-- [ ] 推送 main / study / 标签前向用户确认（待用户确认，尚未推送）
+- [x] main 已推送并发布 v1.1.0、v1.1.1；远端 feat/study-notes-phase1 已删除
+- [ ] 推送 study（待用户决定）
 # 分支策略：合并 main → study 的手工处理（补充；study 的 todo.md 已有「分支策略」一节，合并时并入该节）
 
 - [ ] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
 - [ ] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）
+
+# 学习版页面对齐与改名（11-06，study）
+
+- [x] Task 10：笔记入口页套 .page / PageHeader / 卡片；详情页学习按钮去 size=large；导图、笔记整理、AI 展开面板 EP 图标换 Tabler、--el-* 改主题变量、类型标签淡底同色字、AI 展开按钮改 EP；导图书名 / 分组节点跟随主色
+- [x] 改名（用户决定）：侧栏「学习总结」→「笔记」，单本书页面 →「笔记整理」；导出文件名、后端提示、api.md 同步；AI 提示词不变
+- [x] 修复：导图深色主题节点配色从未生效（scoped 里 :global(html.dark) .mm-canvas 被编译成单独的 html.dark）
+- [x] 验证：jest 596、vitest 196、vue-tsc；Docker 测试容器（数据副本）看导图（靛青 / 冷月）、节点详情、AI 展开面板；笔记入口页烛光 + 手机宽度；笔记整理页靛青 / 暗夜；8080 已部署，用户已验收「笔记」改名
+- [x] 「晴空」主题改为「朱砂」（main 13c229e，key 仍为 sky），随 v1.1.1 发布
