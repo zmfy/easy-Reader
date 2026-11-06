@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, ReaderSettings } from '@/types'
+import type { ApiResponse, ReaderSettings, Release, UpdateStatus } from '@/types'
 
 export const settingsApi = {
   getPublic: () =>
@@ -43,4 +43,13 @@ export const settingsApi = {
 
   saveReaderPrefs: (settings: ReaderSettings) =>
     http.put<ApiResponse<null>>('/settings/reader-prefs', settings),
+
+  getUpdateStatus: () =>
+    http.get<ApiResponse<UpdateStatus>>('/settings/update-status'),
+
+  checkUpdates: () =>
+    http.post<ApiResponse<UpdateStatus>>('/settings/update-check', {}),
+
+  getChangelog: () =>
+    http.get<ApiResponse<{ currentVersion: string | null; missing: boolean; releases: Release[] }>>('/settings/changelog'),
 }

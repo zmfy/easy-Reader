@@ -326,3 +326,30 @@ export interface ManualOverride {
   created_by: string
   created_at: string
 }
+
+export interface ReleaseItem {
+  text: string
+  actionRequired: boolean
+}
+
+export interface ReleaseSection {
+  title: string
+  kind: 'added' | 'fixed' | 'other'
+  items: ReleaseItem[]
+}
+
+export interface Release {
+  version: string
+  date: string | null
+  intro: string
+  sections: ReleaseSection[]
+}
+
+export interface UpdateStatus {
+  currentVersion: string | null
+  branch: string
+  enabled: boolean
+  checkedAt: string | null
+  error: string | null
+  newer: Release[]
+}

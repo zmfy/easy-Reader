@@ -99,33 +99,51 @@
           <!-- Changelog / Feedback -->
           <div v-if="activeTab === 'feedback'" class="setting-section">
             <h2 class="section-title">更新说明</h2>
-            <p class="section-desc">最近 {{ recentChangelog.length }} 次更新，点击标题查看本次调整内容。</p>
+            <div class="update-status">
+              <div class="update-status-main">
+                <span class="update-current">当前版本 {{ currentVersionLabel }}</span>
+                <span class="update-remote" :class="{ 'is-new': (updateStatus?.newer.length ?? 0) > 0, 'is-error': !!updateStatus?.error }">{{ updateStatusText }}</span>
+              </div>
+              <el-button
+                size="small"
+                :loading="checkingUpdate"
+                :disabled="updateStatus?.enabled === false"
+                @click="checkUpdatesNow"
+              >
+                {{ updateStatus?.enabled === false ? '已关闭更新检查' : '立即检查' }}
+              </el-button>
+            </div>
+            <p v-if="changelogMissing" class="section-desc">未找到更新说明文件</p>
+            <p v-else class="section-desc">最近 {{ releases.length }} 次更新，点击标题查看本次调整内容。</p>
             <div class="changelog-list">
               <div
-                v-for="release in recentChangelog"
-                :key="release.date + release.title"
+                v-for="release in releases"
+                :key="release.version"
                 class="changelog-release"
-                :class="{ 'is-open': openedReleases.has(release.date + release.title) }"
+                :class="{ 'is-open': openedReleases.has(release.version) }"
               >
                 <button
                   type="button"
                   class="changelog-release-header"
-                  :aria-expanded="openedReleases.has(release.date + release.title)"
-                  @click="toggleRelease(release.date + release.title)"
+                  :aria-expanded="openedReleases.has(release.version)"
+                  @click="toggleRelease(release.version)"
                 >
                   <span class="changelog-release-title">
-                    <span class="changelog-date">{{ release.date }}</span>：{{ release.title }}
+                    v{{ release.version }}<template v-if="release.date"> · <span class="changelog-date">{{ release.date }}</span></template>
                   </span>
                   <span class="changelog-release-meta">
-                    <span class="changelog-count">{{ release.items.length }} 项</span>
                     <span class="changelog-arrow">▸</span>
                   </span>
                 </button>
-                <div v-if="openedReleases.has(release.date + release.title)" class="changelog-release-body">
-                  <div v-for="(item, i) in release.items" :key="i" class="changelog-item">
-                    <div class="changelog-main">
-                      <span class="changelog-tag" :class="`tag-${item.tag}`">{{ changelogTagLabels[item.tag] }}</span>
-                      <span class="changelog-text">{{ item.text }}</span>
+                <div v-if="release.intro" class="changelog-intro">{{ release.intro }}</div>
+                <div v-if="openedReleases.has(release.version)" class="changelog-release-body">
+                  <div v-for="(section, si) in release.sections" :key="si" class="changelog-section">
+                    <div class="changelog-section-title">{{ section.title }}</div>
+                    <div v-for="(item, i) in section.items" :key="i" class="changelog-item">
+                      <div class="changelog-main">
+                        <span v-if="item.actionRequired" class="changelog-tag">需操作</span>
+                        <span class="changelog-text">{{ item.text }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -439,7 +457,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, type Component } from 'vue'
-import { formatServerTime } from '@/utils/time'
+import { formatServerTime, parseServerTime } from '@/utils/time'
 import { passwordRules, passwordValid } from '@/utils/password-policy'
 import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebook, Tickets, Collection, Files } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -448,6 +466,7 @@ import { settingsApi } from '@/api/settings'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
 import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
+import type { Release, UpdateStatus } from '@/types'
 
 const authStore = useAuthStore()
 
@@ -589,158 +608,56 @@ const tabs = [
 ]
 
 
-// ── 更新说明 ── 新的记录加在最前面，页面只显示最近 5 次
-type ChangelogTag = 'ui' | 'lib' | 'auth' | 'reader' | 'epub' | 'txt' | 'ai' | 'infra'
-interface ChangelogRelease {
-  date: string
-  title: string
-  items: Array<{ tag: ChangelogTag; text: string }>
-}
-
-const changelogTagLabels: Record<ChangelogTag, string> = {
-  ui: '界面', lib: '书库', auth: '安全', reader: '阅读', epub: 'EPUB', txt: 'TXT', ai: 'AI', infra: '系统',
-}
-
-const changelog: ChangelogRelease[] = [
-  {
-    date: '2026-11-05',
-    title: '第三方客户端 API 与外网访问安全',
-    items: [
-      { tag: 'infra', text: '开放 API，可自行开发手机 / 桌面阅读客户端：接口文档在站点的 /api/docs（项目中为 docs/api.md），涵盖登录续期、书库、书架、目录、章节、阅读进度、书签与阅读偏好；第三方客户端使用带版本的 /api/v1，保证向后兼容' },
-      { tag: 'reader', text: '章节内容可按结构化格式获取（format=blocks：标题 / 段落 / 图片），App 不必解析 HTML 就能排版；进度位置与网页版一致，在手机和网页之间接着读不会错位' },
-      { tag: 'infra', text: '新增环境变量 CORS_ORIGINS（逗号分隔），允许运行在其他网址上的网页客户端跨域访问；原生 App 无需配置' },
-      { tag: 'auth', text: '首次用默认密码 admin123 登录后必须先修改密码，改完才能使用其他功能；已在使用的旧版本升级后，仍是默认密码的账号同样要先改。设置页会说明原因（书库、阅读进度不受影响），刚登录时输入的密码自动带入，只需填两次新密码；改密码后此账号在其他设备上的登录失效' },
-      { tag: 'auth', text: '所有用户都可以自己修改密码：侧栏「退出登录」上方的「修改密码」' },
-      { tag: 'ui', text: '修复「晴空」「素纸」主题下登录、注册页的卡片显示为深色，设置页与输入框的边框显示为紫色（这两个主题缺少卡片颜色定义，沿用了暗夜主题的值）' },
-      { tag: 'auth', text: '经反向代理访问时登录限流按真实 IP 计数（新增环境变量 TRUST_PROXY，一层代理填 1）：原来所有人被当作代理的同一个 IP，一人输错密码多次会让所有人都无法登录；登录失败才计数（注册仍每次都计数），令牌续期单独限流，多台设备同时使用不会被误限' },
-    ],
-  },
-  {
-    date: '2026-11-05',
-    title: '多层目录、漫画阅读优化与阅读器加入书架',
-    items: [
-      { tag: 'reader', text: '多层目录可折叠：套装 EPUB（如《吴思历史经典三部曲》）按原书目录分成「书 → 部分 → 篇」，原目录没有分册、只在「总目录」页列出各册的套装（如《新中国70年长篇小说典藏》50 册）按总目录分册，漫画 EPUB（如《名侦探柯南》）分成「卷 → 话 → 各页」，TXT 按「第 X 部 / 第 X 卷」分组；点箭头展开或收起，点标题跳转，打开目录时只展开当前章节所在的那一支；倒序时同一层内倒序。单层目录的书不变' },
-      { tag: 'epub', text: '漫画 / 图片 EPUB 显示优化：图片不再撑出阅读区（覆盖书中写死的宽高），纯图片页整页缩放到一屏内居中显示，去掉没有标题的页上方的标题区，瀑布流中连续的漫画页之间只留窄缝；阅读设置中可选「适合高度」（一屏一页）或「适合宽度」（铺满纸张宽度、上下滚动看，可配合页面宽度放大）' },
-      { tag: 'reader', text: '阅读器可直接加入书架：右侧工具栏（手机在顶栏）新增书架按钮，点击加入，已在书架时高亮，再点移出' },
-      { tag: 'txt', text: '修复网页抓取的 TXT（如《水浒传》）每回标题写了两遍、目录变成两倍且出现只有标题的空章：同一编号的标题之间没有正文时合并为一章，正文开头重复的标题只显示一次' },
-      { tag: 'txt', text: 'TXT 第一章前的书名 / 作者 / 简介中，盗版站推广（网址、「更多小说尽在…下载」、分隔线）不再显示；章节正文保持原样' },
-      { tag: 'lib', text: '书库「书名（A→Z）」改为按页面上显示的书名排序：《三国演义》（精校版全本）作者：罗贯中 这类文件按「三国演义」排，不再因书名号、括号说明排到一起' },
-      { tag: 'reader', text: 'PDF 逐页显示打开更快：不再先解析全书文字，打开时只读页数；AI 问书、听书需要文字时才按页提取' },
-      { tag: 'lib', text: '书页判断「是否已在书架」只查这一本，书架很大时书页打开更快' },
-    ],
-  },
-  {
-    date: '2026-11-04',
-    title: '听书、AI 前情提要与问书、阅读器改版',
-    items: [
-      { tag: 'ui', text: '新增默认主题「靛青」：浅灰底、白色卡片、靛蓝主色，更现代简洁，侧栏换用统一的线条图标；原有五个主题仍可在「网站主题」中选择（已保存过主题的站点保持原设置）' },
-      { tag: 'ui', text: '界面精简：书库「AI已填充」改为封面角小圆点，手机端书库顶部压缩为两行；书页显示干净的书名、书架状态与「继续阅读 · 章节」；书架整行点击继续阅读；深色主题下按钮与下拉框统一为深色；图标不再依赖 emoji' },
-      { tag: 'reader', text: '听书不再依赖 MiniMax：未开启 MiniMax 听书时，阅读器的听书按钮也会显示，改用浏览器自带语音朗读，段落高亮、自动翻章、语速、定时停止等功能相同（浏览器语音在手机锁屏后可能停止）；使用 MiniMax AI 语音时，听书按钮右下角显示「AI」角标以示区分；「AI 设置」中注明 AI 语音目前只支持 MiniMax' },
-      { tag: 'reader', text: '新增「听书」（MiniMax 真人感语音）：在「AI 设置 → MiniMax」中开启并选择模型与音色后，阅读器出现听书按钮；从当前位置开始朗读，正在念的段落高亮并自动滚动，章末自动进入下一章；底部播放条可暂停、切段、调语速（0.8–2 倍），支持定时停止（15 / 30 / 60 分钟或本章结束，音量渐弱）；手机锁屏、切到后台可继续播放，锁屏界面和耳机按键可控制；合成过的段落缓存在 NAS 上，重听不再花费' },
-      { tag: 'ai', text: '阅读器新增 AI「前情提要」：隔 3 天以上再打开一本书时提示「上次阅读是 X 天前」，点「AI 回顾前情」概括最近 3 章到当前位置的情节；工具栏随时可调出，同一位置的结果会缓存，不重复花费' },
-      { tag: 'ai', text: '阅读器新增 AI「问书」：在右侧对话面板里问人物、事件、伏笔，可连续追问；只根据当前位置之前的内容回答，不剧透，回答附参考章节。先在本地检索已读章节里的相关片段，只把片段发给 AI，费用可控' },
-      { tag: 'reader', text: '阅读设置新增「字间距」滑块（0–5px），与字号、行高一样拖动即时生效' },
-      { tag: 'reader', text: '阅读器换新样式，与网站「靛青」主题统一：默认阅读主题「靛青」（浅灰底 + 白色卡片纸张，正文默认 Noto Serif SC 20px），章节标题左对齐并标出「第 N 章」、书名、作者与本章字数；顶栏下滑自动隐藏、上滑出现，并显示全书进度条；右侧胶囊工具栏（目录 / 书签 / 书详情 / 夜间 / 设置，手机上在顶栏右侧）；章末上一章 / 目录 / 下一章。目录改为左侧抽屉：当前章节高亮并自动滚到可见处，已读章节显示为浅灰，可倒序；书签并入同一抽屉，可添加、跳转、删除。之前选过「护眼绿」的会自动改为「靛青」' },
-      { tag: 'reader', text: '阅读器支持键盘：← / → 翻章，↑ / ↓ 与空格按屏翻页（翻页后保留上一屏最后的完整行，阅读不脱节），B 加书签；去掉右下角重复的书签按钮' },
-      { tag: 'lib', text: '单本 AI 填充改为先预览：可修改简介等信息、增删标签和类似作品，从多张豆瓣封面或按分类风格生成的默认封面中选择，确认后才保存；预览时不再覆盖已锁定的字段' },
-      { tag: 'reader', text: 'PDF 「阅读器逐页显示」模式（原「插件解析」）改为按原版逐页显示，封面图片、字体与排版和原文件一致；支持章节翻页 / 瀑布流、阅读进度与书签，手机上按屏幕宽度自适应' },
-      { tag: 'reader', text: 'PDF 默认改为「阅读器逐页显示」（安卓等手机浏览器无法内嵌显示 PDF）；管理员在设置中手动关闭过的保持浏览器原生打开' },
-      { tag: 'epub', text: '修复部分漫画 EPUB 第一页封面空白的问题（SVG 方式引用的图片此前未能加载）' },
-      { tag: 'ai', text: 'MiniMax 跟进官方接口变更：默认模型改为 MiniMax-M3.1-Flash（MiniMax-M2 已下线，未填写模型时 AI 填充会失败），接口地址改为 api.minimax.cn' },
-      { tag: 'ai', text: 'MiniMax 新增「推理强度」设置（仅 MiniMax-M3.1-Flash 生效）：调低可明显加快 AI 填充并减少消耗' },
-      { tag: 'ai', text: 'DeepSeek 默认模型改为 deepseek-flash（旧名 deepseek-chat 已不在官方模型列表中），新增「思考模式」设置：默认关闭，速度与费用和之前一致，可按需开启并选择强度' },
-      { tag: 'ai', text: 'Ollama 新增「思考模式」设置：默认关闭，qwen3、deepseek-r1 等支持思考的模型不再默认先思考，AI 填充明显更快；调用失败时显示 Ollama 返回的原因（如模型未下载、模型不支持思考）' },
-      { tag: 'infra', text: 'EPUB 解析依赖的 adm-zip 升级到 0.6.1，修复恶意 ZIP 文件导致内存耗尽等安全漏洞' },
-    ],
-  },
-  {
-    date: '2026-11-03',
-    title: '安全加固、阅读修复与性能优化',
-    items: [
-      { tag: 'auth', text: '访问令牌与刷新令牌区分用途，刷新令牌不能再直接调用接口（升级后需重新登录一次）' },
-      { tag: 'auth', text: '用户被删除或角色变更后立即生效，无需等待令牌过期' },
-      { tag: 'auth', text: '系统设置接口仅管理员可访问，且不再返回各用户的个人阅读设置' },
-      { tag: 'infra', text: '修复"不能删除自己的账号"校验失效的问题' },
-      { tag: 'auth', text: '修复扫描批次预览接口可读取书库目录外任意文件的问题，并改为只读取文件开头' },
-      { tag: 'lib', text: '封面抓取不再生成调试文件，封面目录仅对外提供图片' },
-      { tag: 'reader', text: '瀑布流模式书签记录章节内位置，点击书签可准确定位并继续加载后续章节' },
-      { tag: 'reader', text: '章节模式记住章内阅读位置：按段落定位，改字号、页面宽度或换设备后仍能回到原处，直接关闭页面也会保存' },
-      { tag: 'txt', text: '修复无章节标题的 TXT 按固定字节分段时把汉字切断导致段首段尾乱码的问题，分段改为对齐到行首' },
-      { tag: 'ai', text: 'AI 填充只读取 TXT 开头部分并按实际编码解码，GBK 等编码的书不再给 AI 传入乱码，批量填充内存占用大幅降低' },
-      { tag: 'reader', text: '阅读器解析缓存增加上限并合并同一本书的并发加载，长时间运行不再持续占用内存' },
-      { tag: 'reader', text: 'PDF 使用浏览器原生打开时不再在后台完整解析整本 PDF，打开大 PDF 明显更快' },
-      { tag: 'lib', text: '扫描清理已删除文件、删除书籍或用户时，同步清理书架、进度、书签等关联数据' },
-      { tag: 'lib', text: '修复问题书籍页「仅删书库记录」实际会删除磁盘文件的问题，现在会保留文件；并补充重复关联、影响书架时的确认提示' },
-      { tag: 'lib', text: '扫描时若某个子目录临时读取失败（如 NAS 网络抖动），其中的书不再被当作已删除而清理' },
-      { tag: 'lib', text: '修复扫描审核中先调整（更换正本 / 剔除）再点「接受」会丢失调整内容的问题' },
-      { tag: 'txt', text: 'TXT 编码修复改为原子写入（先写临时文件再替换），中途中断不会截断原文件，并保留原文件权限与所有者；修复后不再在下次扫描时被重复处理' },
-      { tag: 'auth', text: '扫描审核只能在扫描结果范围内调整，阅读接口只读取书库目录内的文件，防止书库外文件被当作书籍读出' },
-      { tag: 'auth', text: '管理员重置用户密码后，该用户此前登录的所有设备立即失效' },
-      { tag: 'infra', text: '依赖安全更新：修复 DOMPurify、Express、Vue、Axios 等已知漏洞（均为兼容升级）' },
-      { tag: 'ui', text: '修复书架「最近阅读」、书签、用户列表、审计日志等处时间显示相差 8 小时（Safari 下显示 NaN）的问题' },
-      { tag: 'lib', text: '扫描导入支持 UMD 格式（此前阅读器支持但扫描时会被忽略）' },
-      { tag: 'reader', text: '修复网络较慢时快速切章、或瀑布流后台加载时跳章，页面显示成错误章节的问题' },
-      { tag: 'auth', text: '断网、服务器临时故障或请求过于频繁时不再把用户踢回登录页，网络恢复后可继续使用' },
-      { tag: 'lib', text: '书库切换分类时回到第 1 页，不再因停留在不存在的页码而显示为空' },
-      { tag: 'lib', text: '原书文件删除后，它的重复书自动恢复为普通书籍，不再被永久隐藏；重复书内容变化后不再残留旧的重复关系' },
-      { tag: 'ai', text: 'AI 统一章节标题失败时保留原有结果，只替换成功的部分；同一本书同时运行不再报错' },
-      { tag: 'infra', text: '为书籍文件路径建立索引，书多时扫描批次应用更快；邀请邮件内容转义并校验链接格式' },
-      { tag: 'ui', text: '手机端优化：书库改为每行两本、搜索栏不再超出屏幕；阅读器正文在窄屏下占满宽度（每行由约 12 字增至 19 字）' },
-      { tag: 'auth', text: '普通用户不再看到书籍在服务器上的文件路径；阅读接口出错时不再回显内部路径；只能为书库中存在的书保存进度和书签' },
-      { tag: 'infra', text: '后端依赖大版本升级：zod 3→4、nodemailer 6→10；移除 uuid 依赖改用 Node 内置 crypto.randomUUID' },
-      { tag: 'lib', text: '审核模式：「非重复，加入书库」的判定会被记住，已标记的乱码书不再重复提交审核，书库无变化时扫描不再反复产生待审核批次（可在「手动规则」中撤销判定）' },
-      { tag: 'txt', text: 'TXT 第一个章节标题之前的内容（书名、作者、简介、前言等）现在显示在第一章开头，此前这部分无法阅读；章节划分与书籍指纹保持不变，无需重新扫描' },
-      { tag: 'auth', text: '邀请码改用安全随机数生成；阅读设置保存时校验格式与大小' },
-      { tag: 'ui', text: 'Element Plus 改为按需引入，首屏 JS 由约 1.2MB 降至约 160KB，页面打开更快' },
-      { tag: 'reader', text: '瀑布流模式滚动处理节流，并最多保留 8 章内容，长时间连续阅读不再越来越卡' },
-      { tag: 'txt', text: 'TXT / PDF / UMD 正文中的 <、>、& 等字符不再被误当作标签而丢失' },
-      { tag: 'lib', text: '书籍指纹算法升级（v2），升级后首次扫描会重建全部指纹，耗时会比平时长' },
-      { tag: 'infra', text: '移除未使用的后端依赖（multer、node-fetch、winston）' },
-    ],
-  },
-  {
-    date: '2026-06-05',
-    title: '扫描导入重做与 AI 批量填充',
-    items: [
-      { tag: 'lib', text: '扫描导入重做：可选「暂存审核 / 自动写入」，自动识别重复书籍并分组、自动清理磁盘上已删除的书、从文件名提取作者；普通扫描即为快速增量同步，无需重建指纹' },
-      { tag: 'ai', text: '新增 AI 批量填充书籍信息（作者、简介、分类、推荐标签、封面），支持失败重试与「重置全部填充」重跑；AI 填充并入扫描流程' },
-      { tag: 'ai', text: '新增豆瓣评分：AI 填充时自动抓取，书库封面角标与书籍详情页显示评分，并支持按评分排序' },
-      { tag: 'lib', text: '搜索框支持关键词筛选：输入「重复」查看重复书籍、「ai填充」查看已填充、「填充失败」查看失败；搜索框旁新增「?」用法说明' },
-      { tag: 'ui', text: '书籍详情页新增推荐标签与「类似作品」（本库已有的可直接跳转），并修复类似作品链接跳转到错误书籍的问题' },
-    ],
-  },
-  {
-    date: '2026-06-04',
-    title: 'EPUB 与 TXT 阅读增强',
-    items: [
-      { tag: 'txt', text: '修复 UTF-16 编码的 TXT 小说打开后乱码的问题，并将编码自动识别的采样范围扩大至 64KB，提升 GBK/中文文件的识别准确度' },
-      { tag: 'epub', text: '漫画/图册 EPUB 自动切换全页流模式，不再跳过无 TOC 标题的页面（如柯南全 1457 页均可阅读）' },
-      { tag: 'epub', text: '支持 EPUB 内嵌图片显示，图片通过独立 API 端点从 EPUB 包中提取并返回浏览器' },
-      { tag: 'epub', text: '修复 EPUB 章节内链接点击后跳转错误（内部 href 现映射至正确章节索引）' },
-      { tag: 'epub', text: '修复 EPUB 章节内容无法加载的问题（TOC id 与 flow id 不匹配导致 File not found）' },
-      { tag: 'reader', text: '瀑布流模式：章节内容较短时自动预加载后续章节，确保从首章即可流畅下翻' },
-    ],
-  },
-  {
-    date: '2026-05-06',
-    title: '书库与封面优化',
-    items: [
-      { tag: 'ui', text: '优化书库封面图片加载与样式展示' },
-      { tag: 'lib', text: '扫描导入时自动清理已删除文件的数据库记录' },
-    ],
-  },
-  {
-    date: '2026-04-24',
-    title: '登录认证重构',
-    items: [
-      { tag: 'auth', text: '重构登录 Token 处理，优化反馈功能' },
-    ],
-  },
-]
-
-const recentChangelog = changelog.slice(0, 5)
+// ── 更新说明 ──
+const releases = ref<Release[]>([])
+const changelogMissing = ref(false)
+const updateStatus = ref<UpdateStatus | null>(null)
+const checkingUpdate = ref(false)
 // 默认展开最近一次
-const openedReleases = ref(new Set<string>(recentChangelog.length ? [recentChangelog[0].date + recentChangelog[0].title] : []))
+const openedReleases = ref(new Set<string>())
+
+const currentVersionLabel = computed(() => {
+  const v = updateStatus.value?.currentVersion
+  return v ? `v${v}` : '未知'
+})
+
+const updateStatusText = computed(() => {
+  const st = updateStatus.value
+  if (!st) return ''
+  if (!st.enabled) return '已关闭更新检查'
+  if (st.error) {
+    const d = parseServerTime(st.checkedAt)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const t = d ? `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` : ''
+    return t ? `无法连接更新源，上次检查 ${t}` : '无法连接更新源'
+  }
+  if (st.newer.length) return `有新版本 v${st.newer[0].version}`
+  if (!st.checkedAt) return '尚未检查'
+  return '已是最新'
+})
+
+async function loadChangelog() {
+  const [statusResp, logResp] = await Promise.all([
+    settingsApi.getUpdateStatus(),
+    settingsApi.getChangelog(),
+  ])
+  updateStatus.value = statusResp.data.data ?? null
+  const log = logResp.data.data
+  if (!log) return
+  releases.value = log.releases
+  changelogMissing.value = log.missing
+  if (log.releases.length) openedReleases.value = new Set([log.releases[0].version])
+}
+
+async function checkUpdatesNow() {
+  checkingUpdate.value = true
+  try {
+    const resp = await settingsApi.checkUpdates()
+    updateStatus.value = resp.data.data ?? updateStatus.value
+  } finally {
+    checkingUpdate.value = false
+  }
+}
 
 function toggleRelease(key: string) {
   const next = new Set(openedReleases.value)
@@ -995,7 +912,7 @@ async function deleteUser(id: string) {
 
 onMounted(async () => {
   loadAiConfigWarning()
-  await Promise.all([loadSettings(), loadPlugins(), loadUsers()])
+  await Promise.all([loadSettings(), loadPlugins(), loadUsers(), loadChangelog().catch(() => {})])
 })
 </script>
 
@@ -1651,19 +1568,69 @@ onMounted(async () => {
   font-weight: 600;
   flex-shrink: 0;
   margin-top: 1px;
-  min-width: 48px;
-  text-align: center;
   box-sizing: border-box;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
 }
 
-.tag-ui     { background: #3b1f6b; color: #c4b5fd; }
-.tag-lib    { background: #1a3a2a; color: #6ee7b7; }
-.tag-auth   { background: #1e2e50; color: #93c5fd; }
-.tag-reader { background: #2d2010; color: #fcd34d; }
-.tag-epub   { background: #1a2e3b; color: #67e8f9; }
-.tag-txt    { background: #3a2410; color: #fdba74; }
-.tag-ai     { background: #2d1020; color: #f9a8d4; }
-.tag-infra  { background: #1f2937; color: #9ca3af; }
+.changelog-section + .changelog-section {
+  margin-top: 8px;
+}
+
+.changelog-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 4px 0;
+}
+
+.changelog-intro {
+  padding: 0 14px 10px;
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.update-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  max-width: 600px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+
+.update-status-main {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.update-current {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.update-remote {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.update-remote.is-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.update-remote.is-error {
+  color: var(--warning);
+}
 
 .changelog-text {
   line-height: 1.6;
