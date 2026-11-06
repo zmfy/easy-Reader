@@ -335,7 +335,7 @@
 
     <!-- 查看模式提示条：从学习导图打开时显示，浏览不改变阅读进度 -->
     <div v-if="viewOnly" class="view-only-bar" :class="{ raised: !toolbarVisible }" role="status" @click.stop>
-      <span class="view-only-text">从学习导图打开：浏览不会改变阅读进度</span>
+      <span class="view-only-text">从学习笔记打开：浏览不会改变阅读进度</span>
       <span class="view-only-actions">
         <button class="view-only-btn primary" @click="leaveViewOnly('continue-here')">从这里继续读</button>
         <button class="view-only-btn" @click="leaveViewOnly('back-to-saved')">回到上次进度</button>
