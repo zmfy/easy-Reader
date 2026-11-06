@@ -24,7 +24,7 @@
         <IconInfoCircle class="nb-notice-icon" :size="17" :stroke-width="2" />
         <div class="nb-notice-body">
           <div class="nb-notice-text">
-            有新版本 v{{ latest.version }}<template v-if="noticeStore.status?.currentVersion">（当前 v{{ noticeStore.status.currentVersion }}）</template>
+            有新版本 v{{ latest.version }}{{ noticeStore.status?.currentVersion ? `（当前 v${noticeStore.status.currentVersion}）` : '（当前版本未知）' }}
             <span v-if="noticeStore.actionRequired" class="nb-tag nb-tag--inline">含需操作项</span>
           </div>
           <button class="nb-expand" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
@@ -69,6 +69,7 @@ import { useSystemNoticeStore } from '@/stores/system-notice'
 import { boldSegments } from '@/utils/inline-bold'
 import type { Release, ReleaseItem } from '@/types'
 
+const emit = defineEmits<{ navigate: [] }>()
 const router = useRouter()
 const noticeStore = useSystemNoticeStore()
 const isNarrow = useMediaQuery('(max-width: 768px)')
@@ -121,6 +122,8 @@ function actionItems(release: Release): ReleaseItem[] {
 
 function goSettings() {
   close()
+  // 手机端铃铛可能在侧栏里，跳转时通知布局一并收起侧栏
+  emit('navigate')
   router.push({ path: '/settings', query: { tab: 'ai' } })
 }
 </script>

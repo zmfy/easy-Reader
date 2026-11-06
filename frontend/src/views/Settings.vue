@@ -120,10 +120,11 @@
                 :disabled="updateStatus?.noticeEnabled === false"
                 @click="checkUpdatesNow"
               >
-                {{ updateStatus?.noticeEnabled === false ? '已关闭更新检查' : '立即检查' }}
+                立即检查
               </el-button>
             </div>
             <p v-if="changelogMissing" class="section-desc">未找到更新说明文件</p>
+            <p v-else-if="releases.length === 0" class="section-desc">暂无已发布版本</p>
             <p v-else class="section-desc">最近 {{ releases.length }} 次更新，点击标题查看本次调整内容。</p>
             <div class="changelog-list">
               <div
@@ -641,7 +642,7 @@ const updateStatusText = computed(() => {
   const st = updateStatus.value
   if (!st) return ''
   if (!st.noticeEnabled) return '已关闭更新检查'
-  const newer = st.newer.length ? `有新版本 v${st.newer[0].version}` : ''
+  const newer = st.newer.length ? `有新版本 v${st.newer[0].version}${st.currentVersion ? '' : '（当前版本未知）'}` : ''
   if (st.error) {
     const d = parseServerTime(st.checkedAt)
     const pad = (n: number) => String(n).padStart(2, '0')
@@ -948,7 +949,7 @@ async function deleteUser(id: string) {
   }
 }
 
-// 提示条「去设置」带 ?tab=ai：只接受已有的 tab key
+// 铃铛「去设置」带 ?tab=ai：只接受已有的 tab key
 function applyQueryTab() {
   const queryTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
   if (queryTab && tabs.some(t => t.key === queryTab)) activeTab.value = queryTab

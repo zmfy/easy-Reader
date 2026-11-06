@@ -31,7 +31,7 @@
             <div class="user-name">{{ authStore.user?.username }}</div>
             <div class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
           </div>
-          <NotificationBell v-if="showBell" />
+          <NotificationBell v-if="showBell" @navigate="sidebarOpen = false" />
         </div>
         <div class="action-row" @click="toggleKeepAlive">
           <IconPlugConnected class="action-icon" :size="16" :stroke-width="1.75" />
@@ -61,7 +61,7 @@
           <span class="hamburger" />
         </button>
         <span class="mobile-title">{{ siteName }}</span>
-        <NotificationBell v-if="showBell" />
+        <NotificationBell v-if="showBell" @navigate="sidebarOpen = false" />
       </div>
       <ScanProgressBar />
       <slot />
