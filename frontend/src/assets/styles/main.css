@@ -100,26 +100,26 @@
   --font-serif: 'Noto Serif SC', serif;
 }
 
-/* ── 晴空（清爽白蓝）── */
+/* ── 朱砂（暖白配朱红；key 沿用 sky，已选此主题的设置不受影响）── */
 [data-theme="sky"] {
-  --bg-0: #f0f4ff;
+  --bg-0: #f6f3f1;
   --bg-1: #ffffff;
-  --bg-2: #e4ecff;
-  --text-0: #1a2340;
-  --text-1: #3a4a6a;
-  --text-2: #6a7a9a;
-  --accent: #4a6cf7;
-  --accent-2: #06b6d4;
+  --bg-2: #f1ebe8;
+  --text-0: #2a201f;
+  --text-1: #554a48;
+  --text-2: #8f8482;
+  --accent: #d6363b;
+  --accent-2: #e8833a;
   --warning: #d97706;
-  --danger: #dc2626;
-  --success: #16a34a;
+  --danger: #a3123a;
+  --success: #15803d;
   --card-bg: #ffffff;
-  --card-border: #dde5f7;
-  --card-title: #1a2340;
+  --card-border: #ede6e3;
+  --card-title: #2a201f;
   --input-bg: #ffffff;
   --radius-lg: 16px;
   --radius-md: 12px;
-  --shadow-soft: 0 12px 40px rgba(60, 80, 160, 0.12);
+  --shadow-soft: 0 1px 2px rgba(64, 24, 20, 0.04), 0 4px 16px rgba(64, 24, 20, 0.06);
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
