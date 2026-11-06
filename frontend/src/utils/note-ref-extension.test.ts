@@ -42,6 +42,18 @@ describe('noteRef', () => {
     expect(JSON.stringify(editor.getJSON())).not.toContain('noteRef')
     editor.destroy()
   })
+
+  it.each([
+    ['slash separator', '<p>x<span class="note-ref"/data-ref="h:forged">📖</span>y</p>'],
+    ['newline separator', '<p>x<span class="note-ref"\ndata-ref="h:forged">📖</span>y</p>'],
+    ['attribute order reversed', '<p>x<span data-ref="h:forged" class="note-ref">📖</span>y</p>'],
+  ])('pasted html cannot create noteRef (%s)', (_n, html) => {
+    const editor = new Editor({ extensions: [StarterKit, NoteRef], content: { type: 'doc', content: [{ type: 'paragraph' }] } })
+    editor.view.pasteHTML(html)
+    expect(JSON.stringify(editor.getJSON())).not.toContain('noteRef')
+    expect(JSON.stringify(editor.getJSON())).toContain('x')
+    editor.destroy()
+  })
 })
 
 // 与后端 isValidDoc 同口径的白名单（前端自备，不从后端 import）
