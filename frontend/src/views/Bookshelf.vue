@@ -201,7 +201,7 @@ onMounted(fetchShelf)
   color: var(--text-1);
   margin-bottom: 16px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(124, 92, 255, 0.1);
+  border-bottom: 1px solid var(--card-border);
 }
 
 .recent-books {
@@ -212,8 +212,9 @@ onMounted(fetchShelf)
 
 .recent-card {
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.1);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   padding: 16px;
   display: flex;
   gap: 14px;
@@ -223,9 +224,9 @@ onMounted(fetchShelf)
 }
 
 .recent-card:hover {
-  border-color: rgba(124, 92, 255, 0.3);
+  border-color: var(--accent-line);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .recent-cover {
@@ -298,7 +299,7 @@ onMounted(fetchShelf)
 
 .book-row {
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.08);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
   padding: 12px 16px;
   display: flex;
@@ -309,8 +310,8 @@ onMounted(fetchShelf)
 }
 
 .book-row:hover {
-  border-color: rgba(124, 92, 255, 0.2);
-  background: rgba(124, 92, 255, 0.04);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
 .row-cover {

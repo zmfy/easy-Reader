@@ -25,15 +25,16 @@ defineEmits<{ click: [Series] }>()
 .series-card {
   cursor: pointer;
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.08);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
   transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 .series-card:hover {
-  transform: translateY(-5px);
-  border-color: rgba(124, 92, 255, 0.3);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(124, 92, 255, 0.12);
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .cover-stack {
   position: relative;
@@ -44,7 +45,7 @@ defineEmits<{ click: [Series] }>()
   position: absolute;
   inset: 10px 14px 4px 4px;
   border-radius: 8px;
-  border: 1px solid rgba(124, 92, 255, 0.15);
+  border: 1px solid var(--card-border);
 }
 .cover {
   background: var(--bg-2);
@@ -58,11 +59,12 @@ defineEmits<{ click: [Series] }>()
   justify-content: center;
   font-size: 48px;
   color: var(--text-1);
-  background: linear-gradient(160deg, rgba(124, 92, 255, 0.25), rgba(0, 212, 184, 0.15));
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .stack-layer {
   background: var(--bg-2);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--text-0) 10%, transparent);
 }
 .stack-layer.layer-1 {
   transform: translate(5px, 5px);
