@@ -116,6 +116,17 @@ const NODE_TYPES = new Set(['doc', 'heading', 'paragraph', 'bulletList', 'ordere
 const MARK_TYPES = new Set(['bold', 'italic', 'code']);
 const NODE_KEYS = new Set(['type', 'attrs', 'content', 'text', 'marks']);
 
+// 内容模型（与前端 Tiptap schema 一致）：父节点 → 允许的子节点；未列出的为叶子，不允许 content
+const BLOCKS = new Set(['heading', 'paragraph', 'bulletList', 'orderedList', 'codeBlock']);
+const INLINES = new Set(['text', 'hardBreak', 'noteRef']);
+const LIST_ITEM_REST = new Set(['paragraph', 'bulletList', 'orderedList', 'codeBlock']);
+const CHILDREN: Record<string, Set<string>> = {
+  doc: BLOCKS, heading: INLINES, paragraph: INLINES, codeBlock: new Set(['text']),
+  bulletList: new Set(['listItem']), orderedList: new Set(['listItem']), listItem: LIST_ITEM_REST,
+};
+// 至少要有一个子节点的容器
+const NON_EMPTY = new Set(['doc', 'bulletList', 'orderedList', 'listItem']);
+
 function isObj(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
@@ -150,7 +161,8 @@ function isValidDocUnsafe(x: unknown): boolean {
     if (n.type === 'heading' && (!isObj(n.attrs) || n.attrs.level == null)) return false;
     if (n.type === 'noteRef' && (!isObj(n.attrs) || n.attrs.ref == null)) return false;
     if (n.type === 'text') {
-      if (typeof n.text !== 'string' || n.content !== undefined) return false;
+      // 空文本会让 ProseMirror 抛错
+      if (typeof n.text !== 'string' || n.text === '' || n.content !== undefined) return false;
     } else if (n.text !== undefined || n.marks !== undefined) {
       return false;
     }
@@ -161,10 +173,19 @@ function isValidDocUnsafe(x: unknown): boolean {
         if (Object.keys(m).some(k => k !== 'type')) return false;
       }
     }
+    const allowed = hasOwn(CHILDREN, n.type) ? CHILDREN[n.type] : null;
     if (n.content !== undefined) {
-      if (!Array.isArray(n.content)) return false;
-      for (const c of n.content) if (!check(c, depth + 1)) return false;
+      if (!allowed || !Array.isArray(n.content)) return false;
+      for (let i = 0; i < n.content.length; i++) {
+        const c = n.content[i];
+        if (!isObj(c)) return false;
+        // listItem 第一个子节点必须是 paragraph
+        if (n.type === 'listItem' && i === 0 ? c.type !== 'paragraph' : !allowed.has(c.type as string)) return false;
+        if (n.type === 'codeBlock' && c.marks !== undefined) return false;
+        if (!check(c, depth + 1)) return false;
+      }
     }
+    if (NON_EMPTY.has(n.type) && !(Array.isArray(n.content) && n.content.length > 0)) return false;
     return true;
   };
   return check(x, 1);

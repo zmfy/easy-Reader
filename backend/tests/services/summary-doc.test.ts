@@ -73,8 +73,11 @@ describe('summary-doc', () => {
     expect(isValidDoc(p(t('x')))).toBe(false);
     expect(isValidDoc(doc(p(t('x'))))).toBe(true);
     let deep: DocNode = p(t('x'));
-    for (let i = 0; i < 25; i++) deep = { type: 'bulletList', content: [{ type: 'listItem', content: [deep] }] };
+    for (let i = 0; i < 25; i++) deep = { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('x')), deep] }] };
     expect(isValidDoc(doc(deep))).toBe(false);
+    let shallow: DocNode = p(t('x'));
+    for (let i = 0; i < 5; i++) shallow = { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('x')), shallow] }] };
+    expect(isValidDoc(doc(shallow))).toBe(true);
     const many = Array.from({ length: 20001 }, () => p());
     expect(isValidDoc(doc(...many))).toBe(false);
     expect(isValidDoc(doc(...many.slice(0, 1000)))).toBe(true);
@@ -120,6 +123,69 @@ describe('summary-doc', () => {
     expect(isValidDoc(doc({ type: 'heading', content: [t('x')] }))).toBe(false);
     expect(isValidDoc(doc(p({ type: 'noteRef', attrs: { ref: null as any } })))).toBe(false);
     expect(isValidDoc(doc(p({ type: 'noteRef', attrs: {} })))).toBe(false);
+  });
+
+  it('isValidDoc rejects empty text nodes', () => {
+    expect(isValidDoc(doc(p({ type: 'text', text: '' })))).toBe(false);
+    expect(isValidDoc(doc(h(2, '')))).toBe(false);
+    expect(isValidDoc(doc({ type: 'codeBlock', content: [t('')] }))).toBe(false);
+  });
+
+  it('isValidDoc enforces the content model', () => {
+    const li = (...content: DocNode[]): DocNode => ({ type: 'listItem', content });
+    const ul = (...content: DocNode[]): DocNode => ({ type: 'bulletList', content });
+    const br: DocNode = { type: 'hardBreak' };
+    // doc 只能在根，且至少一个块
+    expect(isValidDoc({ type: 'doc', content: [] })).toBe(false);
+    expect(isValidDoc({ type: 'doc' })).toBe(false);
+    expect(isValidDoc(doc(doc(p(t('x')))))).toBe(false);
+    // doc 下只能是块级
+    expect(isValidDoc(doc(t('x')))).toBe(false);
+    expect(isValidDoc(doc(br))).toBe(false);
+    expect(isValidDoc(doc(ref('h:1')))).toBe(false);
+    expect(isValidDoc(doc(li(p(t('x')))))).toBe(false);
+    // heading / paragraph 只含行内
+    expect(isValidDoc(doc(p(p(t('x')))))).toBe(false);
+    expect(isValidDoc(doc({ type: 'heading', attrs: { level: 2 }, content: [p(t('x'))] }))).toBe(false);
+    expect(isValidDoc(doc(p(ul(li(p(t('x')))))))).toBe(false);
+    // codeBlock 只含不带 marks 的 text
+    expect(isValidDoc(doc({ type: 'codeBlock', content: [br] }))).toBe(false);
+    expect(isValidDoc(doc({ type: 'codeBlock', content: [ref('h:1')] }))).toBe(false);
+    expect(isValidDoc(doc({ type: 'codeBlock', content: [{ type: 'text', text: 'x', marks: [{ type: 'bold' }] }] }))).toBe(false);
+    // 列表只含 listItem，且至少一个
+    expect(isValidDoc(doc(ul()))).toBe(false);
+    expect(isValidDoc(doc({ type: 'bulletList' }))).toBe(false);
+    expect(isValidDoc(doc(ul(p(t('x')))))).toBe(false);
+    expect(isValidDoc(doc({ type: 'orderedList', content: [p(t('x'))] }))).toBe(false);
+    // listItem 第一个必须是 paragraph，之后只能是块级（不含 heading）
+    expect(isValidDoc(doc(ul(li())))).toBe(false);
+    expect(isValidDoc(doc(ul(li(ul(li(p(t('x'))))))))).toBe(false);
+    expect(isValidDoc(doc(ul(li(h(2, 'x')))))).toBe(false);
+    expect(isValidDoc(doc(ul(li(p(t('x')), h(2, 'y')))))).toBe(false);
+    expect(isValidDoc(doc(ul(li(p(t('x')), t('y')))))).toBe(false);
+    // 叶子节点不能有 content
+    expect(isValidDoc(doc(p({ type: 'hardBreak', content: [] })))).toBe(false);
+    expect(isValidDoc(doc(p({ type: 'noteRef', attrs: { ref: 'h:1' }, content: [t('x')] })))).toBe(false);
+    expect(isValidDoc(doc(p({ type: 'text', text: 'x', content: [] } as any)))).toBe(false);
+  });
+
+  it('isValidDoc accepts valid nested lists, hardBreak and empty blocks', () => {
+    const li = (...content: DocNode[]): DocNode => ({ type: 'listItem', content });
+    const d = doc(
+      h(2, '主题'),
+      p(t('甲'), { type: 'hardBreak' }, { type: 'text', text: '乙', marks: [{ type: 'bold' }] }, ref('h:1')),
+      p(),
+      { type: 'heading', attrs: { level: 3 } },
+      {
+        type: 'bulletList',
+        content: [
+          li(p(t('一')), { type: 'orderedList', attrs: { start: 1, type: null }, content: [li(p(t('一.1'), ref('n:2')))] }, p(t('续')), { type: 'codeBlock', content: [t('c')] }),
+          li(p()),
+        ],
+      },
+      { type: 'codeBlock', attrs: { language: null } },
+    );
+    expect(isValidDoc(d)).toBe(true);
   });
 
   it('isValidDoc accepts tiptap default attrs', () => {
