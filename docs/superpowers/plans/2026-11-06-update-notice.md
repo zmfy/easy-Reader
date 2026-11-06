@@ -115,6 +115,25 @@
 - [ ] **Step 4: 验证** `npx vitest run && npx vue-tsc --noEmit && npx vite build`
 - [ ] **Step 5: 提交** `git commit -m "feat: 管理员系统提示条（新版本与配置警告）"`
 
+### Task 5b: 铃铛提醒与「系统提醒」开关（用户 11-06 修改，取代 Task 5 的顶部提示条）
+
+**Files:**
+- Create: `frontend/src/components/NotificationBell.vue`、`frontend/src/utils/notice-count.ts`
+- Delete: `frontend/src/components/SystemNoticeBar.vue`（其更新内容渲染迁入铃铛面板；`notice-dismiss.ts` 改造为已读逻辑或由 `notice-count.ts` 取代）
+- Modify: `frontend/src/layouts/DefaultLayout.vue`（侧栏用户区与手机顶部栏放铃铛，移除提示条）、`frontend/src/views/Settings.vue`（「系统提醒」开关）、`frontend/src/api/settings.ts`、`backend/src/services/update-check.ts`（开关读取、`applyUpdateCheckerSetting()` 启停定时器）、`backend/src/routes/settings.ts`（保存 `system_notice_enabled` 后调用启停；update-status 返回 `noticeEnabled` 与 `envDisabled`）、`docs/api.md`
+- Test: `frontend/src/utils/notice-count.test.ts`、`backend/tests/services/update-check.test.ts`（追加）
+
+**Interfaces:**
+- `notice-count.ts`：`unreadCount(input: { configWarnings: number; latestVersion: string | null; actionRequired: boolean }, store: Storage): number`、`markSeen(latestVersion: string, store: Storage): void`（键 `update-notice-seen`）
+- `update-check.ts`：`isNoticeEnabled(db): boolean`（env off → false；settings `system_notice_enabled === 'false'` → false；否则 true）、`applyUpdateCheckerSetting(db): void`（关闭则清除定时器，开启且未运行则启动并在 5 秒后检查一次）；`startUpdateChecker()` 启动前检查 `isNoticeEnabled`
+- `UpdateStatus` 增加 `noticeEnabled: boolean`、`envDisabled: boolean`
+
+- [ ] **Step 1: 写失败测试**：前端 `config warnings always count`、`unseen new version counts once`、`seen normal version stops counting until a newer one`、`action-required version keeps counting after seen`；后端 `notice disabled stops timer and skips checks`、`enabling restarts checker`、`env off overrides setting`。
+- [ ] **Step 2: 运行确认失败**
+- [ ] **Step 3: 实现**：后端开关与启停；前端铃铛（Tabler IconBell + el-badge 红色角标，数量 0 不显示角标）、面板（宽屏 el-popover / 手机 el-drawer 底部；打开即 markSeen）、内容复用 boldSegments；Settings「系统提醒」el-switch（envDisabled 时禁用并提示「已通过环境变量关闭」），保存后重新获取状态；关闭时铃铛隐藏（DefaultLayout 依据 update-status 的 noticeEnabled）。
+- [ ] **Step 4: 验证** 前端 `npx vitest run && npx vue-tsc --noEmit && npx vite build`；后端 `npx jest && npx tsc --noEmit`；浏览器实测铃铛、红点数量、面板、已读、开关启停（关闭后假源不再收到请求）。
+- [ ] **Step 5: 提交** `git commit -m "feat: 铃铛提醒与系统提醒开关，取代顶部提示条"`
+
 ### Task 6: 整体验收
 
 - [ ] **Step 1:** 后端 `npx jest && npx tsc --noEmit`；前端 `npx vitest run && npx vue-tsc --noEmit && npx vite build`。
