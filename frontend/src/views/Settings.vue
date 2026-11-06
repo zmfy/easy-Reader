@@ -99,6 +99,16 @@
           <!-- Changelog / Feedback -->
           <div v-if="activeTab === 'feedback'" class="setting-section">
             <h2 class="section-title">更新说明</h2>
+            <div class="notice-switch">
+              <span class="notice-switch-label">系统提醒</span>
+              <el-switch
+                :model-value="updateStatus?.noticeEnabled ?? false"
+                :disabled="!updateStatus || updateStatus.envDisabled"
+                :loading="savingNotice"
+                @change="(val: string | number | boolean) => toggleSystemNotice(!!val)"
+              />
+              <span class="notice-switch-hint">{{ updateStatus?.envDisabled ? '已通过环境变量关闭' : '在侧栏铃铛提示新版本与配置问题；关闭后停止后台检查更新' }}</span>
+            </div>
             <div class="update-status">
               <div class="update-status-main">
                 <span class="update-current">当前版本 {{ currentVersionLabel }}</span>
@@ -107,10 +117,10 @@
               <el-button
                 size="small"
                 :loading="checkingUpdate"
-                :disabled="updateStatus?.enabled === false"
+                :disabled="updateStatus?.noticeEnabled === false"
                 @click="checkUpdatesNow"
               >
-                {{ updateStatus?.enabled === false ? '已关闭更新检查' : '立即检查' }}
+                {{ updateStatus?.noticeEnabled === false ? '已关闭更新检查' : '立即检查' }}
               </el-button>
             </div>
             <p v-if="changelogMissing" class="section-desc">未找到更新说明文件</p>
@@ -468,9 +478,11 @@ import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
 import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { Release, UpdateStatus } from '@/types'
 
 const authStore = useAuthStore()
+const noticeStore = useSystemNoticeStore()
 const route = useRoute()
 
 const activeTab = ref('system')
@@ -616,6 +628,7 @@ const releases = ref<Release[]>([])
 const changelogMissing = ref(false)
 const updateStatus = ref<UpdateStatus | null>(null)
 const checkingUpdate = ref(false)
+const savingNotice = ref(false)
 // 默认展开最近一次
 const openedReleases = ref(new Set<string>())
 
@@ -627,7 +640,7 @@ const currentVersionLabel = computed(() => {
 const updateStatusText = computed(() => {
   const st = updateStatus.value
   if (!st) return ''
-  if (!st.enabled) return '已关闭更新检查'
+  if (!st.noticeEnabled) return '已关闭更新检查'
   const newer = st.newer.length ? `有新版本 v${st.newer[0].version}` : ''
   if (st.error) {
     const d = parseServerTime(st.checkedAt)
@@ -647,6 +660,7 @@ async function loadChangelog() {
     settingsApi.getChangelog(),
   ])
   updateStatus.value = statusResp.data.data ?? null
+  noticeStore.setStatus(updateStatus.value)
   const log = logResp.data.data
   if (!log) return
   releases.value = log.releases
@@ -659,10 +673,27 @@ async function checkUpdatesNow() {
   try {
     const resp = await settingsApi.checkUpdates()
     updateStatus.value = resp.data.data ?? updateStatus.value
+    noticeStore.setStatus(updateStatus.value)
   } catch {
     ElMessage.error('检查失败，请稍后再试')
   } finally {
     checkingUpdate.value = false
+  }
+}
+
+async function toggleSystemNotice(enabled: boolean) {
+  savingNotice.value = true
+  try {
+    await settingsApi.setSystemNotice(enabled)
+    // 重新获取状态，铃铛随之显示 / 隐藏
+    const resp = await settingsApi.getUpdateStatus()
+    updateStatus.value = resp.data.data ?? updateStatus.value
+    noticeStore.setStatus(updateStatus.value)
+    ElMessage.success(enabled ? '系统提醒已开启' : '系统提醒已关闭')
+  } catch {
+    ElMessage.error('保存失败，请稍后再试')
+  } finally {
+    savingNotice.value = false
   }
 }
 
@@ -1599,6 +1630,26 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--text-2);
   line-height: 1.6;
+}
+
+.notice-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  max-width: 600px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.notice-switch-label {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.notice-switch-hint {
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .update-status {

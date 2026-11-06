@@ -47,6 +47,10 @@ export const settingsApi = {
   getUpdateStatus: () =>
     http.get<ApiResponse<UpdateStatus>>('/settings/update-status'),
 
+  // 「系统提醒」开关：走 PUT /settings 保存，后端据此启停后台更新检查
+  setSystemNotice: (enabled: boolean) =>
+    http.put<ApiResponse<null>>('/settings', { system_notice_enabled: enabled ? 'true' : 'false' }),
+
   checkUpdates: () =>
     http.post<ApiResponse<UpdateStatus>>('/settings/update-check', {}),
 

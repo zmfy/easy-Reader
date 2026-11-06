@@ -8,12 +8,15 @@ import { Release, parseChangelog, newerReleases } from './changelog';
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_BODY_BYTES = 1024 * 1024; // 远端响应体上限 1MB
 const FIRST_CHECK_DELAY_MS = 60 * 1000;
+const RESUME_CHECK_DELAY_MS = 5 * 1000; // 重新开启系统提醒后尽快检查一次
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface UpdateStatus {
   currentVersion: string | null;
   branch: string;
   enabled: boolean;
+  noticeEnabled: boolean;
+  envDisabled: boolean;
   checkedAt: string | null;
   error: string | null;
   newer: Release[];
@@ -141,6 +144,12 @@ export async function fetchRemoteChangelog(
 
 // ---- 缓存与状态 ----
 
+// 系统提醒开关：环境变量 UPDATE_CHECK=off 为总开关；settings 缺省视为开启
+export function isNoticeEnabled(db: Database.Database): boolean {
+  if (!isEnabled()) return false;
+  return getSetting(db, 'system_notice_enabled') !== 'false';
+}
+
 function getSetting(db: Database.Database, key: string): string | null {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
   return row ? row.value : null;
@@ -164,6 +173,8 @@ export function getUpdateStatus(db: Database.Database): UpdateStatus {
     currentVersion,
     branch: UPDATE_BRANCH,
     enabled: isEnabled(),
+    noticeEnabled: isNoticeEnabled(db),
+    envDisabled: !isEnabled(),
     checkedAt: getSetting(db, 'update_checked_at'),
     error: getSetting(db, 'update_check_error') || null,
     newer: newerReleases(remote, currentVersion),
@@ -186,13 +197,42 @@ export async function checkForUpdates(db: Database.Database, fetchImpl: FetchImp
 
 // ---- 定时 ----
 
-export function startUpdateChecker(): void {
-  if (!isEnabled()) return;
+let firstTimer: NodeJS.Timeout | null = null;
+let intervalTimer: NodeJS.Timeout | null = null;
+
+function stopTimers(): void {
+  if (firstTimer) clearTimeout(firstTimer);
+  if (intervalTimer) clearInterval(intervalTimer);
+  firstTimer = null;
+  intervalTimer = null;
+}
+
+// 已在运行则不重复启动，保证任何时候最多一组定时器
+function startTimers(db: Database.Database, delayMs: number): void {
+  if (firstTimer || intervalTimer) return;
   const run = () => {
-    checkForUpdates(getDb()).catch(e => console.warn('[update-check] 检查失败:', e instanceof Error ? e.message : e));
+    if (!isNoticeEnabled(db)) return;
+    checkForUpdates(db).catch(e => console.warn('[update-check] 检查失败:', e instanceof Error ? e.message : e));
   };
-  setTimeout(() => {
+  firstTimer = setTimeout(() => {
+    firstTimer = null;
     run();
-    setInterval(run, CHECK_INTERVAL_MS).unref();
-  }, FIRST_CHECK_DELAY_MS).unref();
+    intervalTimer = setInterval(run, CHECK_INTERVAL_MS);
+    intervalTimer.unref();
+  }, delayMs);
+  firstTimer.unref();
+}
+
+export function startUpdateChecker(db: Database.Database = getDb()): void {
+  if (!isNoticeEnabled(db)) return;
+  startTimers(db, FIRST_CHECK_DELAY_MS);
+}
+
+// 保存「系统提醒」开关后调用：关闭即清除定时器；开启且未运行则启动并在 5 秒后检查一次
+export function applyUpdateCheckerSetting(db: Database.Database): void {
+  if (!isNoticeEnabled(db)) {
+    stopTimers();
+    return;
+  }
+  startTimers(db, RESUME_CHECK_DELAY_MS);
 }

@@ -46,6 +46,7 @@ declare module 'vue' {
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    NotificationBell: typeof import('./components/NotificationBell.vue')['default']
     PdfPage: typeof import('./components/PdfPage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
@@ -53,7 +54,6 @@ declare module 'vue' {
     ScanProgressBar: typeof import('./components/ScanProgressBar.vue')['default']
     SeriesCard: typeof import('./components/SeriesCard.vue')['default']
     SeriesGroupCard: typeof import('./components/SeriesGroupCard.vue')['default']
-    SystemNoticeBar: typeof import('./components/SystemNoticeBar.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

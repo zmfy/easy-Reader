@@ -9,6 +9,8 @@ import {
   checkForUpdates,
   getUpdateStatus,
   startUpdateChecker,
+  isNoticeEnabled,
+  applyUpdateCheckerSetting,
 } from '../../src/services/update-check';
 
 const REMOTE_MD = `# 更新日志
@@ -200,12 +202,24 @@ describe('readLocalChangelog', () => {
   });
 });
 
+// 每个用例结束后停掉模块内的定时器，避免状态串到下一个用例
+function stopChecker() {
+  const db = makeDb();
+  db.prepare("INSERT INTO settings (key, value) VALUES ('system_notice_enabled', 'false')").run();
+  applyUpdateCheckerSetting(db);
+}
+
 describe('startUpdateChecker', () => {
+  afterEach(() => {
+    stopChecker();
+    jest.clearAllTimers();
+  });
+
   test('disabled when UPDATE_CHECK=off', () => {
     process.env.UPDATE_CHECK = 'off';
     jest.useFakeTimers();
     const spy = jest.spyOn(global, 'setTimeout');
-    startUpdateChecker();
+    startUpdateChecker(makeDb());
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -213,10 +227,79 @@ describe('startUpdateChecker', () => {
   test('schedules first check after 60s with unref', () => {
     jest.useFakeTimers();
     const spy = jest.spyOn(global, 'setTimeout');
-    startUpdateChecker();
+    startUpdateChecker(makeDb());
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][1]).toBe(60000);
     spy.mockRestore();
-    jest.clearAllTimers();
+  });
+
+  test('notice disabled stops timer and skips checks', () => {
+    jest.useFakeTimers();
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((async () => ok(REMOTE_MD)) as any);
+    const db = makeDb();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('system_notice_enabled', 'false')").run();
+    expect(isNoticeEnabled(db)).toBe(false);
+    // 关闭时启动不排定时器
+    startUpdateChecker(db);
+    expect(jest.getTimerCount()).toBe(0);
+    // 先开启运行，再关闭：定时器被清除，之后不再检查
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'system_notice_enabled'").run();
+    startUpdateChecker(db);
+    expect(jest.getTimerCount()).toBe(1);
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'system_notice_enabled'").run();
+    applyUpdateCheckerSetting(db);
+    expect(jest.getTimerCount()).toBe(0);
+    jest.advanceTimersByTime(3 * 24 * 60 * 60 * 1000);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const st = getUpdateStatus(db);
+    expect(st.checkedAt).toBeNull();
+    expect(st.noticeEnabled).toBe(false);
+    expect(st.envDisabled).toBe(false);
+    fetchSpy.mockRestore();
+  });
+
+  test('enabling restarts checker', () => {
+    jest.useFakeTimers();
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((async () => ok(REMOTE_MD)) as any);
+    const db = makeDb();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('system_notice_enabled', 'false')").run();
+    applyUpdateCheckerSetting(db);
+    expect(jest.getTimerCount()).toBe(0);
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'system_notice_enabled'").run();
+    expect(isNoticeEnabled(db)).toBe(true);
+    // 多次开启不叠加定时器
+    applyUpdateCheckerSetting(db);
+    applyUpdateCheckerSetting(db);
+    startUpdateChecker(db);
+    expect(jest.getTimerCount()).toBe(1);
+    // 5 秒后检查一次，之后只保留一个 24 小时的 interval
+    jest.advanceTimersByTime(4999);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // 反复关开后仍只有一个周期定时器
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'system_notice_enabled'").run();
+    applyUpdateCheckerSetting(db);
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'system_notice_enabled'").run();
+    applyUpdateCheckerSetting(db);
+    jest.advanceTimersByTime(5000);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    fetchSpy.mockRestore();
+  });
+
+  test('env off overrides setting', () => {
+    process.env.UPDATE_CHECK = 'off';
+    jest.useFakeTimers();
+    const db = makeDb();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('system_notice_enabled', 'true')").run();
+    expect(isNoticeEnabled(db)).toBe(false);
+    applyUpdateCheckerSetting(db);
+    startUpdateChecker(db);
+    expect(jest.getTimerCount()).toBe(0);
+    const st = getUpdateStatus(db);
+    expect(st.noticeEnabled).toBe(false);
+    expect(st.envDisabled).toBe(true);
   });
 });

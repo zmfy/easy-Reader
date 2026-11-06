@@ -11,7 +11,7 @@ import { User } from '../types';
 import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
 import crypto from 'crypto';
-import { getUpdateStatus, checkForUpdates, readLocalChangelog } from '../services/update-check';
+import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
 
 const router = Router();
 
@@ -50,10 +50,11 @@ router.get('/update-status', authMiddleware, adminMiddleware, (_req: Request, re
 });
 
 // POST /api/settings/update-check — 立即检查更新；检查失败也返回 200，错误在状态的 error 里
+// 系统提醒关闭（含 UPDATE_CHECK=off）时不联网，直接返回当前状态
 router.post('/update-check', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
   const db = getDb();
   const status = getUpdateStatus(db);
-  if (!status.enabled) return successResponse(res, status);
+  if (!status.noticeEnabled) return successResponse(res, status);
   successResponse(res, await checkForUpdates(db));
 });
 
@@ -97,6 +98,8 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
     if (isApiKeySetting(key) && value.includes('****')) continue;
     upsert.run(key, value);
   }
+  // 「系统提醒」开关变化时启停后台更新检查
+  if ('system_notice_enabled' in parsed.data) applyUpdateCheckerSetting(db);
   successResponse(res, null, '设置已更新');
 });
 

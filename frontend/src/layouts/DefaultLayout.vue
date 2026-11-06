@@ -31,6 +31,7 @@
             <div class="user-name">{{ authStore.user?.username }}</div>
             <div class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
           </div>
+          <NotificationBell v-if="showBell" />
         </div>
         <div class="action-row" @click="toggleKeepAlive">
           <IconPlugConnected class="action-icon" :size="16" :stroke-width="1.75" />
@@ -60,8 +61,8 @@
           <span class="hamburger" />
         </button>
         <span class="mobile-title">{{ siteName }}</span>
+        <NotificationBell v-if="showBell" />
       </div>
-      <SystemNoticeBar v-if="authStore.isAdmin" />
       <ScanProgressBar />
       <slot />
     </main>
@@ -69,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -78,10 +79,15 @@ import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconPlugConne
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
-import SystemNoticeBar from '@/components/SystemNoticeBar.vue'
+import NotificationBell from '@/components/NotificationBell.vue'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 
 const authStore = useAuthStore()
+const noticeStore = useSystemNoticeStore()
 const router = useRouter()
+
+// 铃铛只对管理员显示；「系统提醒」关闭（含环境变量关闭）时整个隐藏
+const showBell = computed(() => authStore.isAdmin && noticeStore.enabled)
 
 const siteName = ref('简单书房')
 const sidebarOpen = ref(false)
@@ -123,6 +129,7 @@ function toggleKeepAlive() {
 }
 
 onMounted(async () => {
+  if (authStore.isAdmin) void noticeStore.load()
   try {
     const resp = await settingsApi.getPublic()
     if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name

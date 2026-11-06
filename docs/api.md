@@ -169,17 +169,21 @@
   "currentVersion": "1.0.0",
   "branch": "main",
   "enabled": true,
+  "noticeEnabled": true,
+  "envDisabled": false,
   "checkedAt": "2026-11-06T08:00:00.000Z",
   "error": null,
   "newer": [ /* Release，新版本在前，只含比本站新的版本 */ ]
 }
 ```
 
-`currentVersion` 取自本站 CHANGELOG，读不到时为 `null`（此时 `newer` 为空）；`enabled` 为 `false` 表示用环境变量 `UPDATE_CHECK=off` 关闭了更新检查；`error` 是最近一次检查失败的原因（失败时 `newer` 仍保留上次成功的结果）。
+`currentVersion` 取自本站 CHANGELOG，读不到时为 `null`（此时 `newer` 为空）；`enabled` 为 `false` 表示用环境变量 `UPDATE_CHECK=off` 关闭了更新检查（此时 `envDisabled` 为 `true`）；`noticeEnabled` 为「系统提醒」开关的实际状态（环境变量关闭时恒为 `false`），关闭时前端隐藏铃铛、后台停止定时检查；`error` 是最近一次检查失败的原因（失败时 `newer` 仍保留上次成功的结果）。
 
 #### POST /api/v1/settings/update-check
 
-立即联网检查一次，返回值与 `update-status` 相同。检查失败也返回 200，原因在 `error` 里。更新检查关闭时不联网，直接返回当前状态。
+立即联网检查一次，返回值与 `update-status` 相同。检查失败也返回 200，原因在 `error` 里。「系统提醒」关闭（`noticeEnabled` 为 `false`，含环境变量关闭）时不联网，直接返回当前状态。
+
+「系统提醒」开关通过 `PUT /api/v1/settings` 保存，键 `system_notice_enabled`，值 `'true'` / `'false'`（缺省视为开启）。保存后立即生效：关闭时清除后台定时检查；开启时恢复定时检查，并在约 5 秒后检查一次。
 
 #### GET /api/v1/settings/changelog
 

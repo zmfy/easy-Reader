@@ -349,6 +349,8 @@ export interface UpdateStatus {
   currentVersion: string | null
   branch: string
   enabled: boolean
+  noticeEnabled: boolean
+  envDisabled: boolean
   checkedAt: string | null
   error: string | null
   newer: Release[]
