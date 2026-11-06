@@ -95,7 +95,7 @@ docker compose up -d --build
 | `1.0.0`、`1.0` 等 | 固定版本 / 固定次版本（只接收修订更新） |
 | `edge` | `main` 分支最新代码，尝鲜用，可能不稳定 |
 
-学习版（看书 + 学习，`study` 分支）使用同一个镜像仓库，tag 带 `-study` 后缀，不会占用上面的 `latest`：
+学习版（看书 + 学习，`study` 分支）使用同一个镜像仓库，tag 带 `-study` 后缀，不会占用上面的 `latest`；学习版按 `study-vX.Y.Z` 这样的 git tag 发版，版本记录在 CHANGELOG 的 `X.Y.Z-study` 一节：
 
 | tag | 内容 |
 |---|---|
@@ -103,7 +103,7 @@ docker compose up -d --build
 | `1.0.0-study`、`1.0-study` 等 | 固定版本 / 固定次版本 |
 | `edge-study` | `study` 分支最新代码，尝鲜用 |
 
-升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。
+升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。学习版改为拉取 `latest-study`（或固定的 `X.Y.Z-study`）。
 
 ---
 

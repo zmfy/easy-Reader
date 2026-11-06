@@ -85,3 +85,5 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           body_path: release-notes.md
+          # 学习版 Release 不标记为仓库的「Latest」，Latest 留给看书版
+          make_latest: false

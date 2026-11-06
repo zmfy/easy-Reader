@@ -8,7 +8,10 @@
 
 Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`1.0`），`latest` 指向最新发布的版本。
 
+学习版（`study` 分支）的版本记为 `X.Y.Z-study`，发版用 tag `study-vX.Y.Z`，镜像 tag 为 `X.Y.Z-study`、`X.Y-study` 与 `latest-study`（不会占用看书版的 `latest`）；学习版的 GitHub Release 不标记为 Latest。
+
 <!-- 发版：在下面最新版本之前新增一节 `## [x.y.z] - YYYY-MM-DD`，然后打 tag `vx.y.z` 并推送，CI 会构建镜像并用该节内容创建 GitHub Release。 -->
+<!-- 学习版发版：新增一节 `## [X.Y.Z-study] - YYYY-MM-DD`，打 tag `study-vX.Y.Z` 并推送。 -->
 
 ## [Unreleased-study]
 
