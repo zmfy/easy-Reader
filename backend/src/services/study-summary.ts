@@ -202,6 +202,7 @@ export function deleteSummary(db: Database.Database, userId: string, bookId: str
     if (!cur || hasRunningJob(db, userId, bookId)) return false;
     db.prepare('DELETE FROM study_summary_versions WHERE summary_id = ?').run(cur.id);
     db.prepare('DELETE FROM study_summaries WHERE id = ?').run(cur.id);
+    db.prepare("DELETE FROM study_summary_jobs WHERE user_id = ? AND book_id = ? AND status != 'running'").run(userId, bookId);
     return true;
   })();
 }

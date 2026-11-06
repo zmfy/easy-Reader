@@ -132,6 +132,16 @@ describe('study-summary', () => {
     expect(deleteSummary(d, 'u1', 'b1')).toBe(false);
   });
 
+  it('deleteSummary also removes finished job records', () => {
+    const d = makeDb();
+    writeAiResult(d, 'u1', 'b1', doc('A'), [], 'ai_generate', '初版');
+    startJob(d, 'u1', 'b1', 'done');
+    startJob(d, 'u1', 'b2', 'done');
+    expect(deleteSummary(d, 'u1', 'b1')).toBe(true);
+    const rows = d.prepare('SELECT book_id FROM study_summary_jobs').all() as Array<{ book_id: string }>;
+    expect(rows.map(r => r.book_id)).toEqual(['b2']);
+  });
+
   it('listSummaryOverview includes books with notes but no summary and deleted books with summary', () => {
     const d = makeDb();
     d.prepare("INSERT INTO books (id, title) VALUES ('b1', '书一')").run();
