@@ -56,6 +56,12 @@
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
               </router-link>
+              <!-- 学习版以 AGPL-3.0 发布：网络用户可从这里获取对应源码（AGPL 第 13 条） -->
+              <a :href="SOURCE_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
+                <IconCode class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>源码</span>
+                <span class="menu-meta">AGPL-3.0</span>
+              </a>
               <div class="menu-sep" />
               <div class="menu-row menu-row--danger" role="button" tabindex="0" @click="closeMenu(); handleLogout()" @keydown.enter.prevent="closeMenu(); handleLogout()" @keydown.space.prevent="closeMenu(); handleLogout()">
                 <IconLogout class="menu-icon" :size="16" :stroke-width="1.75" />
@@ -91,12 +97,14 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconDots, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconCode, IconDots, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useSystemNoticeStore } from '@/stores/system-notice'
+
+const SOURCE_URL = 'https://github.com/zmfy/easy-Reader/tree/study'
 
 const authStore = useAuthStore()
 const noticeStore = useSystemNoticeStore()
@@ -447,6 +455,7 @@ async function handleLogout() {
   transition: background 0.15s ease;
 }
 .user-menu-popper .menu-row span { flex: 1; }
+.user-menu-popper .menu-row .menu-meta { flex: none; font-size: 11px; color: var(--text-2); }
 .user-menu-popper .menu-icon { flex: none; color: var(--text-2); }
 .user-menu-popper .menu-row:hover,
 .user-menu-popper .menu-row:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
