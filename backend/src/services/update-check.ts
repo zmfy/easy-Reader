@@ -174,6 +174,7 @@ export async function checkForUpdates(db: Database.Database, fetchImpl: FetchImp
   try {
     const { text, source } = await fetchRemoteChangelog(updateSources(), fetchImpl);
     const releases = parseChangelog(text, VERSION_SUFFIX);
+    if (!releases.length) throw new Error('内容无效');
     setSetting(db, 'update_check_result', JSON.stringify({ releases, source }));
     setSetting(db, 'update_check_error', '');
   } catch (e: any) {

@@ -142,6 +142,15 @@ describe('checkForUpdates / getUpdateStatus', () => {
     expect(getUpdateStatus(db).error).toMatch(/500/);
   });
 
+  test('zero releases counts as invalid content', async () => {
+    const db = makeDb();
+    await checkForUpdates(db, (async () => ok(REMOTE_MD)) as any);
+    // 含 "## [" 但解析不出任何版本
+    const st = await checkForUpdates(db, (async () => ok('# 更新日志\n\n## [foo]\n\n- x\n')) as any);
+    expect(st.error).toMatch(/内容无效/);
+    expect(st.newer.map(r => r.version)).toEqual(['1.2.0']);
+  });
+
   test('no current version means no newer', async () => {
     delete process.env.CHANGELOG_PATH;
     fs.rmSync(path.join(tmp, 'CHANGELOG.md'));

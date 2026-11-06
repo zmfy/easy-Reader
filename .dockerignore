@@ -9,7 +9,9 @@ data
 .claude
 .project
 README.md
-# 开发产物，与构建无关（Dockerfile 只 COPY frontend/、backend/src 与 docs/api.md）
+# 更新提醒要读本站版本，镜像里需要 CHANGELOG.md
+!CHANGELOG.md
+# 开发产物，与构建无关（Dockerfile 只 COPY frontend/、backend/src、docs/api.md 与 CHANGELOG.md）
 docs
 !docs/api.md
 tasks

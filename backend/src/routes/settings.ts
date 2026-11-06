@@ -11,6 +11,7 @@ import { User } from '../types';
 import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
 import crypto from 'crypto';
+import { getUpdateStatus, checkForUpdates, readLocalChangelog } from '../services/update-check';
 
 const router = Router();
 
@@ -41,6 +42,25 @@ router.get('/public', (req: Request, res: Response) => {
   const data: Record<string, string> = {};
   for (const r of rows) data[r.key] = r.value;
   successResponse(res, { site_name: data['site_name'] || '', site_subtitle: data['site_subtitle'] || '', site_theme: data['site_theme'] || 'indigo' });
+});
+
+// GET /api/settings/update-status — 最近一次检查的结果（不联网）
+router.get('/update-status', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, getUpdateStatus(getDb()));
+});
+
+// POST /api/settings/update-check — 立即检查更新；检查失败也返回 200，错误在状态的 error 里
+router.post('/update-check', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+  const db = getDb();
+  const status = getUpdateStatus(db);
+  if (!status.enabled) return successResponse(res, status);
+  successResponse(res, await checkForUpdates(db));
+});
+
+// GET /api/settings/changelog — 本站 CHANGELOG 最近 5 个版本
+router.get('/changelog', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const { releases, currentVersion, missing } = readLocalChangelog();
+  successResponse(res, { currentVersion, missing, releases: releases.slice(0, 5) });
 });
 
 // GET /api/settings
