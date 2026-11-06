@@ -151,7 +151,8 @@ export function addCustomNode(
 }
 
 /**
- * 改 label / note（note '' → null）。划线根节点（kind 'highlight'）不能改名，尝试改名返回 'FORBIDDEN'。
+ * 改 label / note（note '' → null）。划线根节点（kind 'highlight'）不能改名，也不能写节点批注
+ * （它的批注就是划线批注，在划线上编辑），尝试时返回 'FORBIDDEN'；清空批注仍允许。
  * 不存在/非本人 → null
  */
 export function updateMindNode(
@@ -161,7 +162,10 @@ export function updateMindNode(
   const node = db.prepare('SELECT * FROM mind_nodes WHERE id = ? AND user_id = ? AND book_id = ?')
     .get(id, userId, bookId) as MindNode | undefined;
   if (!node) return null;
-  if (patch.label !== undefined && patch.label !== node.label && node.kind === 'highlight') return 'FORBIDDEN';
+  if (node.kind === 'highlight') {
+    if (patch.label !== undefined && patch.label !== node.label) return 'FORBIDDEN';
+    if (patch.note) return 'FORBIDDEN';
+  }
   const label = patch.label ?? node.label;
   const note = patch.note === undefined ? node.note : (patch.note || null);
   db.prepare('UPDATE mind_nodes SET label = ?, note = ? WHERE id = ?').run(label, note, id);

@@ -426,7 +426,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 { "label": "新名称，1 到 60 字", "note": "批注，最长 2000 字；空字符串或 null 清除" }
 ```
 
-两个字段至少给一个，返回更新后的 `MindNode`。节点不存在或不是本人的返回 404；改划线根节点（`kind` 为 `highlight`）的名称返回 403 `FORBIDDEN`（只改批注可以）。
+两个字段至少给一个，返回更新后的 `MindNode`。节点不存在或不是本人的返回 404；划线根节点（`kind` 为 `highlight`）的名称就是划线原文、批注就是划线批注（用 `PATCH /highlights/:id` 修改），改它的名称或写非空批注返回 403 `FORBIDDEN`；传 `note: null` 或空字符串清除可以。
 
 ### DELETE /api/v1/reader/:bookId/mind-nodes/:id
 

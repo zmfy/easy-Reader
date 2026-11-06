@@ -102,7 +102,11 @@ describe('mind-nodes service', () => {
     const { d, h } = setup();
     const root = keepChain(d, 'u1', 'b1', h.id, chainA)![0];
     expect(updateMindNode(d, 'u1', 'b1', root.id, { label: '改名' })).toBe('FORBIDDEN');
-    expect(updateMindNode(d, 'u1', 'b1', root.id, { note: '批注' })).toMatchObject({ note: '批注', label: root.label });
+    // 划线节点的批注就是划线批注，不另存节点批注；清空（旧数据）仍允许
+    expect(updateMindNode(d, 'u1', 'b1', root.id, { note: '批注' })).toBe('FORBIDDEN');
+    d.prepare('UPDATE mind_nodes SET note = ? WHERE id = ?').run('旧批注', root.id);
+    expect(updateMindNode(d, 'u1', 'b1', root.id, { note: '' })).toMatchObject({ note: null, label: root.label });
+    expect(updateMindNode(d, 'u1', 'b1', root.id, { note: null })).toMatchObject({ note: null });
   });
 
   it("cannot update others' nodes", () => {

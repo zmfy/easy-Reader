@@ -124,8 +124,9 @@ export function toMarkdown(root: MapNode): string {
     const m = n.node
     if (m?.summary) text += `：${escapeMd(m.summary)}`
     lines.push(`${pad}- ${text}`)
-    // 划线批注在前，节点笔记在后，每行一条引用
-    for (const note of [n.highlight?.note, m?.note]) {
+    // 划线批注在前，节点笔记在后，每行一条引用；划线节点只用划线批注（与界面一致）
+    const notes = m?.kind === 'highlight' ? [n.highlight?.note] : [n.highlight?.note, m?.note]
+    for (const note of notes) {
       if (note) for (const l of note.split(/\r?\n/)) if (l.trim()) lines.push(`${pad}  > ${l.trim()}`)
     }
     for (const c of n.children) walk(c, depth + 1)

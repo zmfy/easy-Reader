@@ -469,7 +469,7 @@ router.patch('/:bookId/mind-nodes/:id', authMiddleware, (req: Request, res: Resp
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const node = updateMindNode(getDb(), req.user!.userId, req.params.bookId, req.params.id, parsed.data);
   if (!node) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '节点不存在'); return; }
-  if (node === 'FORBIDDEN') { errorResponse(res, 403, 'FORBIDDEN', '划线节点不能改名'); return; }
+  if (node === 'FORBIDDEN') { errorResponse(res, 403, 'FORBIDDEN', '划线节点不能改名或写节点批注，批注请修改划线'); return; }
   successResponse(res, node, '节点已更新');
 });
 

@@ -146,13 +146,14 @@ describe('book-map', () => {
       ['# 书\\[1\\]', '- 第0章', '  - 有\\*星\\#号 换行：概述\\_x', '    > 第一行', '    > 第二行', '    - 子', ''].join('\n'))
   })
 
-  it('toMarkdown writes full highlight text and its annotation', () => {
+  it('toMarkdown writes full highlight text and only its highlight annotation', () => {
     const long = '甲'.repeat(40) + '\n*乙*'
     const h = { ...hl('h1', long), note: '批注一\n\n批注二' }
+    // 划线节点的旧节点批注（接口曾允许写入）与界面一致，不导出
     const nodes = [mind('m', { kind: 'highlight', highlight_id: 'h1', label: '短', note: '节点笔记' })]
     const root = buildBookMap({ bookTitle: '书', chapters: flat.slice(0, 1), nodes, highlights: [h] })
     expect(toMarkdown(root)).toBe(
-      ['# 书', '- 第0章', `  - ${'甲'.repeat(40)} \\*乙\\*`, '    > 批注一', '    > 批注二', '    > 节点笔记', ''].join('\n'))
+      ['# 书', '- 第0章', `  - ${'甲'.repeat(40)} \\*乙\\*`, '    > 批注一', '    > 批注二', ''].join('\n'))
   })
 
   it('truncates highlight labels by code points', () => {
