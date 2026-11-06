@@ -1,14 +1,15 @@
 <template>
   <DefaultLayout>
-    <div class="notes-page">
-      <div class="page-header">
-        <h1 class="page-title">学习总结</h1>
-        <span v-if="loaded" class="book-count">{{ items.length }} 本</span>
-      </div>
+    <div class="page page--narrow">
+      <PageHeader title="学习总结" :count="loaded ? `${items.length} 本` : undefined" />
 
       <div class="toolbar">
-        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、总结内容" clearable :prefix-icon="Search" />
-        <el-radio-group v-model="sortBy" size="default">
+        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、总结内容" clearable>
+          <template #prefix>
+            <IconSearch :size="16" :stroke-width="1.75" />
+          </template>
+        </el-input>
+        <el-radio-group v-model="sortBy">
           <el-radio-button value="updated">最近更新</el-radio-button>
           <el-radio-button value="title">书名</el-radio-button>
         </el-radio-group>
@@ -19,15 +20,16 @@
       </div>
 
       <div v-else-if="loadFailed" class="empty-state">
-        <div class="empty-title">加载失败</div>
+        <div class="empty-state-title">加载失败</div>
         <el-button type="primary" @click="load">重试</el-button>
       </div>
 
       <div v-else-if="sorted.length === 0" class="empty-state">
-        <el-icon class="empty-icon"><IconNotebook :stroke-width="1.5" /></el-icon>
-        <div v-if="keyword.trim()" class="empty-title">没有匹配的学习总结</div>
+        <IconNotebook class="empty-icon" :size="48" :stroke-width="1.5" />
+        <div v-if="keyword.trim()" class="empty-state-title">没有匹配的学习总结</div>
         <template v-else>
-          <div class="empty-desc">还没有任何笔记。在阅读器里划线、或在学习导图里添加知识点后，这里就能生成学习总结。</div>
+          <div class="empty-state-title">还没有学习总结</div>
+          <div class="empty-state-desc">在阅读器里划线、或在学习导图里添加知识点后，这里就能生成学习总结。</div>
         </template>
       </div>
 
@@ -64,10 +66,10 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
-import { IconNotebook } from '@tabler/icons-vue'
+import { IconNotebook, IconSearch } from '@tabler/icons-vue'
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { studyApi } from '@/api/study'
 import { SOURCE_LABEL } from '@/utils/summary-doc'
 import { parseServerTime } from '@/utils/time'
@@ -159,25 +161,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.notes-page {
-  padding: 32px;
-  min-height: 100%;
-}
-.page-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.page-title {
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--text-0);
-}
-.book-count {
-  font-size: 14px;
-  color: var(--text-2);
-}
 .toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -193,20 +176,21 @@ onBeforeUnmount(() => {
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .note-card {
-  background: var(--bg-1);
-  border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 16px 20px;
   display: flex;
   align-items: center;
   gap: 16px;
   transition: border-color 0.18s ease;
 }
 .note-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent-line);
 }
 .card-main {
   flex: 1;
@@ -240,7 +224,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   font-size: 12px;
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: var(--accent-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -252,24 +236,14 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   font-size: 12px;
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border: 1px solid var(--accent-line);
 }
 .card-actions {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
 }
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 80px 0;
-  text-align: center;
-}
-.empty-icon { font-size: 56px; color: var(--text-2); }
-.empty-title { font-size: 18px; color: var(--text-1); font-weight: 500; }
-.empty-desc { font-size: 14px; color: var(--text-2); max-width: 420px; line-height: 1.7; }
+.empty-icon { color: var(--text-2); opacity: 0.6; }
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -277,10 +251,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-  .notes-page { padding: 16px; }
-  .page-title { font-size: 22px; }
   .search-input { max-width: none; flex-basis: 100%; }
-  .note-card { flex-direction: column; align-items: stretch; gap: 12px; }
+  .note-card { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px; }
   .card-actions { justify-content: flex-end; }
 }
 </style>

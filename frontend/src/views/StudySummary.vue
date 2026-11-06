@@ -7,7 +7,7 @@
     @touchcancel="cancelLongPress"
   >
     <header class="sum-topbar">
-      <el-button :icon="ArrowLeft" text @click="goBack">返回</el-button>
+      <el-button text @click="goBack"><IconChevronLeft :size="16" :stroke-width="1.75" />返回</el-button>
       <h1 class="sum-title" :title="pageTitle">
         <span class="sum-title-text">{{ pageTitle }}</span>
         <el-tag v-if="ready && bookTitle === null" size="small" type="info">书已不存在</el-tag>
@@ -147,8 +147,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeft } from '@element-plus/icons-vue'
-import { IconDots, IconDownload, IconHistory, IconRefresh, IconSparkles } from '@tabler/icons-vue'
+import { IconChevronLeft, IconDots, IconDownload, IconHistory, IconRefresh, IconSparkles } from '@tabler/icons-vue'
 import { ElDrawer, ElMessage, ElMessageBox } from 'element-plus'
 import SummaryEditor from '@/components/SummaryEditor.vue'
 import { studyApi } from '@/api/study'
@@ -713,8 +712,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  background: var(--el-bg-color-page);
-  color: var(--el-text-color-primary);
+  background: var(--bg-0);
+  color: var(--text-0);
 }
 .sum-topbar {
   display: flex;
@@ -722,8 +721,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px 12px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--card-border);
+  background: var(--card-bg);
 }
 .sum-title {
   flex: 1;
@@ -739,17 +738,17 @@ onBeforeUnmount(() => {
 .sum-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .sum-tools .el-button + .el-button { margin-left: 0; }
 .btn-wrap { display: inline-flex; }
-.save-state { font-size: 12px; color: var(--el-text-color-secondary); }
-.save-state.error { color: var(--el-color-danger); }
+.save-state { font-size: 12px; color: var(--text-2); }
+.save-state.error { color: var(--danger); }
 .sum-body { flex: 1; min-height: 0; display: flex; }
 .sum-main { flex: 1; min-width: 0; overflow-y: auto; padding: 16px; }
 .sum-paper {
   max-width: 880px;
   margin: 0 auto;
   padding: 20px 24px;
-  border-radius: 12px;
-  border: 1px solid var(--card-border, var(--el-border-color-lighter));
-  background: var(--card-bg, var(--el-bg-color));
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
 }
 .sum-loading { max-width: 880px; margin: 0 auto; }
 .sum-error {
@@ -759,9 +758,9 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding: 48px 0;
   font-size: 14px;
-  color: var(--el-text-color-secondary);
+  color: var(--text-2);
 }
-.sum-empty { padding: 32px 0; text-align: center; font-size: 14px; color: var(--el-text-color-secondary); }
+.sum-empty { padding: 32px 0; text-align: center; font-size: 14px; color: var(--text-2); }
 .sum-empty p { margin: 0 0 16px; }
 .job-progress { margin-bottom: 16px; }
 .job-text { margin-bottom: 6px; font-size: 13px; color: var(--accent); }
@@ -772,34 +771,34 @@ onBeforeUnmount(() => {
   gap: 8px 12px;
   margin-bottom: 16px;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
-  color: var(--el-color-danger);
-  background: var(--el-color-danger-light-9);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--card-bg));
 }
 .versions-panel {
   width: 300px;
   flex-shrink: 0;
   overflow-y: auto;
   padding: 16px;
-  border-left: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-left: 1px solid var(--card-border);
+  background: var(--card-bg);
 }
 .panel-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
-.panel-hint { font-size: 13px; color: var(--el-text-color-secondary); }
+.panel-hint { font-size: 13px; color: var(--text-2); }
 .version-list { list-style: none; margin: 0; padding: 0; }
-.version-item { padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.version-item { padding: 8px 0; border-bottom: 1px solid var(--card-border); }
 .version-meta { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.version-time { color: var(--el-text-color-primary); }
+.version-time { color: var(--text-0); }
 .version-source {
   font-size: 12px;
   line-height: 1;
   padding: 3px 6px;
   border-radius: 4px;
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--accent-soft);
 }
-.version-desc { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); word-break: break-all; }
+.version-desc { margin-top: 4px; font-size: 12px; color: var(--text-2); word-break: break-all; }
 .conflict-bar { margin-bottom: 12px; }
 .version-body { max-height: 65vh; overflow-y: auto; }
 .ref-pop-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
@@ -808,6 +807,6 @@ onBeforeUnmount(() => {
   .sum-topbar { padding: 6px 8px; }
   .sum-title { flex-basis: calc(100% - 80px); }
   .sum-main { padding: 8px; }
-  .sum-paper { padding: 12px; border-radius: 10px; }
+  .sum-paper { padding: 12px; border-radius: var(--radius-md); }
 }
 </style>

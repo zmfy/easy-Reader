@@ -12,7 +12,7 @@
       </div>
     </template>
 
-    <div v-if="loadingKept" class="mind-hint"><el-icon class="is-loading"><Loading /></el-icon> 加载中…</div>
+    <div v-if="loadingKept" class="mind-hint"><el-icon class="is-loading"><IconLoader2 /></el-icon> 加载中…</div>
     <div v-else-if="loadError" class="mind-hint mind-error">{{ loadError }}</div>
     <ul v-else class="mind-list">
       <li v-for="{ node, depth } in rows" :key="node.key" class="mind-item" :style="{ paddingLeft: `${depth * 18}px` }">
@@ -24,7 +24,7 @@
           <div class="mind-node-main">
             <span class="mind-kind" :class="`kind-${node.kind}`">{{ KIND_LABEL[node.kind] }}</span>
             <span class="mind-label">{{ node.label }}</span>
-            <el-icon v-if="expanding[node.key]" class="is-loading mind-spin"><Loading /></el-icon>
+            <el-icon v-if="expanding[node.key]" class="is-loading mind-spin"><IconLoader2 /></el-icon>
           </div>
           <div v-if="node.summary" class="mind-summary">{{ node.summary }}</div>
           <div v-if="expansions[node.key]" class="mind-meta" @click.stop>
@@ -32,10 +32,10 @@
             <button class="mind-link" :disabled="busy || expanding[node.key]" @click="expand(node.key, true)">重新生成</button>
           </div>
           <div v-if="selectedKey === node.key" class="mind-actions" @click.stop>
-            <button v-if="!node.kept && node.key !== 'root'" class="mind-btn primary" :disabled="locked" @click="keep(node.key)">保留</button>
-            <button v-if="!expansions[node.key] && depth < MAX_EXPAND_DEPTH" class="mind-btn" :disabled="busy || expanding[node.key]" @click="expand(node.key)">继续展开</button>
-            <button v-if="node.source" class="mind-btn" :class="{ later: node.source.later }" @click="jump(node)">{{ sourceText(node) }}</button>
-            <button v-if="node.kept && node.key !== 'root'" class="mind-btn danger" :disabled="locked" @click="remove(node)">删除</button>
+            <el-button v-if="!node.kept && node.key !== 'root'" size="small" type="primary" :disabled="locked" @click="keep(node.key)">保留</el-button>
+            <el-button v-if="!expansions[node.key] && depth < MAX_EXPAND_DEPTH" size="small" :disabled="busy || expanding[node.key]" @click="expand(node.key)">继续展开</el-button>
+            <el-button v-if="node.source" size="small" :class="{ later: node.source.later }" @click="jump(node)">{{ sourceText(node) }}</el-button>
+            <el-button v-if="node.kept && node.key !== 'root'" size="small" type="danger" plain :disabled="locked" @click="remove(node)">删除</el-button>
           </div>
         </div>
       </li>
@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
-import { Loading } from '@element-plus/icons-vue'
+import { IconLoader2 } from '@tabler/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { readerApi } from '../api/reader'
 import type { Highlight, MindNode, ExpandedCandidate } from '../types'
@@ -258,48 +258,36 @@ async function jump(node: TreeNode) {
 
 <style scoped>
 .mind-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
-.mind-title { font-size: 16px; font-weight: 600; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mind-hint { display: flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 14px; }
-.mind-error { color: var(--el-color-danger); }
+.mind-title { font-size: 16px; font-weight: 600; color: var(--text-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mind-hint { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 14px; }
+.mind-error { color: var(--danger); }
 .mind-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .mind-node {
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--card-border);
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .mind-node.candidate { border-style: dashed; }
 .mind-node.kept { border-style: solid; }
-.mind-node:hover, .mind-node.selected { background: var(--el-fill-color-light); }
-.mind-node.selected { border-color: var(--el-color-primary); }
+.mind-node:hover, .mind-node.selected { background: var(--accent-soft); }
+.mind-node.selected { border-color: var(--accent); }
 .mind-node-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mind-label { font-size: 14px; color: var(--el-text-color-primary); word-break: break-all; }
-.mind-spin { color: var(--el-color-primary); flex-shrink: 0; }
-.mind-kind { flex-shrink: 0; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 4px; color: #fff; background: var(--el-color-info); }
-.mind-kind.kind-highlight { background: var(--el-color-warning); }
-.mind-kind.kind-event { background: var(--el-color-primary); }
-.mind-kind.kind-concept { background: var(--el-color-success); }
-.mind-kind.kind-person { background: var(--el-color-danger); }
-.mind-summary { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--el-text-color-secondary); }
+.mind-label { font-size: 14px; color: var(--text-0); word-break: break-all; }
+.mind-spin { color: var(--accent); flex-shrink: 0; }
+/* 节点类型标签：淡底 + 同色字，各主题下都清晰 */
+.mind-kind { --kind: var(--text-2); flex-shrink: 0; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 4px; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+.mind-kind.kind-highlight { --kind: var(--warning); }
+.mind-kind.kind-event { --kind: var(--accent); }
+.mind-kind.kind-concept { --kind: var(--success); }
+.mind-kind.kind-person { --kind: var(--danger); }
+.mind-summary { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
 .mind-meta { margin-top: 4px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.mind-cached { color: var(--el-text-color-placeholder); }
+.mind-cached { color: var(--text-2); }
 .mind-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-.mind-btn {
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.mind-btn:hover:not(:disabled) { color: var(--el-color-primary); border-color: var(--el-color-primary); }
-.mind-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.mind-btn.primary { color: #fff; background: var(--el-color-primary); border-color: var(--el-color-primary); }
-.mind-btn.primary:hover:not(:disabled) { color: #fff; opacity: 0.9; }
-.mind-btn.later { color: var(--el-text-color-placeholder); }
-.mind-btn.danger:hover:not(:disabled) { color: var(--el-color-danger); border-color: var(--el-color-danger); }
-.mind-link { border: none; background: none; padding: 0; font-size: 12px; color: var(--el-color-primary); cursor: pointer; }
+.mind-actions .el-button + .el-button { margin-left: 0; }
+.mind-actions .el-button.later { color: var(--text-2); }
+.mind-link { border: none; background: none; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
 .mind-link:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

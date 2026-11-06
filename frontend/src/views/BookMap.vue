@@ -1,7 +1,7 @@
 <template>
   <div class="book-map-page">
     <header class="map-topbar">
-      <el-button :icon="ArrowLeft" text @click="goBack">返回</el-button>
+      <el-button text @click="goBack"><IconChevronLeft :size="16" :stroke-width="1.75" />返回</el-button>
       <h1 class="map-title" :title="pageTitle">{{ pageTitle }}</h1>
       <div class="map-tools">
         <el-switch v-model="onlyNotes" active-text="只看有笔记的章节" />
@@ -11,7 +11,7 @@
         <el-button size="small" :icon="IconNotebook" @click="router.push(`/book/${bookId}/summary`)">学习总结</el-button>
         <el-dropdown trigger="click" :disabled="!ready" @command="onExport">
           <el-button size="small" type="primary" :loading="exporting">
-            导出<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            导出<IconChevronDown class="el-icon--right" :size="14" :stroke-width="1.75" />
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -103,9 +103,8 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconNotebook } from '@tabler/icons-vue'
+import { IconChevronDown, IconChevronLeft, IconNotebook } from '@tabler/icons-vue'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeft, ArrowDown } from '@element-plus/icons-vue'
 import { ElDrawer, ElMessage, ElMessageBox } from 'element-plus'
 import MindMapCanvas from '@/components/MindMapCanvas.vue'
 import { libraryApi } from '@/api/library'
@@ -351,8 +350,8 @@ async function onExport(cmd: 'png' | 'md') {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  background: var(--el-bg-color-page);
-  color: var(--el-text-color-primary);
+  background: var(--bg-0);
+  color: var(--text-0);
 }
 .map-topbar {
   display: flex;
@@ -360,8 +359,8 @@ async function onExport(cmd: 'png' | 'md') {
   flex-wrap: wrap;
   gap: 8px 12px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--card-border);
+  background: var(--card-bg);
 }
 .map-title {
   flex: 1;
@@ -387,49 +386,50 @@ async function onExport(cmd: 'png' | 'md') {
   justify-content: center;
   gap: 12px;
   font-size: 14px;
-  color: var(--el-text-color-secondary);
+  color: var(--text-2);
 }
 .map-empty {
   margin: 12px 16px 0;
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
+  color: var(--text-2);
+  background: var(--bg-2);
 }
 .detail-panel {
   width: 320px;
   flex-shrink: 0;
   overflow-y: auto;
   padding: 16px;
-  border-left: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color);
+  border-left: 1px solid var(--card-border);
+  background: var(--card-bg);
 }
-.detail-hint { font-size: 13px; color: var(--el-text-color-secondary); }
+.detail-hint { font-size: 13px; color: var(--text-2); }
 .detail-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; word-break: break-all; }
 .detail-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .detail-quote {
   margin: 0 0 8px;
   padding: 6px 10px;
-  border-left: 3px solid var(--el-color-warning);
+  border-left: 3px solid var(--warning);
   font-size: 13px;
-  color: var(--el-text-color-regular);
+  color: var(--text-1);
   white-space: pre-wrap;
   word-break: break-all;
 }
-.detail-summary { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--el-text-color-regular); }
+.detail-summary { margin: 0 0 12px; font-size: 13px; line-height: 1.6; color: var(--text-1); }
 .detail-section { margin-bottom: 12px; }
-.section-label { margin-bottom: 6px; font-size: 12px; color: var(--el-text-color-secondary); }
+.section-label { margin-bottom: 6px; font-size: 12px; color: var(--text-2); }
 .detail-note-readonly { margin: 0; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
-.detail-tip { margin: 4px 0 0; font-size: 12px; color: var(--el-text-color-secondary); }
+.detail-tip { margin: 4px 0 0; font-size: 12px; color: var(--text-2); }
 .note-save { margin-top: 8px; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .detail-actions .el-button + .el-button { margin-left: 0; }
-.mind-kind { flex-shrink: 0; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 4px; color: #fff; background: var(--el-color-info); }
-.mind-kind.kind-highlight { background: var(--el-color-warning); }
-.mind-kind.kind-event { background: var(--el-color-primary); }
-.mind-kind.kind-concept { background: var(--el-color-success); }
-.mind-kind.kind-person { background: var(--el-color-danger); }
+/* 节点类型标签：淡底 + 同色字，各主题下都清晰（与 MindExpandPanel 一致） */
+.mind-kind { --kind: var(--text-2); flex-shrink: 0; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 4px; color: var(--kind); background: color-mix(in srgb, var(--kind) 14%, transparent); }
+.mind-kind.kind-highlight { --kind: var(--warning); }
+.mind-kind.kind-event { --kind: var(--accent); }
+.mind-kind.kind-concept { --kind: var(--success); }
+.mind-kind.kind-person { --kind: var(--danger); }
 
 @media (max-width: 768px) {
   .map-topbar { padding: 6px 8px; }

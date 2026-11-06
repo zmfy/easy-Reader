@@ -66,7 +66,7 @@ const FONT_FAMILY = "'Noto Sans SC', system-ui, sans-serif"
 
 type StyleKey = 'book' | 'group' | 'chapter' | 'highlight' | 'event' | 'concept' | 'person' | 'custom' | 'muted'
 
-/** 导出 PNG 用的固定亮色（与样式表中亮色主题下的 CSS 变量取值一致） */
+/** 导出 PNG 用的固定亮色（白底，不随站点主题变化；语义色与样式表中亮色取值一致，书名 / 分组为靛青） */
 const LIGHT_PALETTE: Record<StyleKey, { fill: string; stroke: string; text: string }> = {
   book: { fill: '#4f46e5', stroke: '#4338ca', text: '#ffffff' },
   group: { fill: '#e0e7ff', stroke: '#a5b4fc', text: '#312e81' },
@@ -274,10 +274,10 @@ defineExpose({ fit, collapseAll, expandAll, exportPng })
 </script>
 
 <style scoped>
-/* 亮色取值与脚本中的 LIGHT_PALETTE 一致；深色主题（html.dark）下覆盖 */
+/* 书名 / 分组节点跟随站点主色；其余为节点类型的语义色（亮色取值与脚本中的 LIGHT_PALETTE 一致，深色主题 html.dark 下覆盖） */
 .mm-canvas {
-  --mm-book-fill: #4f46e5; --mm-book-stroke: #4338ca; --mm-book-text: #ffffff;
-  --mm-group-fill: #e0e7ff; --mm-group-stroke: #a5b4fc; --mm-group-text: #312e81;
+  --mm-book-fill: var(--accent); --mm-book-stroke: var(--accent); --mm-book-text: var(--on-accent);
+  --mm-group-fill: var(--accent-soft); --mm-group-stroke: color-mix(in srgb, var(--accent) 45%, var(--card-bg)); --mm-group-text: var(--text-0);
   --mm-chapter-fill: #f1f5f9; --mm-chapter-stroke: #94a3b8; --mm-chapter-text: #1e293b;
   --mm-highlight-fill: #fef3c7; --mm-highlight-stroke: #f59e0b; --mm-highlight-text: #78350f;
   --mm-event-fill: #dbeafe; --mm-event-stroke: #3b82f6; --mm-event-text: #1e3a8a;
@@ -287,7 +287,7 @@ defineExpose({ fit, collapseAll, expandAll, exportPng })
   --mm-muted-fill: #f8fafc; --mm-muted-stroke: #e2e8f0; --mm-muted-text: #8b95a7;
   --mm-link: #cbd5e1;
   --mm-toggle-fill: #ffffff; --mm-toggle-stroke: #94a3b8; --mm-toggle-sign: #475569;
-  --mm-selected: var(--accent, #4f46e5);
+  --mm-selected: var(--accent);
   position: relative;
   width: 100%;
   height: 100%;
@@ -296,8 +296,6 @@ defineExpose({ fit, collapseAll, expandAll, exportPng })
   -webkit-user-select: none;
 }
 :global(html.dark) .mm-canvas {
-  --mm-book-fill: #6366f1; --mm-book-stroke: #818cf8; --mm-book-text: #ffffff;
-  --mm-group-fill: #312e81; --mm-group-stroke: #6366f1; --mm-group-text: #e0e7ff;
   --mm-chapter-fill: #1e293b; --mm-chapter-stroke: #475569; --mm-chapter-text: #e2e8f0;
   --mm-highlight-fill: #422006; --mm-highlight-stroke: #d97706; --mm-highlight-text: #fde68a;
   --mm-event-fill: #172554; --mm-event-stroke: #3b82f6; --mm-event-text: #bfdbfe;

@@ -24,12 +24,12 @@
                 <IconPlayerPlay :size="16" :stroke-width="1.75" />
                 <span class="btn-label">{{ readLabel }}</span>
               </el-button>
-              <el-button size="large" @click="router.push(`/book/${book.id}/map`)">
-                <el-icon><IconSitemap :stroke-width="1.75" /></el-icon>
+              <el-button @click="router.push(`/book/${book.id}/map`)">
+                <IconSitemap :size="16" :stroke-width="1.75" />
                 学习导图
               </el-button>
-              <el-button size="large" @click="router.push(`/book/${book.id}/summary`)">
-                <el-icon><IconNotebook :stroke-width="1.75" /></el-icon>
+              <el-button @click="router.push(`/book/${book.id}/summary`)">
+                <IconNotebook :size="16" :stroke-width="1.75" />
                 学习总结
               </el-button>
               <!-- 已在书架时显示状态，再点一次移出书架 -->
