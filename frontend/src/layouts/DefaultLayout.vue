@@ -400,7 +400,7 @@ async function handleLogout() {
     flex-shrink: 0;
     transition: background 0.15s ease;
   }
-  .menu-toggle:active { background: rgba(124, 92, 255, 0.15); }
+  .menu-toggle:active { background: var(--accent-soft); }
 
   .hamburger {
     display: block;
