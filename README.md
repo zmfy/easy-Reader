@@ -46,8 +46,8 @@ https://easyreader.ucool.uk/
 ### 1. 克隆项目
 
 ```bash
-git clone <repo-url>
-cd easyReader
+git clone https://github.com/zmfy/easy-Reader.git
+cd easy-Reader
 ```
 
 ### 2. 配置环境变量
@@ -85,13 +85,25 @@ docker compose up -d --build
 
 首次用默认密码登录后必须先修改密码，改完才能使用其他功能（API 客户端同样如此）。之后所有用户都可以在侧栏「修改密码」中自己改密码。
 
+### 版本与升级
+
+每个版本的变化见 [CHANGELOG.md](CHANGELOG.md) 和 [GitHub Releases](https://github.com/zmfy/easy-Reader/releases)。Docker Hub 镜像 `dls7788/easy-reader` 提供这些 tag：
+
+| tag | 内容 |
+|---|---|
+| `latest` | 最新发布的正式版本 |
+| `1.0.0`、`1.0` 等 | 固定版本 / 固定次版本（只接收修订更新） |
+| `edge` | `main` 分支最新代码，尝鲜用，可能不稳定 |
+
+升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。
+
 ---
 
 ## 使用指南
 
 ### 导入书籍
 
-1. 以管理员登录，进入**书库**页，点击「扫描书库」。扫描在后台异步执行，可随时查看进度或取消。
+1. 以管理员登录，进入**书库**页，点击右上角的「扫描导入」。扫描在后台异步执行，可随时查看进度或取消。
 2. 扫描完成后生成一个**待审核批次**。进入「扫描批次」逐条核对识别出的书名、作者、判重与系列归类，需要时直接修改。
 3. 确认无误后点「应用」，这一批才真正写入书库。
 4. 被判定为重复或乱码的文件不会入库，集中在「问题书籍」页处理。若是误判，处理时可登记为**人工覆盖**，下次扫描不会再误判同一本。
