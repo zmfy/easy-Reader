@@ -19,7 +19,7 @@ describe('resolveRef', () => {
   it('resolveRef returns highlight target', async () => {
     const d = makeDb();
     const h = createHighlight(d, 'u1', 'b1', { chapterIndex: 2, startOffset: 0, endOffset: 3, text: '划线原文' });
-    const r = await resolveRef(d, 'u1', fakeBook, 'h:' + h.id);
+    const r = await resolveRef(d, 'u1', 'b1', fakeBook, 'h:' + h.id);
     expect(r).toEqual({ exists: true, type: 'highlight', text: '划线原文', target: { highlight: h.id }, later: false, canOpen: true });
   });
 
@@ -29,7 +29,7 @@ describe('resolveRef', () => {
     const [, node] = keepChain(d, 'u1', 'b1', h.id, [
       { label: '概念甲', kind: 'concept', summary: '说明', source: { chapterIndex: 5, paragraphIndex: 2 } },
     ])!;
-    const r: any = await resolveRef(d, 'u1', fakeBook, 'n:' + node.id);
+    const r: any = await resolveRef(d, 'u1', 'b1', fakeBook, 'n:' + node.id);
     expect(r.exists).toBe(true);
     expect(r.type).toBe('node');
     expect(r.text).toBe('概念甲：说明');
@@ -41,7 +41,7 @@ describe('resolveRef', () => {
     const d = makeDb();
     const h = createHighlight(d, 'u1', 'b1', { chapterIndex: 3, startOffset: 0, endOffset: 3, text: '原文' });
     const [, node] = keepChain(d, 'u1', 'b1', h.id, [{ label: '概念乙', kind: 'concept' }])!;
-    const r: any = await resolveRef(d, 'u1', fakeBook, 'n:' + node.id);
+    const r: any = await resolveRef(d, 'u1', 'b1', fakeBook, 'n:' + node.id);
     expect(r.target).toEqual({ chapter: 3 });
     expect(r.text).toBe('概念乙');
     expect(r.later).toBe(false);
@@ -50,18 +50,20 @@ describe('resolveRef', () => {
   it('resolveRef reports exists=false for deleted or others\' notes', async () => {
     const d = makeDb();
     const h = createHighlight(d, 'u1', 'b1', { chapterIndex: 0, startOffset: 0, endOffset: 3, text: '原文' });
-    expect(await resolveRef(d, 'u2', fakeBook, 'h:' + h.id)).toEqual({ exists: false });
-    expect(await resolveRef(d, 'u1', fakeBook, 'h:nope')).toEqual({ exists: false });
-    expect(await resolveRef(d, 'u1', fakeBook, 'bad-ref')).toEqual({ exists: false });
-    expect(await resolveRef(d, 'u1', fakeBook, 'n:' + h.id)).toEqual({ exists: false });
+    expect(await resolveRef(d, 'u2', 'b1', fakeBook, 'h:' + h.id)).toEqual({ exists: false });
+    expect(await resolveRef(d, 'u1', 'b1', fakeBook, 'h:nope')).toEqual({ exists: false });
+    expect(await resolveRef(d, 'u1', 'b1', fakeBook, 'bad-ref')).toEqual({ exists: false });
+    expect(await resolveRef(d, 'u1', 'b1', fakeBook, 'n:' + h.id)).toEqual({ exists: false });
   });
 
   it('resolveRef canOpen=false when book is missing', async () => {
     const d = makeDb();
     const h = createHighlight(d, 'u1', 'b1', { chapterIndex: 0, startOffset: 0, endOffset: 3, text: '原文' });
-    const r: any = await resolveRef(d, 'u1', null, 'h:' + h.id);
+    const r: any = await resolveRef(d, 'u1', 'b1', null, 'h:' + h.id);
     expect(r.exists).toBe(true);
     expect(r.canOpen).toBe(false);
     expect(r.later).toBe(false);
+    // 书为 null 时也只认本书的笔记：其他书的 ref 不可解析
+    expect(await resolveRef(d, 'u1', 'other', null, 'h:' + h.id)).toEqual({ exists: false });
   });
 });

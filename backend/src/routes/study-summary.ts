@@ -182,7 +182,7 @@ router.post('/books/:bookId/summary/versions/:versionId/restore', authMiddleware
 router.get('/books/:bookId/refs/:ref', authMiddleware, async (req: Request, res: Response) => {
   try {
     const book = findReadableBookQuiet(req.params.bookId);
-    successResponse(res, await resolveRef(getDb(), req.user!.userId, book, req.params.ref));
+    successResponse(res, await resolveRef(getDb(), req.user!.userId, req.params.bookId, book, req.params.ref));
   } catch (err) {
     console.error(`[study:ref] book=${req.params.bookId}`, err);
     errorResponse(res, 500, 'INTERNAL_ERROR', '解析引用失败');

@@ -294,20 +294,9 @@ export type ResolvedRef =
  * book 为 null（书已删除或文件不存在）→ canOpen=false；later 仅在书可读时判断（读书文件失败按 false）。
  */
 export async function resolveRef(
-  db: Database.Database, userId: string, book: Book | null, ref: string
+  db: Database.Database, userId: string, bookId: string, book: Book | null, ref: string
 ): Promise<ResolvedRef> {
-  const m = REF_PARSE.exec(ref);
-  const bookId = book ? book.id : null;
-  // book 为 null 时无法从参数得知书 id：先按 id 反查所属书
-  let bid = bookId;
-  if (!bid && m) {
-    const row = (m[1] === 'h'
-      ? db.prepare('SELECT book_id FROM highlights WHERE id = ? AND user_id = ?')
-      : db.prepare('SELECT book_id FROM mind_nodes WHERE id = ? AND user_id = ?')).get(m[2], userId) as { book_id: string } | undefined;
-    bid = row ? row.book_id : null;
-  }
-  if (!bid) return { exists: false };
-  const note = findRefNote(db, userId, bid, ref);
+  const note = findRefNote(db, userId, bookId, ref);
   if (!note) return { exists: false };
   const canOpen = !!book;
   if (note.type === 'highlight') {
