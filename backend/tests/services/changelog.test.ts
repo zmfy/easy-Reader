@@ -24,6 +24,12 @@ const SAMPLE = `# 更新日志
 
 - 学习版功能
 
+## [1.3.0-rc1] - 2026-11-07
+
+### 新增
+
+- 预发布
+
 ## [1.2.0] - 2026-11-06
 
 ### 其他变化
@@ -99,6 +105,16 @@ describe('parseChangelog', () => {
     expect(r.intro).toBe('');
     expect(r.sections.find(s => s.kind === 'added')!.items).toEqual([]);
     expect(r.sections.find(s => s.kind === 'fixed')!.items).toHaveLength(1);
+  });
+});
+
+describe('comment stripping', () => {
+  it('strips normal comments and runs in linear time on unclosed ones', () => {
+    const md = '## [1.0.1] - 2026-11-06\n\n### 修复\n\n<!-- 注释\n多行 -->\n- a <!-- x --> b\n';
+    expect(parseChangelog(md, '')[0].sections[0].items.map(i => i.text)).toEqual(['a  b']);
+    const t = Date.now();
+    expect(parseChangelog('<!--'.repeat(200000), '')).toEqual([]);
+    expect(Date.now() - t).toBeLessThan(200);
   });
 });
 

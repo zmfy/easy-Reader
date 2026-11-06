@@ -19,6 +19,20 @@ export interface Release {
 const ACTION_PREFIX = '【需操作】';
 const KIND_ORDER = { added: 0, fixed: 1, other: 2 };
 
+// 线性剥离 HTML 注释；找不到闭合的 `-->` 时丢弃余下内容（避免正则对大量未闭合 `<!--` 的二次方回溯）
+function stripHtmlComments(text: string): string {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const start = text.indexOf('<!--', pos);
+    if (start < 0) return out + text.slice(pos);
+    out += text.slice(pos, start);
+    const end = text.indexOf('-->', start + 4);
+    if (end < 0) return out;
+    pos = end + 3;
+  }
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -32,8 +46,8 @@ function sectionKind(title: string): ReleaseSection['kind'] {
 /** 解析 CHANGELOG.md，只取 `## [X.Y.Z<suffix>]` 的版本节（suffix 精确匹配），按文件顺序（新→旧）返回。
  *  条目文字中的「【需操作】」前缀会被去掉，由 actionRequired 标记表示。 */
 export function parseChangelog(md: string, suffix: string): Release[] {
-  const text = md.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '');
-  const headRe = new RegExp('^## \\[(\\d+\\.\\d+\\.\\d+)' + escapeRegExp(suffix) + '\\](?:\\s*-\\s*(\\d{4}-\\d{2}-\\d{2}))?\\s*$');
+  const text = stripHtmlComments(md.replace(/\r\n?/g, '\n'));
+  const headRe = new RegExp('^## \\[(\\d{1,6}\\.\\d{1,6}\\.\\d{1,6})' + escapeRegExp(suffix) + '\\](?:\\s*-\\s*(\\d{4}-\\d{2}-\\d{2}))?\\s*$');
   const releases: Release[] = [];
   let release: Release | null = null;
   let section: ReleaseSection | null = null;
