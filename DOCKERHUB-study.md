@@ -3,7 +3,7 @@
 [简单书房](https://hub.docker.com/r/dls7788/easy-reader)的学习版：在看书版全部功能的基础上，加入划线批注、学习导图、AI 展开知识点和笔记整理，适合边读边学。书和笔记只留在你自己的设备上。
 
 - 看书版镜像：[dls7788/easy-reader](https://hub.docker.com/r/dls7788/easy-reader)（只想看书用它就够了）
-- 源码与问题反馈：<https://github.com/zmfy/easy-Reader>（`study` 分支，MIT 协议）
+- 源码与问题反馈：<https://github.com/zmfy/easy-Reader>（`study` 分支，AGPL-3.0 协议；源自看书版的代码保留 MIT 声明，见仓库中的 NOTICE）
 - 部署教程（群晖、威联通、飞牛、Unraid 等）：<https://easyreader.ucool.uk/guides>
 
 ## 学习功能
