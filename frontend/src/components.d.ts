@@ -50,6 +50,7 @@ declare module 'vue' {
     MindExpandPanel: typeof import('./components/MindExpandPanel.vue')['default']
     MindMapCanvas: typeof import('./components/MindMapCanvas.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']
+    PageHeader: typeof import('./components/PageHeader.vue')['default']
     PdfPage: typeof import('./components/PdfPage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

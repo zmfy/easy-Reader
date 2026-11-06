@@ -1087,7 +1087,7 @@ onMounted(async () => {
 
 .field-hint {
   font-size: 12px;
-  color: var(--text-3, var(--text-2));
+  color: var(--text-2);
   opacity: 0.7;
   margin-top: -2px;
 }

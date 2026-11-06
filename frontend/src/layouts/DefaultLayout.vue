@@ -188,7 +188,7 @@ async function handleLogout() {
   width: 220px;
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
-  border-right: 1px solid rgba(124, 92, 255, 0.1);
+  border-right: 1px solid var(--card-border);
   display: flex;
   flex-direction: column;
   z-index: 150;
@@ -199,7 +199,7 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(124, 92, 255, 0.08);
+  border-bottom: 1px solid var(--card-border);
 }
 
 /* logo：强调色渐变圆角方块 + 白色图标 */
@@ -261,7 +261,7 @@ async function handleLogout() {
 
 .sidebar-user {
   padding: 16px;
-  border-top: 1px solid rgba(124, 92, 255, 0.08);
+  border-top: 1px solid var(--card-border);
 }
 
 .user-info {
@@ -380,7 +380,7 @@ async function handleLogout() {
     height: 52px;
     flex-shrink: 0;
     background: var(--bg-1);
-    border-bottom: 1px solid rgba(124, 92, 255, 0.1);
+    border-bottom: 1px solid var(--card-border);
     position: sticky;
     top: 0;
     z-index: 50;
