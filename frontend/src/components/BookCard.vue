@@ -36,7 +36,7 @@
       <!-- 悬停操作：封面底部渐变区，主操作「阅读」单独一行，详情 / 删除并排 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" class="overlay-read" @click.stop="$emit('read')">
-          <el-icon><VideoPlay /></el-icon>
+          <el-icon><IconPlayerPlay /></el-icon>
           阅读
         </el-button>
         <div class="overlay-row">
@@ -69,7 +69,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { VideoPlay } from '@element-plus/icons-vue'
+import { IconPlayerPlay } from '@tabler/icons-vue'
 import type { Book } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 
@@ -112,17 +112,18 @@ const placeholderGradient = computed(() => {
 <style scoped>
 .book-card {
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.08);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
   cursor: pointer;
   transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
 
 .book-card:hover {
-  transform: translateY(-5px);
-  border-color: rgba(124, 92, 255, 0.3);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(124, 92, 255, 0.12);
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .book-card:hover .cover-overlay {
@@ -145,7 +146,7 @@ const placeholderGradient = computed(() => {
 .img-skeleton {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--bg-2) 25%, rgba(124,92,255,0.06) 50%, var(--bg-2) 75%);
+  background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-1) 50%, var(--bg-2) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
   transition: opacity 0.3s;
@@ -292,18 +293,18 @@ const placeholderGradient = computed(() => {
 }
 
 .tag.category {
-  background: rgba(124, 92, 255, 0.15);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
 .tag.format {
-  background: rgba(0, 212, 184, 0.12);
-  color: var(--accent-2);
+  background: var(--bg-2);
+  color: var(--text-1);
 }
 
 .tag.finished {
-  background: rgba(255, 184, 108, 0.12);
-  color: var(--warning);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
 }
 
 .status-badge {
@@ -323,9 +324,9 @@ const placeholderGradient = computed(() => {
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.75);   /* 深色描边，浅色封面上也清晰 */
 }
-.ai-fill-dot.success { background: #22c55e; }
+.ai-fill-dot.success { background: var(--success); }
 .ai-fill-dot { transition: opacity 0.2s ease; }
-.ai-fill-dot.warning { background: #f59e0b; }
+.ai-fill-dot.warning { background: var(--warning); }
 
 .rating-badge {
   position: absolute;
@@ -334,7 +335,8 @@ const placeholderGradient = computed(() => {
   z-index: 4;
   font-size: 11px;
   font-weight: 700;
-  color: #ffd666;
+  /* 封面叠加层例外：角标底固定为深色半透明，--warning 在浅色主题偏暗看不清，固定用亮琥珀 */
+  color: #fbbf24;
   background: rgba(11, 16, 32, 0.7);
   padding: 2px 6px;
   border-radius: 4px;

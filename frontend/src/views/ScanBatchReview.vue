@@ -1,18 +1,10 @@
 <template>
   <DefaultLayout>
-    <div v-loading="loading" class="review-page">
-      <div class="page-header">
-        <div>
-          <el-button link @click="$router.push('/library/scan-batches')">← 返回批次列表</el-button>
-          <h1>
-            {{ readOnly ? '查看批次' : '审核批次' }} {{ batchIdShort }}
-            <el-tag v-if="batch" :type="statusType" size="small">{{ statusLabel }}</el-tag>
-          </h1>
-        </div>
-        <div class="actions">
-          <div v-if="!readOnly && unreviewedCount > 0" class="unreviewed-stats">
-            <el-tag type="warning">{{ unreviewedCount }} 项未审视</el-tag>
-          </div>
+    <div v-loading="loading" class="page page--narrow">
+      <PageHeader :title="`${readOnly ? '查看批次' : '审核批次'} ${batchIdShort}`" back="/library/scan-batches">
+        <template #actions>
+          <el-tag v-if="batch" :type="statusType" size="small">{{ statusLabel }}</el-tag>
+          <el-tag v-if="!readOnly && unreviewedCount > 0" type="warning">{{ unreviewedCount }} 项未审视</el-tag>
           <el-button v-if="!readOnly" type="danger" plain @click="onDiscard">废弃批次</el-button>
           <el-button
             v-if="!readOnly"
@@ -20,8 +12,8 @@
             :disabled="batch?.status !== 'pending'"
             @click="onApply"
           >应用全部</el-button>
-        </div>
-      </div>
+        </template>
+      </PageHeader>
 
       <!-- Applied/discarded: show audit summary at top -->
       <el-alert
@@ -46,7 +38,8 @@
         </div>
       </el-alert>
 
-      <el-collapse v-if="batch" v-model="activePanels">
+      <div v-if="batch" class="section-card section-card--flush">
+      <el-collapse v-model="activePanels">
         <el-collapse-item v-if="grouped.new.length > 0" :name="'new'">
           <template #title>
             <span class="panel-title">新书 <el-badge :value="grouped.new.length" /></span>
@@ -167,6 +160,7 @@
           </div>
         </el-collapse-item>
       </el-collapse>
+      </div>
     </div>
   </DefaultLayout>
 </template>
@@ -177,6 +171,7 @@ import { formatServerTime } from '@/utils/time'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import DuplicateGroupCard from '@/components/DuplicateGroupCard.vue'
 import SeriesGroupCard from '@/components/SeriesGroupCard.vue'
 import BatchItemPreview from '@/components/BatchItemPreview.vue'
@@ -308,22 +303,15 @@ onMounted(fetchBatch)
 </script>
 
 <style scoped>
-.review-page { padding: 24px 32px; }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.page-header h1 { margin: 8px 0 0 0; display: flex; align-items: center; gap: 10px; }
-.actions { display: flex; gap: 12px; align-items: center; }
-.unreviewed-stats { margin-right: 8px; }
 .audit-alert { margin-bottom: 16px; }
 .audit-summary { font-size: 13px; }
-.audit-summary .errors { color: var(--el-color-danger); }
+.audit-summary .errors { color: var(--danger); }
 .panel-title { font-weight: 500; }
+/* 折叠面板贴卡片边：标题与内容的左右内边距与卡片对齐，去掉 EP 自带外框线 */
+.section-card--flush :deep(.el-collapse) { border: none; }
+.section-card--flush :deep(.el-collapse-item__header) { padding: 0 24px; }
+.section-card--flush :deep(.el-collapse-item__content) { padding: 0 24px 16px; }
+.section-card--flush :deep(.el-collapse-item:last-child .el-collapse-item__wrap) { border-bottom: none; }
 .panel-body { padding: 8px 0; }
 .new-row, .fix-row, .garbled-row {
   display: flex;
@@ -332,7 +320,7 @@ onMounted(fetchBatch)
   padding: 6px 0;
   font-size: 13px;
 }
-.path { font-family: monospace; }
+.path { font-family: var(--font-mono); }
 .meta { color: var(--text-2); }
-.reason { color: var(--el-color-danger); font-size: 12px; }
+.reason { color: var(--danger); font-size: 12px; }
 </style>

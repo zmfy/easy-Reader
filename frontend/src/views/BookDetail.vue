@@ -6,7 +6,9 @@
       </div>
       <div v-else-if="book" class="detail-content">
         <div class="detail-header">
-          <el-button :icon="ArrowLeft" text @click="router.back()">返回</el-button>
+          <el-button class="back-btn" text @click="goBack">
+            <IconChevronLeft :size="16" :stroke-width="1.75" />返回
+          </el-button>
         </div>
 
         <div class="detail-main">
@@ -18,8 +20,8 @@
               </div>
             </div>
             <div class="cover-actions">
-              <el-button type="primary" size="large" class="read-btn" :title="readLabel" @click="router.push(`/reader/${book.id}`)">
-                <el-icon><VideoPlay /></el-icon>
+              <el-button type="primary" class="read-btn" :title="readLabel" @click="router.push(`/reader/${book.id}`)">
+                <IconPlayerPlay :size="16" :stroke-width="1.75" />
                 <span class="btn-label">{{ readLabel }}</span>
               </el-button>
               <el-button size="large" @click="router.push(`/book/${book.id}/map`)">
@@ -32,13 +34,11 @@
               </el-button>
               <!-- 已在书架时显示状态，再点一次移出书架 -->
               <el-button
-                size="large"
-                :class="{ 'on-shelf': onShelf }"
                 :loading="shelfBusy"
                 :title="onShelf ? '点击移出书架' : '加入书架'"
                 @click="toggleShelf"
               >
-                <el-icon><component :is="onShelf ? Check : Plus" /></el-icon>
+                <component :is="onShelf ? IconCheck : IconPlus" :size="16" :stroke-width="1.75" />
                 {{ onShelf ? '已在书架' : '加入书架' }}
               </el-button>
             </div>
@@ -65,22 +65,21 @@
               <div class="header-side">
                 <div class="edit-actions">
                   <template v-if="authStore.isAdmin">
-                    <el-button v-if="!editing" size="small" @click="startEdit">编辑</el-button>
+                    <el-button v-if="!editing" @click="startEdit">编辑</el-button>
                     <template v-else>
-                      <el-button size="small" type="primary" @click="saveEdit" :loading="saving">保存</el-button>
-                      <el-button size="small" @click="cancelEdit">取消</el-button>
+                      <el-button type="primary" @click="saveEdit" :loading="saving">保存</el-button>
+                      <el-button @click="cancelEdit">取消</el-button>
                     </template>
                     <el-tooltip
                       placement="top"
                       :content="aiConfigured ? 'AI 搜索完成后先弹出预览，确认后才保存；手动修改过的字段默认保留。' : '未配置 AI 插件，请先在「AI 插件设置」中配置'"
                     >
                       <el-button
-                        size="small"
                         :loading="aiPreviewLoading"
                         :disabled="!aiConfigured"
                         @click="handleAiFill"
                       >
-                        <el-icon><MagicStick /></el-icon>
+                        <IconWand v-if="!aiPreviewLoading" :size="16" :stroke-width="1.75" />
                         AI 填充
                       </el-button>
                     </el-tooltip>
@@ -92,7 +91,7 @@
                   content="手动编辑过的字段已锁定：AI 填充预览中默认保留现有内容，可在预览中改用 AI 结果。"
                 >
                   <div class="locked-hint">
-                    <el-icon><Lock /></el-icon>
+                    <IconLock :size="14" :stroke-width="1.75" />
                     <span>已锁定：{{ editedFieldsList.join('、') }}</span>
                   </div>
                 </el-tooltip>
@@ -174,7 +173,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, VideoPlay, Plus, MagicStick, Lock, Check } from '@element-plus/icons-vue'
+import { IconChevronLeft, IconPlayerPlay, IconPlus, IconCheck, IconWand, IconLock } from '@tabler/icons-vue'
 import { ElMessage } from 'element-plus'
 import { IconNotebook, IconSitemap } from '@tabler/icons-vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -183,6 +182,7 @@ import { libraryApi } from '@/api/library'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
+import { resolveBack } from '@/utils/page-back'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
@@ -226,6 +226,13 @@ const editedFieldsList = computed<string[]>(() => {
     return arr.map(f => FIELD_LABELS[f as string] ?? String(f))
   } catch { return [] }
 })
+
+// 与 PageHeader 一致：有站内历史则回退，直接打开 / 新标签页时回书库
+function goBack() {
+  const action = resolveBack(true, !!window.history.state?.back, '/library')
+  if (action?.type === 'push') router.push(action.path)
+  else if (action) router.back()
+}
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -356,6 +363,18 @@ watch(() => route.params.bookId, () => { fetchBook() })
   margin-bottom: 24px;
 }
 
+.back-btn {
+  margin-left: -8px;
+  padding: 0 8px;
+  color: var(--text-1);
+}
+.back-btn > :deep(span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.back-btn:hover { color: var(--accent); }
+
 .detail-main {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -418,7 +437,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
 
   .cover-actions :deep(.el-button) {
     font-size: 14px;
-    height: 40px;
   }
 
   /* Info: title stacks above edit buttons */
@@ -482,7 +500,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
 .cover-placeholder-large {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, var(--bg-2), rgba(124, 92, 255, 0.2));
+  background: linear-gradient(135deg, var(--bg-2), var(--accent-soft));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -505,6 +523,13 @@ watch(() => route.params.bookId, () => { fetchBook() })
   gap: 10px;
 }
 
+.cover-actions :deep(.el-button > span),
+.edit-actions :deep(.el-button > span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .cover-actions :deep(.el-button) {
   width: 100%;
   margin-left: 0 !important;
@@ -517,15 +542,9 @@ watch(() => route.params.bookId, () => { fetchBook() })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.read-btn :deep(> span) {
+.read-btn > :deep(span) {
   min-width: 0;
   max-width: 100%;
-}
-
-/* 已在书架：弱化为状态显示，悬停提示可移出 */
-.cover-actions .on-shelf {
-  color: var(--accent-2);
-  border-color: var(--accent-2);
 }
 
 .info-header {
@@ -537,7 +556,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
 }
 
 .book-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--text-0);
   line-height: 1.3;
@@ -568,8 +587,8 @@ watch(() => route.params.bookId, () => { fetchBook() })
   gap: 6px;
   margin-top: 8px;
 }
-.book-rating .rating-star { color: #ffb400; font-size: 18px; }
-.book-rating .rating-score { color: #ffb400; font-size: 22px; font-weight: 700; }
+.book-rating .rating-star { color: var(--warning); font-size: 18px; }
+.book-rating .rating-score { color: var(--warning); font-size: 22px; font-weight: 700; }
 .book-rating .rating-source { font-size: 12px; color: var(--text-2); }
 
 .edit-fields {
@@ -671,7 +690,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
 .ai-meta-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid rgba(124, 92, 255, 0.1);
+  border-top: 1px solid var(--card-border);
 }
 .tag-list {
   display: flex;

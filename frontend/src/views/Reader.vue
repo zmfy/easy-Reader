@@ -4,13 +4,13 @@
     <!-- ── PDF 原生渲染模式 ── -->
     <template v-if="isPdf">
       <div class="pdf-topbar">
-        <el-button :icon="ArrowLeft" circle title="返回" @click="router.back()" />
+        <el-button circle title="返回" @click="router.back()"><IconChevronLeft :size="18" :stroke-width="1.75" /></el-button>
         <span class="pdf-topbar-title">PDF 阅读</span>
         <el-button class="pdf-topbar-map" text @click="openBookMap"><IconSitemap :size="18" :stroke-width="1.75" />&nbsp;学习导图</el-button>
       </div>
       <div class="pdf-viewer-area">
         <div v-if="pdfLoading" class="pdf-loading">
-          <el-icon class="is-loading"><Loading /></el-icon>
+          <el-icon class="is-loading"><IconLoader2 /></el-icon>
           <span>正在加载 PDF…</span>
         </div>
         <iframe
@@ -150,7 +150,7 @@
             <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" @pointerup="onContentPointerUp" />
           </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中…
+            <el-icon class="is-loading"><IconLoader2 /></el-icon> 加载中…
           </div>
           <div v-else-if="!hasMoreChapters && waterfallChapters.length > 0" class="waterfall-end">
             — 本书完 —
@@ -281,7 +281,7 @@
         </div>
 
         <!-- 重置 -->
-        <el-button size="small" @click="readerStore.resetSettings()" style="margin-top:8px">恢复默认</el-button>
+        <el-button size="small" plain class="reset-btn" @click="readerStore.resetSettings()">恢复默认</el-button>
 
         <div class="shortcut-hint">快捷键：← → 翻章 · ↑ ↓ / 空格 翻屏 · B 加书签</div>
       </div>
@@ -301,7 +301,7 @@
         <div class="listen-controls">
           <button class="listen-btn" title="上一段" @click="listen.prev()"><IconPlayerSkipBack :size="20" :stroke-width="1.75" /></button>
           <button class="listen-btn main" :title="listenPlaying ? '暂停' : '播放'" @click="listen.toggle()">
-            <el-icon v-if="listenLoading" class="is-loading"><Loading /></el-icon>
+            <el-icon v-if="listenLoading" class="is-loading"><IconLoader2 /></el-icon>
             <IconPlayerPauseFilled v-else-if="listenPlaying" :size="20" />
             <IconPlayerPlayFilled v-else :size="20" />
           </button>
@@ -357,7 +357,7 @@
         <p v-else-if="recapError" class="recap-text recap-error">{{ recapError }}</p>
         <div v-if="!recapText" class="recap-actions">
           <button class="end-btn primary" :disabled="recapLoading" @click="loadRecap">
-            <el-icon v-if="recapLoading" class="is-loading"><Loading /></el-icon>
+            <el-icon v-if="recapLoading" class="is-loading"><IconLoader2 /></el-icon>
             <IconSparkles v-else :size="16" :stroke-width="1.75" />
             {{ recapLoading ? 'AI 正在回顾…' : 'AI 回顾前情' }}
           </button>
@@ -387,7 +387,7 @@
             </div>
             <div v-for="(m, i) in askMessages" :key="i" class="ask-msg" :class="[m.role, { error: m.error }]">
               <div class="ask-bubble">
-                <template v-if="m.pending"><el-icon class="is-loading"><Loading /></el-icon> 正在翻书…</template>
+                <template v-if="m.pending"><el-icon class="is-loading"><IconLoader2 /></el-icon> 正在翻书…</template>
                 <template v-else>{{ m.text }}</template>
               </div>
               <div v-if="m.sources?.length" class="ask-sources">参考：{{ m.sources.map(s => s.title).join('、') }}</div>
@@ -490,7 +490,6 @@ import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, onUnmount
 import { formatServerTime } from '@/utils/time'
 import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
@@ -510,7 +509,7 @@ import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { openingProgressMode, exitViewOnly, type ViewOnlyExit } from '@/utils/reader-view-mode'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHighlight, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSitemap, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBookmarkPlus, IconBooks, IconChevronLeft, IconChevronRight, IconClock, IconHeadphones, IconHighlight, IconHistory, IconList, IconLoader2, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSitemap, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -2281,7 +2280,7 @@ onUnmounted(() => {
 }
 .toc-link:hover .toc-del,
 .toc-del:focus-visible { opacity: 1; }
-.toc-del:hover { color: #e5484d; background: var(--reader-active-bg); }
+.toc-del:hover { color: var(--danger); background: var(--reader-active-bg); }
 .note-group { padding: 4px 0 8px; }
 .note-group-title {
   padding: 8px 8px 4px;
@@ -2400,7 +2399,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.listen-status.error { color: #e5484d; }
+.listen-status.error { color: var(--danger); }
 .listen-hint {
   margin-top: 1px;
   font-size: 11px;
@@ -2553,7 +2552,7 @@ onUnmounted(() => {
   line-height: 1.8;
   color: var(--reader-text-2);
 }
-.recap-error { font-family: var(--font-sans); font-size: 13px; color: #e5484d; }
+.recap-error { font-family: var(--font-sans); font-size: 13px; color: var(--danger); }
 .recap-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
 .recap-actions .end-btn { height: 36px; padding: 0 14px; }
 .recap-hint { margin-top: 10px; font-size: 12px; color: var(--reader-text-secondary); }
@@ -2618,7 +2617,7 @@ onUnmounted(() => {
 }
 .ask-msg.user .ask-bubble { background: var(--reader-accent); color: #fff; border-bottom-right-radius: 4px; }
 .ask-msg.ai .ask-bubble { background: var(--reader-active-bg); color: var(--reader-text); border-bottom-left-radius: 4px; }
-.ask-msg.ai.error .ask-bubble { color: #e5484d; }
+.ask-msg.ai.error .ask-bubble { color: var(--danger); }
 .ask-bubble .el-icon { vertical-align: -2px; }
 .ask-sources { margin-top: 4px; font-size: 12px; color: var(--reader-text-secondary); }
 .ask-input {
@@ -2716,6 +2715,7 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 .mode-btn.active { border-color: var(--accent); color: var(--accent); }
+.reset-btn { margin-top: 8px; border-radius: var(--radius-md); }
 
 .theme-options {
   display: grid;
@@ -2724,7 +2724,7 @@ onUnmounted(() => {
 }
 .theme-btn {
   padding: 8px 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 12px;
   font-family: var(--font-sans);

@@ -1,6 +1,6 @@
 <template>
   <div class="page-header">
-    <el-button v-if="showBack" class="page-header-back" text @click="goBack">
+    <el-button v-if="backAction" class="page-header-back" text @click="goBack">
       <IconChevronLeft :size="16" :stroke-width="1.75" />返回
     </el-button>
     <h1 class="page-title">{{ title }}</h1>
@@ -15,11 +15,14 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconChevronLeft } from '@tabler/icons-vue'
+import { resolveBack } from '@/utils/page-back'
 
-// back：true = 返回上一页（站内无历史时不显示）；字符串 = 跳转到该路径
+// back：true = 返回上一页（站内无历史时跳 backFallback，未提供则不显示）；字符串 = 跳转到该路径
+// 类型须 boolean 在前：运行时类型为 [Boolean, String] 时，无值写法 `back` 才会转成 true（否则是 ''）
 const props = defineProps<{
   title: string
-  back?: string | boolean
+  back?: boolean | string
+  backFallback?: string
   count?: number | string
 }>()
 
@@ -28,13 +31,12 @@ const router = useRouter()
 // vue-router 在 history.state.back 记录站内上一页；直接打开 / 新标签页时为 null
 const hasHistory = typeof window !== 'undefined' && !!window.history.state?.back
 
-const showBack = computed(() => {
-  if (typeof props.back === 'string') return props.back !== ''
-  return props.back === true && hasHistory
-})
+const backAction = computed(() => resolveBack(props.back, hasHistory, props.backFallback))
 
 function goBack() {
-  if (typeof props.back === 'string') router.push(props.back)
+  const action = backAction.value
+  if (!action) return
+  if (action.type === 'push') router.push(action.path)
   else router.back()
 }
 </script>
@@ -45,7 +47,7 @@ function goBack() {
   padding: 0 8px;
   color: var(--text-1);
 }
-.page-header-back :deep(> span) {
+.page-header-back > :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 2px;

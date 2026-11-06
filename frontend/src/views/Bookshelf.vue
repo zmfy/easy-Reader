@@ -11,7 +11,7 @@
       </div>
 
       <div v-else-if="items.length === 0" class="empty-state">
-        <el-icon class="empty-icon"><CollectionTag /></el-icon>
+        <el-icon class="empty-icon"><IconBookmarks /></el-icon>
         <div class="empty-title">书架还是空的</div>
         <div class="empty-desc">去书库添加你喜欢的书吧</div>
         <el-button type="primary" @click="router.push('/library')">前往书库</el-button>
@@ -72,7 +72,7 @@
                 <div class="row-progress">{{ progressText(item) }}</div>
               </div>
               <el-dropdown trigger="click" @command="(cmd: string) => onRowCommand(cmd, item)">
-                <el-button class="row-more" text :icon="MoreFilled" title="更多" @click.stop />
+                <el-button class="row-more" text :icon="IconDots" title="更多" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="detail">详情</el-dropdown-item>
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { CollectionTag, MoreFilled } from '@element-plus/icons-vue'
+import { IconBookmarks, IconDots } from '@tabler/icons-vue'
 import { ref, computed, onMounted } from 'vue'
 import { parseServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'
@@ -201,7 +201,7 @@ onMounted(fetchShelf)
   color: var(--text-1);
   margin-bottom: 16px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(124, 92, 255, 0.1);
+  border-bottom: 1px solid var(--card-border);
 }
 
 .recent-books {
@@ -212,8 +212,9 @@ onMounted(fetchShelf)
 
 .recent-card {
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.1);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
   padding: 16px;
   display: flex;
   gap: 14px;
@@ -223,9 +224,9 @@ onMounted(fetchShelf)
 }
 
 .recent-card:hover {
-  border-color: rgba(124, 92, 255, 0.3);
+  border-color: var(--accent-line);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-soft);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .recent-cover {
@@ -298,7 +299,7 @@ onMounted(fetchShelf)
 
 .book-row {
   background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.08);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
   padding: 12px 16px;
   display: flex;
@@ -309,8 +310,8 @@ onMounted(fetchShelf)
 }
 
 .book-row:hover {
-  border-color: rgba(124, 92, 255, 0.2);
-  background: rgba(124, 92, 255, 0.04);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
 .row-cover {

@@ -23,14 +23,14 @@
           :plain="decision !== 'accepted'"
           @click="$emit('accept')"
         >
-          ✓ 归纳为一组
+          <IconCheck :size="14" :stroke-width="1.75" />归纳为一组
         </el-button>
         <el-button
           size="small"
           :plain="decision !== 'rejected'"
           @click="$emit('reject')"
         >
-          ✗ 单独入库
+          <IconX :size="14" :stroke-width="1.75" />单独入库
         </el-button>
       </div>
     </div>
@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { IconCheck, IconX } from '@tabler/icons-vue'
 import BatchItemPreview from './BatchItemPreview.vue'
 import type { SeriesGroupPayload } from '@/types'
 
@@ -112,8 +113,8 @@ function emitModified(): void {
 
 <style scoped>
 .series-card { margin-bottom: 12px; }
-.series-card.rejected { border-left: 3px solid var(--el-color-info); opacity: 0.85; }
-.series-card.accepted { border-left: 3px solid var(--el-color-primary); }
+.series-card.rejected { border-left: 3px solid var(--text-2); opacity: 0.85; }
+.series-card.accepted { border-left: 3px solid var(--accent); }
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -141,7 +142,7 @@ function emitModified(): void {
   padding: 6px 8px;
 }
 .member-row.rejected .path { text-decoration: line-through; }
-.seq { font-family: monospace; color: var(--el-color-primary); }
-.path { flex: 1; font-family: monospace; font-size: 13px; }
+.seq { font-family: var(--font-mono); color: var(--accent); }
+.path { flex: 1; font-family: var(--font-mono); font-size: 13px; }
 .member-actions { display: flex; gap: 8px; }
 </style>

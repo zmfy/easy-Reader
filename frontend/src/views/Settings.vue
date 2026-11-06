@@ -267,7 +267,7 @@
 
       <!-- User Management -->
       <div v-if="activeTab === 'users'" class="setting-section">
-        <section class="section-card section-card--flush users-card">
+        <section class="section-card section-card--flush">
           <div class="card-head">
             <h2 class="section-title">用户</h2>
             <el-button type="primary" size="small" @click="openInviteDialog" :loading="creatingInvite">
@@ -1027,24 +1027,6 @@ onMounted(async () => {
   margin: 0;
 }
 
-/* 表格首末列与卡片标题行对齐 */
-.users-card :deep(.el-table__cell:first-child .cell) {
-  padding-left: 24px;
-}
-
-.users-card :deep(.el-table__cell:last-child .cell) {
-  padding-right: 24px;
-}
-
-/* 卡片自带边框，去掉表格末行与底边线，避免双线 */
-.users-card :deep(.el-table__inner-wrapper::before) {
-  display: none;
-}
-
-.users-card :deep(.el-table__body tr:last-child > td.el-table__cell) {
-  border-bottom: none;
-}
-
 /* ── AI ── */
 .ai-tips {
   display: flex;
@@ -1204,7 +1186,7 @@ onMounted(async () => {
   align-items: center;
 }
 
-.invite-url-row .el-button :deep(> span) {
+.invite-url-row .el-button > :deep(span) {
   gap: 4px;
 }
 
@@ -1317,7 +1299,7 @@ onMounted(async () => {
   height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1466,6 +1448,7 @@ onMounted(async () => {
 }
 
 .changelog-date {
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
@@ -1548,14 +1531,6 @@ onMounted(async () => {
 
   .card-head {
     padding: 12px 16px;
-  }
-
-  .users-card :deep(.el-table__cell:first-child .cell) {
-    padding-left: 16px;
-  }
-
-  .users-card :deep(.el-table__cell:last-child .cell) {
-    padding-right: 16px;
   }
 
   .ai-tip-item {

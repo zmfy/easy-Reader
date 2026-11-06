@@ -1,15 +1,14 @@
 <template>
   <DefaultLayout>
-    <div class="overrides-page">
-      <div class="page-header">
-        <div>
-          <el-button link @click="$router.push('/library')">← 返回书库</el-button>
-          <h1>人工修正记录</h1>
-          <div class="subtitle">admin 在审核时记录的"不是重复"/"不在系列"等判断。下次扫描会绕过 AI 重新判断这些组合。</div>
-        </div>
-        <el-button type="danger" plain :disabled="overrides.length === 0" @click="onClearAll">清空所有人工修正</el-button>
-      </div>
+    <div class="page page--narrow">
+      <PageHeader title="人工修正记录" back="/library">
+        <template #actions>
+          <el-button type="danger" plain :disabled="overrides.length === 0" @click="onClearAll">清空所有人工修正</el-button>
+        </template>
+      </PageHeader>
+      <p class="page-subtitle">admin 在审核时记录的"不是重复"/"不在系列"等判断。下次扫描会绕过 AI 重新判断这些组合。</p>
 
+      <div class="section-card section-card--flush">
       <el-table v-loading="loading" :data="overrides" empty-text="暂无记录">
         <el-table-column prop="type" label="类型" width="200">
           <template #default="{ row }">
@@ -35,6 +34,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
     </div>
   </DefaultLayout>
 </template>
@@ -44,6 +44,7 @@ import { ref, onMounted } from 'vue'
 import { formatServerTime } from '@/utils/time'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { libraryApi } from '@/api/library'
 import type { ManualOverride } from '@/types'
 
@@ -100,15 +101,6 @@ onMounted(fetchOverrides)
 </script>
 
 <style scoped>
-.overrides-page { padding: 24px 32px; }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-  gap: 16px;
-}
-.page-header h1 { margin: 8px 0 4px 0; }
-.subtitle { font-size: 13px; color: var(--text-2); max-width: 600px; }
-.id-short { font-family: monospace; font-size: 12px; }
+.page-subtitle { margin: -12px 0 16px; font-size: 13px; color: var(--text-2); max-width: 600px; }
+.id-short { font-family: var(--font-mono); font-size: 12px; }
 </style>

@@ -1,17 +1,19 @@
 <template>
   <DefaultLayout>
-    <div v-loading="loading" class="series-detail-page">
-      <div class="page-header">
-        <el-button link @click="$router.back()">← 返回</el-button>
-        <h1 v-if="detail">{{ detail.series.name }}</h1>
-        <div v-if="detail" class="meta">
-          <el-tag type="primary" size="small">系列</el-tag>
-          <span>{{ detail.members.length }} 本</span>
-          <span v-if="detail.series.author">· {{ detail.series.author }}</span>
-        </div>
-      </div>
+    <div v-loading="loading" class="page page--narrow">
+      <PageHeader v-if="detail" :title="detail.series.name" back back-fallback="/library">
+        <template #actions>
+          <div class="meta">
+            <el-tag type="primary" size="small">系列</el-tag>
+            <span>{{ detail.members.length }} 本</span>
+            <span v-if="detail.series.author">· {{ detail.series.author }}</span>
+          </div>
+        </template>
+      </PageHeader>
+      <!-- 加载失败时仍给出返回入口 -->
+      <PageHeader v-else-if="!loading" title="系列" back back-fallback="/library" />
 
-      <div v-if="detail?.series.summary" class="summary">{{ detail.series.summary }}</div>
+      <div v-if="detail?.series.summary" class="note summary">{{ detail.series.summary }}</div>
 
       <div v-if="detail" class="members-grid">
         <BookCard
@@ -31,6 +33,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import BookCard from '@/components/BookCard.vue'
 import { seriesApi } from '@/api/series'
 import type { SeriesDetail as SeriesDetailType } from '@/types'
@@ -54,17 +57,10 @@ onMounted(fetchSeries)
 </script>
 
 <style scoped>
-.series-detail-page { padding: 32px; min-height: 100%; }
-.page-header { display: block; margin-bottom: 24px; }
-.page-header h1 { margin: 8px 0; font-size: 26px; font-weight: 600; color: var(--text-0); letter-spacing: 1px; }
 .meta { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .summary {
-  background: rgba(124, 92, 255, 0.06);
-  border: 1px solid rgba(124, 92, 255, 0.12);
   padding: 16px 20px;
-  border-radius: var(--radius-md);
   margin-bottom: 24px;
-  color: var(--text-1);
   font-size: 14px;
   line-height: 1.7;
 }

@@ -1,32 +1,27 @@
 <template>
   <DefaultLayout>
-    <div class="problem-page">
-      <div class="page-header">
+    <div class="page page--narrow">
+      <PageHeader title="问题书籍管理" back="/library" />
+      <p class="page-subtitle">查看并清理乱码 / 重复书籍。物理删除不可恢复。</p>
+
+      <div class="filters">
+        <el-radio-group v-model="filter" @change="onFilterChange">
+          <el-radio-button value="problems">全部 ({{ totals.problems }})</el-radio-button>
+          <el-radio-button value="garbled">乱码 ({{ totals.garbled }})</el-radio-button>
+          <el-radio-button value="duplicate">重复 ({{ totals.duplicate }})</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div class="note note--warning warn-note">
+        <IconAlertTriangle :size="16" :stroke-width="1.75" class="warn-note-icon" />
         <div>
-          <el-button link @click="$router.push('/library')">← 返回书库</el-button>
-          <h1>问题书籍管理</h1>
-          <div class="subtitle">查看并清理乱码 / 重复书籍。物理删除不可恢复。</div>
-        </div>
-        <div class="filters">
-          <el-radio-group v-model="filter" @change="onFilterChange">
-            <el-radio-button value="problems">全部 ({{ totals.problems }})</el-radio-button>
-            <el-radio-button value="garbled">乱码 ({{ totals.garbled }})</el-radio-button>
-            <el-radio-button value="duplicate">重复 ({{ totals.duplicate }})</el-radio-button>
-          </el-radio-group>
+          <strong>注意：物理删除会真的把磁盘上的文件删除，不可恢复。</strong>
+          删除前请务必确认。仅删除"书库记录"则保留磁盘文件（下次扫描会重新发现）。
         </div>
       </div>
 
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        class="warn-alert"
-      >
-        <template #title>注意：物理删除会真的把磁盘上的文件删除，<strong>不可恢复</strong></template>
-        删除前请务必确认。仅删除"书库记录"则保留磁盘文件（下次扫描会重新发现）。
-      </el-alert>
-
-      <el-table v-loading="loading" :data="books" empty-text="没有问题书籍" class="problem-table">
+      <div class="section-card section-card--flush">
+      <el-table v-loading="loading" :data="books" empty-text="没有问题书籍">
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'garbled' ? 'danger' : 'warning'" size="small">
@@ -77,6 +72,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <div v-if="pagination.totalPages > 1" class="pagination">
         <el-pagination
@@ -97,6 +93,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import { IconAlertTriangle } from '@tabler/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { libraryApi } from '@/api/library'
 import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import type { Book } from '@/types'
@@ -217,20 +215,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.problem-page { padding: 24px 32px; }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.page-header h1 { margin: 8px 0 0 0; }
-.subtitle { font-size: 13px; color: var(--text-2); margin-top: 4px; }
-.warn-alert { margin-bottom: 16px; }
-.problem-table { margin-top: 8px; }
-.path { font-family: monospace; font-size: 12px; word-break: break-all; }
+.page-subtitle { margin: -12px 0 16px; font-size: 13px; color: var(--text-2); }
+.filters { margin-bottom: 16px; }
+.warn-note { display: flex; gap: 8px; margin-bottom: 16px; }
+.warn-note-icon { flex: none; margin-top: 3px; color: var(--warning); }
+.path { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
 .pagination { display: flex; justify-content: center; margin-top: 20px; }
 .title-link { padding: 0; font-weight: 500; }
 .orphan-hint { font-size: 12px; color: var(--text-2); margin-left: 6px; }
