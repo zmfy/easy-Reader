@@ -91,7 +91,7 @@ describe('summary-job', () => {
     expect(s.included_refs.sort()).toEqual([...old, ...fresh].sort());
     const v = listVersions(d, 'u1', 'b1')[0];
     expect(v.source).toBe('ai_update');
-    expect(v.description).toBe('新增 2 条到『旧主题』，新建主题『新主题』');
+    expect(v.description).toBe('新增 2 段到『旧主题』，新建主题『新主题』');
   });
 
   it('same book job is not started twice', async () => {

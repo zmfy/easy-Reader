@@ -46,7 +46,7 @@ function updateDescription(target: DocNode, additions: ThemeBlock[]): string {
     const list = existing.has(key) ? hit : created;
     if (!list.includes(key)) list.push(key);
   }
-  let desc = `新增 ${count} 条`;
+  let desc = `新增 ${count} 段`;
   if (hit.length) desc += '到' + hit.map(t => `『${t}』`).join('');
   if (created.length) desc += '，新建主题' + created.map(t => `『${t}』`).join('');
   return desc;
