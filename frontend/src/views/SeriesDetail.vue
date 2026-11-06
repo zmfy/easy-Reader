@@ -10,6 +10,8 @@
           </div>
         </template>
       </PageHeader>
+      <!-- 加载失败时仍给出返回入口 -->
+      <PageHeader v-else-if="!loading" title="系列" back back-fallback="/library" />
 
       <div v-if="detail?.series.summary" class="note summary">{{ detail.series.summary }}</div>
 

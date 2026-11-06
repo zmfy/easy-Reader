@@ -18,9 +18,10 @@ import { IconChevronLeft } from '@tabler/icons-vue'
 import { resolveBack } from '@/utils/page-back'
 
 // back：true = 返回上一页（站内无历史时跳 backFallback，未提供则不显示）；字符串 = 跳转到该路径
+// 类型须 boolean 在前：运行时类型为 [Boolean, String] 时，无值写法 `back` 才会转成 true（否则是 ''）
 const props = defineProps<{
   title: string
-  back?: string | boolean
+  back?: boolean | string
   backFallback?: string
   count?: number | string
 }>()
@@ -46,7 +47,7 @@ function goBack() {
   padding: 0 8px;
   color: var(--text-1);
 }
-.page-header-back :deep(> span) {
+.page-header-back > :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 2px;

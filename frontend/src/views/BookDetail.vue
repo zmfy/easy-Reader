@@ -6,7 +6,7 @@
       </div>
       <div v-else-if="book" class="detail-content">
         <div class="detail-header">
-          <el-button class="back-btn" text @click="router.back()">
+          <el-button class="back-btn" text @click="goBack">
             <IconChevronLeft :size="16" :stroke-width="1.75" />返回
           </el-button>
         </div>
@@ -173,6 +173,7 @@ import { libraryApi } from '@/api/library'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
+import { resolveBack } from '@/utils/page-back'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
@@ -216,6 +217,13 @@ const editedFieldsList = computed<string[]>(() => {
     return arr.map(f => FIELD_LABELS[f as string] ?? String(f))
   } catch { return [] }
 })
+
+// 与 PageHeader 一致：有站内历史则回退，直接打开 / 新标签页时回书库
+function goBack() {
+  const action = resolveBack(true, !!window.history.state?.back, '/library')
+  if (action?.type === 'push') router.push(action.path)
+  else if (action) router.back()
+}
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -351,7 +359,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
   padding: 0 8px;
   color: var(--text-1);
 }
-.back-btn :deep(> span) {
+.back-btn > :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -525,7 +533,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.read-btn :deep(> span) {
+.read-btn > :deep(span) {
   min-width: 0;
   max-width: 100%;
 }
