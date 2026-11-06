@@ -120,6 +120,8 @@ export interface AiPlugin {
    * Plugins must implement this so judgement logic can stay centralized.
    */
   chat(prompt: string, config: Record<string, string>): Promise<string>;
+  /** 当前配置已失效（如模型下线）时返回提醒文案，否则返回 null */
+  configWarning?(config: Record<string, string>): string | null;
 }
 
 export interface ReaderPlugin {

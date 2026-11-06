@@ -168,6 +168,14 @@
                 />
               </el-select>
             </div>
+            <el-alert
+              v-if="aiConfigWarning"
+              type="warning"
+              show-icon
+              :closable="false"
+              :title="aiConfigWarning"
+              style="margin-bottom: 20px"
+            />
             <div v-if="currentAiPlugin" class="form-grid">
               <div
                 v-for="field in currentAiPlugin.fields"
@@ -437,6 +445,7 @@ import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebo
 import { ElMessage } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { settingsApi } from '@/api/settings'
+import { buildAiSettingsPayload } from '@/utils/ai-settings'
 import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 
@@ -814,6 +823,16 @@ watch(selectedAiPlugin, (plugin) => {
   if (plugin && Object.keys(settingsData.value).length) populateAiForm(plugin)
 })
 
+const aiConfigWarning = ref<string | null>(null)
+
+async function loadAiConfigWarning() {
+  // 刷新失败静默处理，保持旧提醒，不影响保存提示与其他加载
+  try {
+    const resp = await settingsApi.getAiStatus()
+    aiConfigWarning.value = resp.data.data?.config_warning ?? null
+  } catch { /* ignore */ }
+}
+
 async function loadSettings() {
   const resp = await settingsApi.get()
   const data = resp.data.data || {}
@@ -878,15 +897,13 @@ async function saveSettings(tab: string) {
         payload.smtp_pass = smtpForm.smtp_pass
       }
     } else if (tab === 'ai' && currentAiPlugin.value) {
-      payload['ai_plugin'] = selectedAiPlugin.value
-      payload['ai_summary_length'] = String(aiSummaryLength.value)
-      payload['ai_fill_concurrency'] = String(aiFillConcurrency.value)
-      for (const field of currentAiPlugin.value.fields) {
-        // 下拉字段选「默认」时也要提交空值，以清除之前保存的设置
-        if (aiForm[field] || currentAiPlugin.value.options?.[field]) {
-          payload[`ai_${selectedAiPlugin.value}_${field}`] = aiForm[field] ?? ''
-        }
-      }
+      Object.assign(payload, buildAiSettingsPayload(
+        selectedAiPlugin.value,
+        currentAiPlugin.value.fields,
+        aiForm,
+        aiSummaryLength.value,
+        aiFillConcurrency.value,
+      ))
     }
     await settingsApi.update(payload)
     if (tab === 'smtp') {
@@ -898,6 +915,7 @@ async function saveSettings(tab: string) {
       if (sysForm.site_name) document.title = sysForm.site_name
       applySiteTheme(sysForm.site_theme)
     }
+    if (tab === 'ai') await loadAiConfigWarning()
     ElMessage.success('设置已保存')
   } finally {
     saving.value = false
@@ -976,6 +994,7 @@ async function deleteUser(id: string) {
 }
 
 onMounted(async () => {
+  loadAiConfigWarning()
   await Promise.all([loadSettings(), loadPlugins(), loadUsers()])
 })
 </script>

@@ -5,7 +5,7 @@ import { getDb } from '../db';
 import { strongPasswordSchema } from '../utils/password-policy';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
-import { aiPlugins, isAiConfigured, getActivePluginName } from '../ai/ai-manager';
+import { aiPlugins, isAiConfigured, getActivePluginName, getAiConfigWarning } from '../ai/ai-manager';
 import { getTtsConfig } from '../services/tts';
 import { User } from '../types';
 import nodemailer from 'nodemailer';
@@ -89,7 +89,7 @@ router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
 // GET /api/settings/ai-status — whether AI is usable (plugin selected + credential filled)
 router.get('/ai-status', authMiddleware, (_req: Request, res: Response) => {
   const db = getDb();
-  successResponse(res, { configured: isAiConfigured(db), active_plugin: getActivePluginName(db), tts_enabled: getTtsConfig(db).enabled });
+  successResponse(res, { configured: isAiConfigured(db), active_plugin: getActivePluginName(db), tts_enabled: getTtsConfig(db).enabled, config_warning: getAiConfigWarning(db) });
 });
 
 // GET /api/settings/reader-plugins
