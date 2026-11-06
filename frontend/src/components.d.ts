@@ -56,6 +56,7 @@ declare module 'vue' {
     ScanProgressBar: typeof import('./components/ScanProgressBar.vue')['default']
     SeriesCard: typeof import('./components/SeriesCard.vue')['default']
     SeriesGroupCard: typeof import('./components/SeriesGroupCard.vue')['default']
+    SummaryEditor: typeof import('./components/SummaryEditor.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']
