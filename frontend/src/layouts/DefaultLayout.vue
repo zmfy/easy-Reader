@@ -453,7 +453,7 @@ async function handleLogout() {
 .user-menu-popper .menu-switch { pointer-events: none; flex: none; }
 .user-menu-popper .menu-sep { height: 1px; margin: 4px 6px; background: var(--card-border); }
 .user-menu-popper .menu-row--danger,
-.user-menu-popper .menu-row--danger .menu-icon { color: var(--danger, #ef4444); }
+.user-menu-popper .menu-row--danger .menu-icon { color: var(--danger); }
 .user-menu-popper .menu-row--danger:hover,
-.user-menu-popper .menu-row--danger:focus-visible { background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent); }
+.user-menu-popper .menu-row--danger:focus-visible { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 </style>

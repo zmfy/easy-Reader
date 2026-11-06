@@ -22,12 +22,51 @@ export function migrateReaderTheme<T extends { theme: string; backgroundColor: s
   return { ...settings, theme: 'indigo', backgroundColor: t.backgroundColor, fontColor: t.fontColor }
 }
 
+const DARK_ON_ACCENT = '#1a2440'
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = hex.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1]
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+function luminance([r, g, b]: [number, number, number]): number {
+  const f = (v: number) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+
+/** accent 底上的文字色：与白色、深色比对比度，取更清晰的一个；无法解析时退回白色 */
+export function onAccentColor(accentHex: string): string {
+  const rgb = hexToRgb(accentHex)
+  if (!rgb) return '#ffffff'
+  const l = luminance(rgb)
+  const whiteContrast = 1.05 / (l + 0.05)
+  const darkContrast = (l + 0.05) / (luminance(hexToRgb(DARK_ON_ACCENT)!) + 0.05)
+  return whiteContrast >= darkContrast ? '#ffffff' : DARK_ON_ACCENT
+}
+
+/** 深色阅读主题的强调色是站点 accent 与 55:45 白色的混合（与 readerPalette 里的 color-mix 一致） */
+function mixWithWhite(hex: string, ratio: number): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return hex
+  return '#' + rgb.map((v) => Math.round(v * ratio + 255 * (1 - ratio)).toString(16).padStart(2, '0')).join('')
+}
+
 /**
  * 阅读器配色变量：外围底色 / 纸张 / 正文 / 次要文字 / 分隔线，以及面板（目录、工具栏）的底色与阴影、
  * 强调色、悬停 / 按下底色。默认的「靛青」与网站靛青主题同色；其他阅读主题由背景色与文字色派生。
  * 强调色跟随网站主题的 --accent，深色阅读主题上提亮以保证对比度。
  */
-export function readerPalette(theme: ReaderTheme, paperBg: string, text: string): Record<string, string> {
+export function readerPalette(theme: ReaderTheme, paperBg: string, text: string, siteAccent?: string): Record<string, string> {
+  // siteAccent：站点主题 --accent 的十六进制值，用来算 accent 底上的文字色；缺省时浅色主题用站点的 --on-accent、深色主题用深色字
+  const onAccent = (dark: boolean) => {
+    if (!siteAccent) return dark ? DARK_ON_ACCENT : 'var(--on-accent)'
+    return onAccentColor(dark ? mixWithWhite(siteAccent, 0.55) : siteAccent)
+  }
   if (theme === 'indigo') {
     return {
       '--reader-page-bg': '#eef1f6',
@@ -38,6 +77,7 @@ export function readerPalette(theme: ReaderTheme, paperBg: string, text: string)
       '--reader-panel-bg': '#ffffff',
       '--reader-panel-shadow': '0 1px 2px rgba(26,36,64,.04), 0 8px 32px rgba(26,36,64,.12)',
       '--reader-accent': 'var(--accent)',
+      '--reader-on-accent': onAccent(false),
       '--reader-accent-weak': 'color-mix(in srgb, var(--accent) 10%, #ffffff)',
       '--reader-hover-bg': 'rgba(26,36,64,.04)',
       '--reader-active-bg': 'rgba(26,36,64,.07)',
@@ -58,6 +98,7 @@ export function readerPalette(theme: ReaderTheme, paperBg: string, text: string)
       ? '0 1px 2px rgba(0,0,0,.3), 0 8px 32px rgba(0,0,0,.5)'
       : '0 1px 2px rgba(0,0,0,.04), 0 8px 32px rgba(0,0,0,.12)',
     '--reader-accent': accent,
+    '--reader-on-accent': onAccent(dark),
     '--reader-accent-weak': `color-mix(in srgb, ${accent} 14%, ${paperBg})`,
     '--reader-hover-bg': `color-mix(in srgb, ${text} 5%, transparent)`,
     '--reader-active-bg': `color-mix(in srgb, ${text} 9%, transparent)`,

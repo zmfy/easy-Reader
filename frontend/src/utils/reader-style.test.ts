@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, migrateReaderTheme, isImagePage } from './reader-style'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, migrateReaderTheme, isImagePage, onAccentColor } from './reader-style'
 
 describe('readerPalette', () => {
   it('uses fixed 靛青 colours matching the site theme, accent follows the site accent', () => {
@@ -12,6 +12,7 @@ describe('readerPalette', () => {
       '--reader-panel-bg': '#ffffff',
       '--reader-panel-shadow': '0 1px 2px rgba(26,36,64,.04), 0 8px 32px rgba(26,36,64,.12)',
       '--reader-accent': 'var(--accent)',
+      '--reader-on-accent': 'var(--on-accent)',
       '--reader-accent-weak': 'color-mix(in srgb, var(--accent) 10%, #ffffff)',
       '--reader-hover-bg': 'rgba(26,36,64,.04)',
       '--reader-active-bg': 'rgba(26,36,64,.07)',
@@ -115,5 +116,30 @@ describe('isImagePage', () => {
     expect(isImagePage('<p>第一章 开端</p><img src="/a.jpg">')).toBe(false)
     expect(isImagePage('<p>正文</p>')).toBe(false)
     expect(isImagePage('')).toBe(false)
+  })
+})
+
+describe('onAccentColor', () => {
+  it('returns dark text on a light accent', () => {
+    expect(onAccentColor('#e8923a')).toBe('#1a2440')
+    expect(onAccentColor('#38c8e8')).toBe('#1a2440')
+  })
+  it('returns white text on a dark accent', () => {
+    expect(onAccentColor('#4338ca')).toBe('#ffffff')
+    expect(onAccentColor('#7c5cff')).toBe('#ffffff')
+  })
+  it('falls back to white for unparsable colours', () => {
+    expect(onAccentColor('var(--accent)')).toBe('#ffffff')
+  })
+})
+
+describe('readerPalette on-accent', () => {
+  it('uses the site --on-accent for light themes when the accent is unknown', () => {
+    expect(readerPalette('white', '#FFFFFF', '#333333')['--reader-on-accent']).toBe('var(--on-accent)')
+  })
+  it('computes from the site accent; dark themes use the lightened accent', () => {
+    expect(readerPalette('white', '#FFFFFF', '#333333', '#e8923a')['--reader-on-accent']).toBe('#1a2440')
+    expect(readerPalette('white', '#FFFFFF', '#333333', '#4338ca')['--reader-on-accent']).toBe('#ffffff')
+    expect(readerPalette('night', '#1a1a1a', '#cccccc', '#4338ca')['--reader-on-accent']).toBe('#1a2440')
   })
 })

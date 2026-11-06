@@ -308,6 +308,12 @@ html[data-theme="cool"] {
 }
 .el-form-item--default .el-form-item__content { line-height: var(--el-component-size); }
 .el-pagination { --el-pagination-button-height: var(--el-component-size); }
+/* accent 底上的 EP 默认白字组件（分页器当前页、复选框勾、单选框圆点、深色标签）改用 --on-accent；el-switch 圆点保持白色 */
+.el-pagination.is-background .el-pager li.is-active { color: var(--on-accent); }
+.el-checkbox { --el-checkbox-checked-icon-color: var(--on-accent); }
+.el-checkbox__input.is-checked .el-checkbox__inner::after { border-color: var(--on-accent); }
+.el-radio__input.is-checked .el-radio__inner::after { background-color: var(--on-accent); }
+.el-tag.el-tag--dark.el-tag--primary { --el-tag-text-color: var(--on-accent); }
 
 /* 主按钮 hover / active：在主色里混入少量正文色（浅色主题变深、深色主题变亮） */
 .el-button--primary {

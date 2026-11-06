@@ -237,7 +237,7 @@
               :key="key"
               class="theme-btn"
               :class="{ active: readerStore.settings.theme === key }"
-              :style="{ background: val.backgroundColor, color: val.fontColor, border: '2px solid ' + (readerStore.settings.theme === key ? 'var(--accent)' : 'rgba(128,128,128,0.3)') }"
+              :style="{ background: val.backgroundColor, color: val.fontColor, border: '2px solid ' + (readerStore.settings.theme === key ? 'var(--accent)' : 'color-mix(in srgb, var(--reader-text) 20%, transparent)') }"
               @click="readerStore.applyTheme(key as ReaderTheme)"
             >{{ val.label }}</button>
           </div>
@@ -590,10 +590,22 @@ async function loadPdfDocument() {
 
 // ── Computed styles ──────────────────────────────────────────
 // 阅读配色以 CSS 变量提供（--reader-page-bg / --reader-paper-bg / --reader-text …），便于切换阅读主题
+// 站点 --accent 的实际色值，用来算阅读器 accent 底上的文字色；站点主题切换时（data-theme 变化）更新
+const siteAccent = ref('')
+const readSiteAccent = () => { siteAccent.value = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() }
+readSiteAccent()
+let themeObserver: MutationObserver | null = null
+onMounted(() => {
+  readSiteAccent()
+  themeObserver = new MutationObserver(readSiteAccent)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+})
+onBeforeUnmount(() => themeObserver?.disconnect())
+
 const readerStyle = computed(() => ({
   // 纸张宽度：「页面宽度」百分比，最宽 1120px，并给右侧工具栏留出位置；顶栏与工具栏定位共用
   '--paper-w': `min(${readerStore.settings.pageWidth}%, 1120px, calc(100% - 152px))`,
-  ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor),
+  ...readerPalette(readerStore.settings.theme, readerStore.settings.backgroundColor, readerStore.settings.fontColor, siteAccent.value),
   // 划线底色：日间浅黄，夜间半透明暖色
   '--reader-hl-bg': isDarkReaderTheme(readerStore.settings.theme) ? 'rgba(255, 190, 90, 0.26)' : '#fff1a8',
   color: 'var(--reader-text)',
@@ -2049,9 +2061,9 @@ onUnmounted(() => {
 .end-btn.primary {
   border-color: var(--reader-accent);
   background: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent);
 }
-.end-btn.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+.end-btn.primary:hover:not(:disabled) { color: var(--reader-on-accent); filter: brightness(1.08); }
 .end-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* PDF 逐页渲染：失败提示居中显示 */
@@ -2429,9 +2441,9 @@ onUnmounted(() => {
   height: 44px;
   border-radius: 50%;
   background: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent);
 }
-.listen-btn.main:hover { color: #fff; background: var(--reader-accent); filter: brightness(1.08); }
+.listen-btn.main:hover { color: var(--reader-on-accent); background: var(--reader-accent); filter: brightness(1.08); }
 .listen-chip {
   display: inline-flex;
   align-items: center;
@@ -2461,7 +2473,7 @@ onUnmounted(() => {
   border-radius: 4px;
   background: var(--reader-accent);
   box-shadow: 0 0 0 1.5px var(--reader-panel-bg);
-  color: #fff;
+  color: var(--reader-on-accent);
   font-family: var(--font-sans);
   font-size: 9px;
   font-weight: 700;
@@ -2523,8 +2535,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .view-only-btn:hover { color: var(--reader-accent); border-color: var(--reader-accent); }
-.view-only-btn.primary { border-color: var(--reader-accent); background: var(--reader-accent); color: #fff; }
-.view-only-btn.primary:hover { color: #fff; }
+.view-only-btn.primary { border-color: var(--reader-accent); background: var(--reader-accent); color: var(--reader-on-accent); }
+.view-only-btn.primary:hover { color: var(--reader-on-accent); }
 /* 查看模式提示条在上方时让开（窄屏提示条可能折成两行） */
 .recap-card.below-bar { top: 140px; }
 .recap-enter-active,
@@ -2615,7 +2627,7 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.ask-msg.user .ask-bubble { background: var(--reader-accent); color: #fff; border-bottom-right-radius: 4px; }
+.ask-msg.user .ask-bubble { background: var(--reader-accent); color: var(--reader-on-accent); border-bottom-right-radius: 4px; }
 .ask-msg.ai .ask-bubble { background: var(--reader-active-bg); color: var(--reader-text); border-bottom-left-radius: 4px; }
 .ask-msg.ai.error .ask-bubble { color: var(--danger); }
 .ask-bubble .el-icon { vertical-align: -2px; }
@@ -2654,7 +2666,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 9px;
   background: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent);
   cursor: pointer;
 }
 .ask-send:disabled { opacity: 0.35; cursor: not-allowed; }
@@ -2707,7 +2719,7 @@ onUnmounted(() => {
   flex: 1;
   padding: 8px;
   border-radius: var(--radius-md);
-  border: 2px solid rgba(128,128,128,0.2);
+  border: 2px solid color-mix(in srgb, var(--reader-text) 20%, transparent);
   cursor: pointer;
   font-size: 13px;
   background: transparent;
