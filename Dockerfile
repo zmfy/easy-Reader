@@ -1,23 +1,35 @@
+# 镜像源（构建参数）：默认官方源；docker-compose.yml 默认传国内源，可在 .env 里覆盖
+#   NODE_IMAGE     基础镜像，如 docker.m.daocloud.io/library/node:22-slim
+#   NPM_REGISTRY   npm 源，如 https://registry.npmmirror.com（lock 文件里的 registry.npmjs.org 会自动替换）
+#   DEBIAN_MIRROR  apt 源，如 http://mirrors.aliyun.com（留空则用 deb.debian.org）
+ARG NODE_IMAGE=node:22-slim
+
 # Stage 1: Build frontend
-FROM node:22-slim AS frontend-builder
+FROM ${NODE_IMAGE} AS frontend-builder
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY frontend/package*.json ./
-RUN npm install --no-fund --no-audit
+RUN npm install --no-fund --no-audit --registry=${NPM_REGISTRY}
 COPY frontend/ .
 RUN npm run build
 
 # Stage 2: Build backend + prune to production deps
-FROM node:22-slim AS backend-builder
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+FROM ${NODE_IMAGE} AS backend-builder
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG DEBIAN_MIRROR=
+RUN if [ -n "${DEBIAN_MIRROR}" ]; then sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; fi \
+  && apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+# better-sqlite3 没有 Node 22 的预编译包，会现场编译；用镜像自带的 Node 头文件，免去从 nodejs.org 下载
+ENV npm_config_nodedir=/usr/local
 WORKDIR /app
 COPY backend/package*.json ./
-RUN npm ci --no-fund --no-audit
+RUN npm ci --no-fund --no-audit --registry=${NPM_REGISTRY}
 COPY backend/tsconfig.json .
 COPY backend/src ./src
 RUN npm run build && npm prune --omit=dev
 
 # Stage 3: Runtime (no build tools needed)
-FROM node:22-slim
+FROM ${NODE_IMAGE}
 WORKDIR /app
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/dist ./dist
