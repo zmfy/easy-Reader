@@ -461,6 +461,7 @@ import { formatServerTime, parseServerTime } from '@/utils/time'
 import { passwordRules, passwordValid } from '@/utils/password-policy'
 import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebook, Tickets, Collection, Files } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import { settingsApi } from '@/api/settings'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
@@ -469,6 +470,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { Release, UpdateStatus } from '@/types'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 const activeTab = ref('system')
 const saving = ref(false)
@@ -625,13 +627,15 @@ const updateStatusText = computed(() => {
   const st = updateStatus.value
   if (!st) return ''
   if (!st.enabled) return '已关闭更新检查'
+  const newer = st.newer.length ? `有新版本 v${st.newer[0].version}` : ''
   if (st.error) {
     const d = parseServerTime(st.checkedAt)
     const pad = (n: number) => String(n).padStart(2, '0')
     const t = d ? `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` : ''
-    return t ? `无法连接更新源，上次检查 ${t}` : '无法连接更新源'
+    const err = t ? `无法连接更新源，上次检查 ${t}` : '无法连接更新源'
+    return newer ? `${newer}（${err}）` : err
   }
-  if (st.newer.length) return `有新版本 v${st.newer[0].version}`
+  if (newer) return newer
   if (!st.checkedAt) return '尚未检查'
   return '已是最新'
 })
@@ -654,6 +658,8 @@ async function checkUpdatesNow() {
   try {
     const resp = await settingsApi.checkUpdates()
     updateStatus.value = resp.data.data ?? updateStatus.value
+  } catch {
+    ElMessage.error('检查失败，请稍后再试')
   } finally {
     checkingUpdate.value = false
   }
@@ -910,7 +916,15 @@ async function deleteUser(id: string) {
   }
 }
 
+// 提示条「去设置」带 ?tab=ai：只接受已有的 tab key
+function applyQueryTab() {
+  const queryTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+  if (queryTab && tabs.some(t => t.key === queryTab)) activeTab.value = queryTab
+}
+watch(() => route.query.tab, applyQueryTab)
+
 onMounted(async () => {
+  applyQueryTab()
   loadAiConfigWarning()
   await Promise.all([loadSettings(), loadPlugins(), loadUsers(), loadChangelog().catch(() => {})])
 })
@@ -1510,12 +1524,6 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.changelog-count {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-2);
 }
 
 .changelog-arrow {

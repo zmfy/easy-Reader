@@ -61,6 +61,7 @@
         </button>
         <span class="mobile-title">{{ siteName }}</span>
       </div>
+      <SystemNoticeBar v-if="authStore.isAdmin" />
       <ScanProgressBar />
       <slot />
     </main>
@@ -77,6 +78,7 @@ import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconPlugConne
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
+import SystemNoticeBar from '@/components/SystemNoticeBar.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
