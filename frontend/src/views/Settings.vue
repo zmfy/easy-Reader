@@ -601,12 +601,12 @@ const siteThemes = [
   },
   {
     key: 'sky',
-    label: '晴空',
-    desc: '清爽白蓝',
-    bg: '#f0f4ff',
+    label: '朱砂',
+    desc: '暖白配朱红',
+    bg: '#f6f3f1',
     panel: '#ffffff',
-    accent: '#4a6cf7',
-    text: '#3a4a6a',
+    accent: '#d6363b',
+    text: '#554a48',
   },
   {
     key: 'paper',
