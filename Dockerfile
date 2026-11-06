@@ -35,5 +35,7 @@ COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/dist ./dist
 COPY --from=frontend-builder /app/dist ./public
 COPY docs/api.md ./docs/api.md
+# 更新提醒读取本站版本（后端 cwd 为 /app）
+COPY CHANGELOG.md ./CHANGELOG.md
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

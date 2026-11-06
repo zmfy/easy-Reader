@@ -31,21 +31,38 @@
             <div class="user-name">{{ authStore.user?.username }}</div>
             <div class="user-role">{{ authStore.user?.role === 'admin' ? '管理员' : '普通用户' }}</div>
           </div>
-        </div>
-        <div class="action-row" @click="toggleKeepAlive">
-          <IconPlugConnected class="action-icon" :size="16" :stroke-width="1.75" />
-          <span>保持连接</span>
-          <div class="toggle-track" :class="{ on: keepAlive }">
-            <div class="toggle-knob" />
-          </div>
-        </div>
-        <router-link to="/change-password" class="action-row" @click="sidebarOpen = false">
-          <IconKey class="action-icon" :size="16" :stroke-width="1.75" />
-          <span>修改密码</span>
-        </router-link>
-        <div class="action-row action-row--logout" @click="handleLogout">
-          <IconLogout class="action-icon" :size="16" :stroke-width="1.75" />
-          <span>退出登录</span>
+          <NotificationBell v-if="showBell" @navigate="sidebarOpen = false" />
+          <el-popover
+            ref="moreRef"
+            trigger="click"
+            placement="top-end"
+            :width="196"
+            :show-arrow="false"
+            :offset="8"
+            popper-class="user-menu-popper"
+            @show="focusFirstItem"
+            @hide="moreBtnRef?.focus()"
+          >
+            <template #reference>
+              <button ref="moreBtnRef" class="more-btn" type="button" aria-label="更多"><IconDots :size="18" :stroke-width="1.75" /></button>
+            </template>
+            <div ref="menuRef" class="user-menu">
+              <div class="menu-row" role="switch" :aria-checked="keepAlive" tabindex="0" @click="toggleKeepAlive" @keydown.enter.prevent="toggleKeepAlive" @keydown.space.prevent="toggleKeepAlive">
+                <IconPlugConnected class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>保持连接</span>
+                <el-switch :model-value="keepAlive" size="small" tabindex="-1" aria-hidden="true" class="menu-switch" />
+              </div>
+              <router-link to="/change-password" class="menu-row" @click="closeMenu(); sidebarOpen = false">
+                <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>修改密码</span>
+              </router-link>
+              <div class="menu-sep" />
+              <div class="menu-row menu-row--danger" role="button" tabindex="0" @click="closeMenu(); handleLogout()" @keydown.enter.prevent="closeMenu(); handleLogout()" @keydown.space.prevent="closeMenu(); handleLogout()">
+                <IconLogout class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>退出登录</span>
+              </div>
+            </div>
+          </el-popover>
         </div>
       </div>
     </nav>
@@ -60,6 +77,7 @@
           <span class="hamburger" />
         </button>
         <span class="mobile-title">{{ siteName }}</span>
+        <NotificationBell v-if="showBell" @navigate="sidebarOpen = false" />
       </div>
       <ScanProgressBar />
       <slot />
@@ -68,21 +86,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconDots, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
+import NotificationBell from '@/components/NotificationBell.vue'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 
 const authStore = useAuthStore()
+const noticeStore = useSystemNoticeStore()
 const router = useRouter()
+
+// 铃铛只对管理员显示；「系统提醒」关闭（含环境变量关闭）时整个隐藏
+const showBell = computed(() => authStore.isAdmin && noticeStore.enabled)
 
 const siteName = ref('简单书房')
 const sidebarOpen = ref(false)
+const moreRef = ref<{ hide: () => void } | null>(null)
+const moreBtnRef = ref<HTMLButtonElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
+function closeMenu() { moreRef.value?.hide() }
+function focusFirstItem() { nextTick(() => menuRef.value?.querySelector<HTMLElement>('.menu-row')?.focus()) }
 const keepAlive = ref(localStorage.getItem('keepAlive') === 'true')
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null
 
@@ -121,6 +150,7 @@ function toggleKeepAlive() {
 }
 
 onMounted(async () => {
+  if (authStore.isAdmin) void noticeStore.load()
   try {
     const resp = await settingsApi.getPublic()
     if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
@@ -237,10 +267,7 @@ async function handleLogout() {
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-bottom: 10px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid rgba(124, 92, 255, 0.08);
+  gap: 8px;
 }
 
 .user-avatar {
@@ -270,47 +297,22 @@ async function handleLogout() {
 
 .user-role { font-size: 11px; color: var(--text-2); }
 
-.action-row {
-  display: flex;
+.more-btn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 4px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-2);
-  font-size: 13px;
+  cursor: pointer;
   transition: all 0.15s ease;
-  user-select: none;
 }
-a.action-row { text-decoration: none; }
-.action-row span { flex: 1; }
-.action-icon { flex-shrink: 0; }
-.action-row:hover { color: var(--text-1); background: rgba(124, 92, 255, 0.08); }
-.action-row--logout:hover { color: var(--danger, #ef4444); background: rgba(239, 68, 68, 0.07); }
-
-/* CSS toggle switch */
-.toggle-track {
-  width: 30px;
-  height: 17px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.12);
-  position: relative;
-  transition: background 0.22s ease;
-  flex-shrink: 0;
-}
-.toggle-track.on { background: var(--accent); }
-.toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: transform 0.22s ease;
-}
-.toggle-track.on .toggle-knob { transform: translateX(13px); }
+.more-btn:hover,
+.more-btn:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text-1); outline: none; }
 
 /* ── Main content ── */
 .main-content {
@@ -418,4 +420,39 @@ a.action-row { text-decoration: none; }
     flex: 1;
   }
 }
+</style>
+
+<style>
+/* 弹层挂在 body 下，样式不能 scoped */
+.el-popover.user-menu-popper {
+  padding: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+  max-width: calc(100vw - 24px);
+}
+.user-menu-popper .menu-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--text-1);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.user-menu-popper .menu-row span { flex: 1; }
+.user-menu-popper .menu-icon { flex: none; color: var(--text-2); }
+.user-menu-popper .menu-row:hover,
+.user-menu-popper .menu-row:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }
+.user-menu-popper .menu-switch { pointer-events: none; flex: none; }
+.user-menu-popper .menu-sep { height: 1px; margin: 4px 6px; background: var(--card-border); }
+.user-menu-popper .menu-row--danger,
+.user-menu-popper .menu-row--danger .menu-icon { color: var(--danger, #ef4444); }
+.user-menu-popper .menu-row--danger:hover,
+.user-menu-popper .menu-row--danger:focus-visible { background: color-mix(in srgb, var(--danger, #ef4444) 10%, transparent); }
 </style>

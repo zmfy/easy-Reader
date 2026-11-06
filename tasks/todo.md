@@ -423,3 +423,7 @@
 - [x] main 合并进 study（拿到版本号 / CHANGELOG / 发版工作流 / DOCKERHUB.md），解决冲突
 - [x] study 的发版：工作流在 study 分支推送 → `edge-study`；`study-vX.Y.Z` 标签 → `X.Y.Z-study`、`X.Y-study`、`latest-study`（具体 tag 名待定），main 的工作流不响应 study 标签；学习版更新日志的放法待定
 - [ ] 推送 main / study / 标签前向用户确认（待用户确认，尚未推送）
+# 分支策略：合并 main → study 的手工处理（补充；study 的 todo.md 已有「分支策略」一节，合并时并入该节）
+
+- [ ] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
+- [ ] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）

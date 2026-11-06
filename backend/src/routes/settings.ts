@@ -11,6 +11,7 @@ import { User } from '../types';
 import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
 import crypto from 'crypto';
+import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
 
 const router = Router();
 
@@ -43,11 +44,31 @@ router.get('/public', (req: Request, res: Response) => {
   successResponse(res, { site_name: data['site_name'] || '', site_subtitle: data['site_subtitle'] || '', site_theme: data['site_theme'] || 'indigo' });
 });
 
+// GET /api/settings/update-status — 最近一次检查的结果（不联网）
+router.get('/update-status', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, getUpdateStatus(getDb()));
+});
+
+// POST /api/settings/update-check — 立即检查更新；检查失败也返回 200，错误在状态的 error 里
+// 系统提醒关闭（含 UPDATE_CHECK=off）时不联网，直接返回当前状态
+router.post('/update-check', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+  const db = getDb();
+  const status = getUpdateStatus(db);
+  if (!status.noticeEnabled) return successResponse(res, status);
+  successResponse(res, await checkForUpdates(db));
+});
+
+// GET /api/settings/changelog — 本站 CHANGELOG 最近 5 个版本
+router.get('/changelog', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  const { releases, currentVersion, missing } = readLocalChangelog();
+  successResponse(res, { currentVersion, missing, releases: releases.slice(0, 5) });
+});
+
 // GET /api/settings
 router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  // reader_prefs_* 是各用户的个人阅读设置，不属于系统设置
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\'").all() as Array<{ key: string; value: string }>;
+  // reader_prefs_* 是各用户的个人阅读设置，update_check_* / update_checked_at 是更新检查的内部缓存，都不属于系统设置
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'update\\_check\\_%' ESCAPE '\\' AND key <> 'update_checked_at'").all() as Array<{ key: string; value: string }>;
   const settings: Record<string, string> = {};
   for (const row of rows) {
     if (row.key === 'smtp_pass') {
@@ -77,6 +98,8 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
     if (isApiKeySetting(key) && value.includes('****')) continue;
     upsert.run(key, value);
   }
+  // 「系统提醒」开关变化时启停后台更新检查
+  if ('system_notice_enabled' in parsed.data) applyUpdateCheckerSetting(db);
   successResponse(res, null, '设置已更新');
 });
 

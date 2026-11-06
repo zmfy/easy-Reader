@@ -153,6 +153,9 @@ docker compose up -d --build
 | `DATA_DIR` | 否 | `/app/data` | 数据库目录（容器内路径） |
 | `TRUST_PROXY` | 否 | — | 经反向代理（Nginx、Caddy、群晖反代等）访问时设置，一层代理填 `1`。不设置时所有访问者都被当作代理的 IP，登录限流会互相影响；直接暴露端口时不要设置 |
 | `CORS_ORIGINS` | 否 | — | 允许跨域访问 API 的网页来源，逗号分隔（如 `https://reader.example.com`）；只有运行在其他网址上的网页客户端需要，原生 App 不需要 |
+| `UPDATE_CHECK` | 否 | 开启 | 设为 `off` 关闭更新检查（不再访问外网）；默认每天检查一次，有新版本或需调整设置时，在侧栏铃铛提醒管理员；可在设置页关闭「系统提醒」 |
+| `UPDATE_CHANGELOG_URL` | 否 | 官方仓库（GitHub，失败回退 jsDelivr） | 自定义更新来源：一个可访问的 CHANGELOG.md 地址，用于自建镜像等场景 |
+| `CHANGELOG_PATH` | 否 | `/app/CHANGELOG.md` | 本站 CHANGELOG 文件路径，用于判断当前版本；一般不用改 |
 | `NODE_IMAGE` | 否 | `node:22-slim` | 构建用基础镜像；国内可填 `docker.m.daocloud.io/library/node:22-slim` |
 | `NPM_REGISTRY` | 否 | `https://registry.npmjs.org` | 构建时的 npm 源；国内可填 `https://registry.npmmirror.com` |
 | `DEBIAN_MIRROR` | 否 | —（官方 `deb.debian.org`） | 构建时的 apt 源；国内可填 `http://mirrors.aliyun.com` |
