@@ -20,7 +20,7 @@
 
         <el-form-item label="AI 功能">
           <div class="ai-toggles">
-            <div v-if="!aiConfigured" class="ai-disabled-hint">
+            <div v-if="!aiConfigured" class="note note--warning ai-disabled-hint">
               未配置 AI 插件，AI 功能已禁用。请先在「AI 插件设置」中配置后使用。
             </div>
             <el-checkbox v-model="form.ai_fill" :disabled="!aiConfigured">
@@ -29,7 +29,7 @@
             </el-checkbox>
             <div v-if="estimate && aiConfigured" class="estimate-summary">
               当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
-              （{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
+              （<IconAlertTriangle v-if="estimate.tier === 'high'" :size="14" class="tier-icon" />{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
             </div>
             <div class="reset-row">
               <el-button size="small" :disabled="!aiConfigured" @click="onResetFailed">重置「填充失败」记录</el-button>
@@ -72,6 +72,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { ScanStartOptions, CostEstimate } from '@/types'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
+import { IconAlertTriangle } from '@tabler/icons-vue'
 import CostWarningDialog from './CostWarningDialog.vue'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -117,7 +118,7 @@ watch([() => form.ai_fill, () => form.full_rescan], () => { void refreshEstimate
 watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate() } })
 
 const tierLabel = computed(() => {
-  const labels: Record<string, string> = { free: '免费', low: '低费用', high: '⚠️ 高费用', unknown: '未知' }
+  const labels: Record<string, string> = { free: '免费', low: '低费用', high: '高费用', unknown: '未知' }
   return labels[estimate.value?.tier ?? 'unknown'] ?? ''
 })
 
@@ -171,19 +172,12 @@ async function onResetAll(): Promise<void> {
   padding: 6px 10px;
   font-size: 13px;
   background: var(--el-color-info-light-9);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .reset-row { display: flex; gap: 8px; margin-top: 10px; }
 .reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
-.ai-disabled-hint {
-  font-size: 12px;
-  color: var(--warning, #e6a23c);
-  background: rgba(230, 162, 60, 0.1);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin-bottom: 6px;
-  line-height: 1.5;
-}
+.ai-disabled-hint { font-size: 12px; margin-bottom: 6px; padding: 6px 10px; line-height: 1.5; }
+.tier-icon { vertical-align: -2px; margin-right: 2px; color: var(--warning); }
 .scan-scope { display: flex; flex-direction: column; gap: 8px; }
 .scope-note { font-size: 12px; color: var(--text-2); line-height: 1.6; }
 </style>

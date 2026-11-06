@@ -1,5 +1,8 @@
 <template>
-  <el-dialog v-model="visible" title="⚠️ AI 调用费用提示" width="500px" :close-on-click-modal="false">
+  <el-dialog v-model="visible" width="500px" :close-on-click-modal="false">
+    <template #header>
+      <span class="dialog-title"><IconAlertTriangle :size="18" />AI 调用费用提示</span>
+    </template>
     <div class="warning-content">
       <el-alert
         :type="tierAlertType"
@@ -13,7 +16,7 @@
         <div class="total">合计：约 <strong>{{ estimate.total }}</strong> 次 API 调用</div>
       </div>
       <div class="confirm-text">
-        本次扫描将产生上述 AI 调用。<span v-if="tier === 'high'">⚠️ 当前使用的是<strong>高费用</strong> AI 模型，请评估成本后再继续。</span>
+        本次扫描将产生上述 AI 调用。<span v-if="tier === 'high'"><IconAlertTriangle :size="16" class="inline-icon" />当前使用的是<strong>高费用</strong> AI 模型，请评估成本后再继续。</span>
       </div>
     </div>
     <template #footer>
@@ -25,6 +28,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { IconAlertTriangle } from '@tabler/icons-vue'
 import type { CostEstimate } from '@/types'
 
 const props = defineProps<{
@@ -56,7 +60,7 @@ const tierDescription = computed(() => {
   switch (tier.value) {
     case 'free': return 'Ollama 本地模型，零费用'
     case 'low': return '低费用 API，整体成本通常可忽略'
-    case 'high': return '⚠️ 高费用 API（OpenAI / Claude），单次调用可达 $0.01 量级'
+    case 'high': return '高费用 API（OpenAI / Claude），单次调用可达 $0.01 量级'
     case 'unknown': return '未识别的 AI 插件，无法估算费用'
   }
   return ''
@@ -71,11 +75,13 @@ function onCancel(): void { emit('cancel'); visible.value = false }
 </script>
 
 <style scoped>
+.dialog-title { display: inline-flex; align-items: center; gap: 6px; }
+.inline-icon { vertical-align: -3px; margin-right: 4px; color: var(--warning); }
 .warning-content > * + * { margin-top: 16px; }
 .breakdown {
   background: var(--el-color-info-light-9);
   padding: 12px 16px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
 }
 .breakdown > * + * { margin-top: 4px; }

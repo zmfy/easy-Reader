@@ -11,7 +11,7 @@
   >
     <!-- 检索中：明显的加载状态 + 已用时间，可随时取消 -->
     <div v-if="loading" class="preview-loading">
-      <el-icon class="is-loading loading-icon"><Loading /></el-icon>
+      <el-icon class="is-loading loading-icon"><IconLoader2 /></el-icon>
       <div class="loading-title">AI 正在查找书籍信息…</div>
       <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要几秒到一分钟，可随时取消</div>
     </div>
@@ -49,7 +49,7 @@
             @click="form.cover = 'default'"
           >
             <img v-if="defaultCoverUrl" :src="defaultCoverUrl" alt="系统默认封面" />
-            <div v-else class="cover-loading"><el-icon class="is-loading"><Loading /></el-icon></div>
+            <div v-else class="cover-loading"><el-icon class="is-loading"><IconLoader2 /></el-icon></div>
             <span class="badge">默认</span>
           </button>
         </div>
@@ -121,7 +121,7 @@
             《{{ s.title }}》<span v-if="s.author" class="similar-author">{{ s.author }}</span>
             <div v-if="s.reason" class="hint">{{ s.reason }}</div>
           </div>
-          <el-button :icon="Delete" circle size="small" text @click="form.similar.splice(i, 1)" />
+          <el-button :icon="IconTrash" circle size="small" text @click="form.similar.splice(i, 1)" />
         </div>
         <div class="similar-add">
           <el-input v-model="newSimilar.title" size="small" placeholder="书名（必填）" maxlength="100" />
@@ -143,7 +143,7 @@
 import { ref, reactive, watch, onBeforeUnmount } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
-import { Delete, Loading } from '@element-plus/icons-vue'
+import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
 import { initialForm, buildApplyPayload, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, Book } from '@/types'
@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
   width: 96px;
   padding: 0;
   border: 3px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-2);
   cursor: pointer;
   overflow: hidden;
@@ -375,8 +375,8 @@ onBeforeUnmount(() => {
   top: 4px;
   left: 4px;
   padding: 0 6px;
-  border-radius: 8px;
-  background: rgba(11, 16, 32, 0.8);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-0) 80%, transparent);
   color: var(--text-0);
   font-size: 11px;
   line-height: 18px;
