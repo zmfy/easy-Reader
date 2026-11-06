@@ -94,6 +94,7 @@ function isRunning(item: SummaryOverview): boolean {
 }
 
 function metaText(item: SummaryOverview): string {
+  if (!item.hasSummary) return `还没有总结 · ${item.noteCount} 条笔记`
   const parts = [`${item.themes.length} 个主题`, `${item.noteCount} 条笔记`]
   const d = item.updatedAt ? parseServerTime(item.updatedAt) : null
   if (d && item.lastSource) {
