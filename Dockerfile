@@ -1,4 +1,4 @@
-# 镜像源（构建参数）：默认官方源；docker-compose.yml 默认传国内源，可在 .env 里覆盖
+# 镜像源（构建参数）：默认官方源；国内网络可在 .env 里改用国内源（见 .env.example）
 #   NODE_IMAGE     基础镜像，如 docker.m.daocloud.io/library/node:22-slim
 #   NPM_REGISTRY   npm 源，如 https://registry.npmmirror.com（lock 文件里的 registry.npmjs.org 会自动替换）
 #   DEBIAN_MIRROR  apt 源，如 http://mirrors.aliyun.com（留空则用 deb.debian.org）
