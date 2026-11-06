@@ -163,6 +163,15 @@ describe('study-summary', () => {
     expect(b1.job).toBeNull();
   });
 
+  it('listSummaryOverview skips deleted books that have notes but no summary', () => {
+    const d = makeDb();
+    d.prepare("INSERT INTO books (id, title) VALUES ('b1', '书一')").run();
+    createHighlight(d, 'u1', 'b1', { chapterIndex: 0, startOffset: 0, endOffset: 1, text: 'hl' });
+    createHighlight(d, 'u1', 'orphan', { chapterIndex: 0, startOffset: 0, endOffset: 1, text: 'hl' });
+    writeAiResult(d, 'u1', 'gone', doc('主题'), [], 'ai_generate', '初版');
+    expect(listSummaryOverview(d, 'u1').map(o => o.bookId).sort()).toEqual(['b1', 'gone']);
+  });
+
   it('listSummaryOverview filters by title and doc text', () => {
     const d = makeDb();
     d.prepare("INSERT INTO books (id, title) VALUES ('b1', 'Alpha 传'), ('b2', '别的书')").run();
@@ -196,10 +205,21 @@ describe('study-summary', () => {
     }
     const vs = listVersions(d, 'u1', 'b1');
     expect(vs.map(v => v.source)).toEqual(['restore', 'user', 'ai_generate']);
-    expect(vs[0].description).toMatch(/^恢复到 \d\d-\d\d \d\d:\d\d 的版本$/);
+    expect(vs[0].description).toBe('恢复到『AI 生成』版本');
     // 恢复后紧接着的手动保存不合并进 restore 版本
     saveUserDoc(d, 'u1', 'b1', doc('E'), 3);
     expect(listVersions(d, 'u1', 'b1').map(v => v.source)).toEqual(['user', 'restore', 'user', 'ai_generate']);
+    // 各来源标签
+    const userVer = listVersions(d, 'u1', 'b1').find(v => v.source === 'user')!;
+    restoreVersion(d, 'u1', 'b1', userVer.id, 4);
+    expect(listVersions(d, 'u1', 'b1')[0].description).toBe('恢复到『我』版本');
+    const restoreVer = listVersions(d, 'u1', 'b1').find(v => v.source === 'restore')!;
+    restoreVersion(d, 'u1', 'b1', restoreVer.id, 5);
+    expect(listVersions(d, 'u1', 'b1')[0].description).toBe('恢复到『恢复』版本');
+    writeAiResult(d, 'u1', 'b1', doc('U'), [], 'ai_update', '补充');
+    const upd = listVersions(d, 'u1', 'b1')[0];
+    restoreVersion(d, 'u1', 'b1', upd.id, 7);
+    expect(listVersions(d, 'u1', 'b1')[0].description).toBe('恢复到『AI 补充』版本');
   });
 
   it('restoreVersion rejects stale revision and running job', () => {

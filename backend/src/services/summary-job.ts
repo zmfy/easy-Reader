@@ -53,15 +53,12 @@ function updateDescription(target: DocNode, additions: ThemeBlock[]): string {
 }
 
 async function execute(
-  db: Database.Database, userId: string, bookId: string, bookTitle: string, kind: 'generate' | 'update',
+  db: Database.Database, jobId: string, userId: string, bookId: string, bookTitle: string, kind: 'generate' | 'update',
   batches: StudyNote[][], baseDoc: DocNode | null
 ): Promise<void> {
   let acc: DocNode | null = baseDoc; // 累积文档，仅用于给后续批次提供主题列表
   const additions: ThemeBlock[] = [];
   const sentRefs: string[] = [];
-  const jobId = (db.prepare(
-    "SELECT id FROM study_summary_jobs WHERE user_id = ? AND book_id = ? AND status = 'running'"
-  ).get(userId, bookId) as { id: string }).id;
 
   for (const batch of batches) {
     const prompt = acc
@@ -75,14 +72,17 @@ async function execute(
     db.prepare('UPDATE study_summary_jobs SET done = done + 1 WHERE id = ?').run(jobId);
   }
 
-  // 写入前以最新文档为准，避免覆盖执行期间用户保存的内容
-  const latest = getSummary(db, userId, bookId);
-  if (kind === 'generate' && !latest) {
-    writeAiResult(db, userId, bookId, acc!, sentRefs, 'ai_generate', `初版，${listThemes(acc!).length} 个主题`);
-  } else {
-    const target = latest ? latest.doc : baseDoc!;
-    writeAiResult(db, userId, bookId, appendAdditions(target, additions), sentRefs, 'ai_update', updateDescription(target, additions));
-  }
+  // 写入结果与标记完成在同一事务：任一步失败都不写入。写入前以最新文档为准，避免覆盖执行期间用户保存的内容
+  db.transaction(() => {
+    const latest = getSummary(db, userId, bookId);
+    if (kind === 'generate' && !latest) {
+      writeAiResult(db, userId, bookId, acc!, sentRefs, 'ai_generate', `初版，${listThemes(acc!).length} 个主题`);
+    } else {
+      const target = latest ? latest.doc : baseDoc!;
+      writeAiResult(db, userId, bookId, appendAdditions(target, additions), sentRefs, 'ai_update', updateDescription(target, additions));
+    }
+    db.prepare("UPDATE study_summary_jobs SET status = 'done', finished_at = CURRENT_TIMESTAMP WHERE id = ?").run(jobId);
+  })();
 }
 
 export function startSummaryJob(
@@ -108,12 +108,15 @@ export function startSummaryJob(
   db.prepare("INSERT INTO study_summary_jobs (id, user_id, book_id, kind, status, done, total) VALUES (?, ?, ?, ?, 'running', 0, ?)")
     .run(id, userId, bookId, realKind, batches.length);
 
-  const p = execute(db, userId, bookId, bookTitle, realKind, batches, summary ? summary.doc : null)
-    .then(
-      () => { db.prepare("UPDATE study_summary_jobs SET status = 'done', finished_at = CURRENT_TIMESTAMP WHERE id = ?").run(id); },
-      (e) => { db.prepare("UPDATE study_summary_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?").run(failReason(e), id); },
-    )
-    .catch(() => { /* 数据库已不可用时无处可记，避免未处理的 rejection */ })
+  const p = execute(db, id, userId, bookId, bookTitle, realKind, batches, summary ? summary.doc : null)
+    .catch((e) => {
+      try {
+        db.prepare("UPDATE study_summary_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?").run(failReason(e), id);
+      } catch (markErr) {
+        // 连标记失败都做不到（数据库不可用）：只能记日志，避免未处理的 rejection
+        console.error(`[study:job] job=${id} 标记失败出错`, markErr, '原始错误', e);
+      }
+    })
     .finally(() => { running.delete(id); });
   running.set(id, p);
   return { job: readJob(db, id), started: true };

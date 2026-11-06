@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { HIGHLIGHTS_DDL, createHighlight } from '../../src/services/highlights';
 import { MIND_DDL } from '../../src/services/mind-nodes';
-import { STUDY_SUMMARY_DDL, getSummary, listVersions, saveUserDoc, writeAiResult } from '../../src/services/study-summary';
+import { STUDY_SUMMARY_DDL, collectNotes, getSummary, listVersions, newNotes, saveUserDoc, writeAiResult } from '../../src/services/study-summary';
 import { startSummaryJob, getCurrentJob, waitJob } from '../../src/services/summary-job';
 import { aiManager } from '../../src/ai/ai-manager';
 import { DocNode, docText, extractRefs } from '../../src/services/summary-doc';
@@ -189,6 +189,68 @@ describe('summary-job', () => {
     expect(text).toContain('用户改动');
     expect(text).not.toContain('旧内容');
     expect(text).toContain('观点');
+  });
+
+  it('notes added while the job runs are not marked included', async () => {
+    const d = makeDb();
+    const refs = addNotes(d, 1);
+    let late: string[] = [];
+    chat.mockImplementation(async (p: string) => {
+      late = addNotes(d, 1, 5);
+      return reply('T', p);
+    });
+    const r = startSummaryJob(d, 'u1', 'b1', '书', 'generate') as { job: { id: string } };
+    await waitJob(r.job.id);
+    expect(getCurrentJob(d, 'u1', 'b1')!.status).toBe('done');
+    const s = getSummary(d, 'u1', 'b1')!;
+    expect(s.included_refs).toEqual(refs);
+    expect(s.included_refs).not.toContain(late[0]);
+    expect(newNotes(collectNotes(d, 'u1', 'b1'), s).map(n => n.ref)).toEqual(late);
+  });
+
+  it('a failing write marks the job failed and leaves no summary', async () => {
+    const d = makeDb();
+    addNotes(d, 1);
+    chat.mockImplementation(async (p: string) => {
+      d.exec('DROP TABLE study_summary_versions');
+      return reply('T', p);
+    });
+    const r = startSummaryJob(d, 'u1', 'b1', '书', 'generate') as { job: { id: string } };
+    await waitJob(r.job.id);
+    const job = getCurrentJob(d, 'u1', 'b1')!;
+    expect(job.status).toBe('failed');
+    expect(job.error).toBeTruthy();
+    expect(job.finished_at).toBeTruthy();
+    expect(getSummary(d, 'u1', 'b1')).toBeNull();
+  });
+
+  it('if marking done fails, the AI result is rolled back and the job is failed', async () => {
+    const d = makeDb();
+    addNotes(d, 1);
+    d.exec(`CREATE TRIGGER no_done BEFORE UPDATE OF status ON study_summary_jobs WHEN NEW.status = 'done'
+            BEGIN SELECT RAISE(ABORT, 'done blocked'); END`);
+    chat.mockImplementation(async (p: string) => reply('T', p));
+    const r = startSummaryJob(d, 'u1', 'b1', '书', 'generate') as { job: { id: string } };
+    await waitJob(r.job.id);
+    expect(getCurrentJob(d, 'u1', 'b1')).toMatchObject({ status: 'failed', error: 'done blocked' });
+    expect(getSummary(d, 'u1', 'b1')).toBeNull();
+    expect(count(d, 'study_summary_versions')).toBe(0);
+  });
+
+  it('logs when the job cannot even be marked failed', async () => {
+    const d = makeDb();
+    addNotes(d, 1);
+    d.exec(`CREATE TRIGGER no_status BEFORE UPDATE OF status ON study_summary_jobs
+            BEGIN SELECT RAISE(ABORT, 'status blocked'); END`);
+    chat.mockRejectedValue(new Error('boom'));
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const r = startSummaryJob(d, 'u1', 'b1', '书', 'generate') as { job: { id: string } };
+      await waitJob(r.job.id);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('generate refuses when summary exists', () => {

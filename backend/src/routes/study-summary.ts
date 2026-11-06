@@ -71,45 +71,50 @@ router.get('/summaries', authMiddleware, (req: Request, res: Response) => {
 
 // GET /api/study/books/:bookId/summary?format=json|blocks|markdown
 router.get('/books/:bookId/summary', authMiddleware, async (req: Request, res: Response) => {
-  const format = req.query.format === undefined ? 'json' : req.query.format;
-  if (format !== 'json' && format !== 'blocks' && format !== 'markdown') {
-    errorResponse(res, 422, 'VALIDATION_ERROR', 'format 只能是 json、blocks 或 markdown'); return;
-  }
-  const db = getDb();
-  const userId = req.user!.userId;
-  const bookId = req.params.bookId;
-  const bookRow = findBookRow(bookId);
-  const bookTitle = bookRow ? bookRow.title : null;
-  const summary = getSummary(db, userId, bookId);
-  const notes = collectNotes(db, userId, bookId);
-
-  let out: Record<string, unknown> | null = null;
-  if (summary) {
-    const { doc, ...rest } = summary;
-    if (format === 'json') out = { ...rest, doc };
-    else if (format === 'blocks') out = { ...rest, blocks: docToBlocks(doc) };
-    else {
-      const labels = new Map<string, string>();
-      const refs = extractRefs(doc);
-      const found = refs.map(r => ({ ref: r, note: findRefNote(db, userId, bookId, r) }));
-      let titles = new Map<number, string>();
-      // 每本书最多取一次目录：仅在有引用且书可读时
-      if (found.some(f => f.note)) {
-        const readable = findReadableBookQuiet(bookId);
-        if (readable) titles = await loadChapterTitles(readable);
-      }
-      for (const f of found) {
-        if (!f.note) { labels.set(f.ref, '原笔记已删除'); continue; }
-        const title = titles.get(f.note.chapterIndex) || `第 ${f.note.chapterIndex + 1} 章`;
-        labels.set(f.ref, bookTitle ? `${bookTitle} ${title}` : title);
-      }
-      out = { ...rest, markdown: docToMarkdown(bookTitle || '未知书籍', doc, ref => labels.get(ref) || '原笔记已删除') };
+  try {
+    const format = req.query.format === undefined ? 'json' : req.query.format;
+    if (format !== 'json' && format !== 'blocks' && format !== 'markdown') {
+      errorResponse(res, 422, 'VALIDATION_ERROR', 'format 只能是 json、blocks 或 markdown'); return;
     }
+    const db = getDb();
+    const userId = req.user!.userId;
+    const bookId = req.params.bookId;
+    const bookRow = findBookRow(bookId);
+    const bookTitle = bookRow ? bookRow.title : null;
+    const summary = getSummary(db, userId, bookId);
+    const notes = collectNotes(db, userId, bookId);
+
+    let out: Record<string, unknown> | null = null;
+    if (summary) {
+      const { doc, ...rest } = summary;
+      if (format === 'json') out = { ...rest, doc };
+      else if (format === 'blocks') out = { ...rest, blocks: docToBlocks(doc) };
+      else {
+        const labels = new Map<string, string>();
+        const refs = extractRefs(doc);
+        const found = refs.map(r => ({ ref: r, note: findRefNote(db, userId, bookId, r) }));
+        let titles = new Map<number, string>();
+        // 每本书最多取一次目录：仅在有引用且书可读时
+        if (found.some(f => f.note)) {
+          const readable = findReadableBookQuiet(bookId);
+          if (readable) titles = await loadChapterTitles(readable);
+        }
+        for (const f of found) {
+          if (!f.note) { labels.set(f.ref, '原笔记已删除'); continue; }
+          const title = titles.get(f.note.chapterIndex) || `第 ${f.note.chapterIndex + 1} 章`;
+          labels.set(f.ref, bookTitle ? `${bookTitle} ${title}` : title);
+        }
+        out = { ...rest, markdown: docToMarkdown(bookTitle || '未知书籍', doc, ref => labels.get(ref) || '原笔记已删除') };
+      }
+    }
+    successResponse(res, {
+      summary: out, bookTitle, noteCount: notes.length, newNoteCount: newNotes(notes, summary).length,
+      job: getCurrentJob(db, userId, bookId),
+    });
+  } catch (err) {
+    console.error(`[study:summary] book=${req.params.bookId}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '读取学习总结失败');
   }
-  successResponse(res, {
-    summary: out, bookTitle, noteCount: notes.length, newNoteCount: newNotes(notes, summary).length,
-    job: getCurrentJob(db, userId, bookId),
-  });
 });
 
 const revisionSchema = z.number().int().min(1);

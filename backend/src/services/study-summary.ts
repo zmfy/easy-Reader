@@ -176,7 +176,7 @@ export function getVersion(db: Database.Database, userId: string, bookId: string
   return r ? { ...r, doc: JSON.parse(r.doc) as DocNode } : null;
 }
 
-const pad2 = (n: number) => String(n).padStart(2, '0');
+const SOURCE_LABEL: Record<string, string> = { ai_generate: 'AI 生成', ai_update: 'AI 补充', user: '我', restore: '恢复' };
 
 export function restoreVersion(
   db: Database.Database, userId: string, bookId: string, versionId: string, baseRevision: number
@@ -190,10 +190,8 @@ export function restoreVersion(
     const docJson = JSON.stringify(ver.doc);
     db.prepare('UPDATE study_summaries SET doc = ?, revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(docJson, cur.id);
-    // updated_at 为 UTC，按服务器本地时区显示
-    const t = new Date(ver.updated_at.replace(' ', 'T') + 'Z');
-    insertVersion(db, cur.id, docJson, 'restore',
-      `恢复到 ${pad2(t.getMonth() + 1)}-${pad2(t.getDate())} ${pad2(t.getHours())}:${pad2(t.getMinutes())} 的版本`);
+    // 不写时间：服务器时区（Docker 中为 UTC）与用户不一致
+    insertVersion(db, cur.id, docJson, 'restore', `恢复到『${SOURCE_LABEL[ver.source] || ver.source}』版本`);
     return { ok: true, summary: getSummary(db, userId, bookId)! };
   })();
 }
@@ -230,6 +228,8 @@ export function listSummaryOverview(db: Database.Database, userId: string, q?: s
     const bookRow = titleStmt.get(bookId) as { title: string } | undefined;
     const bookTitle = bookRow ? bookRow.title : null;
     const summary = getSummary(db, userId, bookId);
+    // 书已删除且没有总结：没有可看的内容，也不能再生成
+    if (!bookRow && !summary) continue;
     if (needle) {
       const hit = (bookTitle || '').toLowerCase().includes(needle)
         || (summary ? docText(summary.doc).toLowerCase().includes(needle) : false);
