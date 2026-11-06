@@ -55,7 +55,7 @@ onMounted(fetchSeries)
 
 <style scoped>
 .series-detail-page { padding: 32px; min-height: 100%; }
-.page-header { margin-bottom: 24px; }
+.page-header { display: block; margin-bottom: 24px; }
 .page-header h1 { margin: 8px 0; font-size: 26px; font-weight: 600; color: var(--text-0); letter-spacing: 1px; }
 .meta { color: var(--text-2); font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .summary {

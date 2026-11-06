@@ -107,7 +107,7 @@ onMounted(fetchLogs)
 
 <style scoped>
 .audit-page { padding: 24px 32px; }
-.page-header { margin-bottom: 16px; }
+.page-header { display: block; margin-bottom: 16px; }
 .page-header h1 { margin: 8px 0 4px 0; }
 .subtitle { font-size: 13px; color: var(--text-2); }
 .pagination { margin-top: 24px; display: flex; justify-content: center; }

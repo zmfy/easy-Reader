@@ -299,6 +299,7 @@ html.dark {
   line-height: var(--el-component-size);
 }
 .el-form-item--default .el-form-item__content { line-height: var(--el-component-size); }
+.el-pagination { --el-pagination-button-height: var(--el-component-size); }
 
 /* 主按钮 hover / active：在主色里混入少量正文色（浅色主题变深、深色主题变亮） */
 .el-button--primary {
@@ -523,6 +524,8 @@ html.dark {
 }
 .segmented::-webkit-scrollbar,
 .el-radio-group:has(> .el-radio-button)::-webkit-scrollbar { display: none; }
+/* EP 选中项用 box-shadow 画左侧 1px 边（选择器优先级很高），改为透明 */
+.el-radio-button { --el-radio-button-checked-border-color: transparent; }
 .segmented-item,
 .el-radio-button .el-radio-button__inner {
   flex: none;
