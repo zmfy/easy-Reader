@@ -113,6 +113,6 @@ onMounted(fetchLogs)
 .pagination { margin-top: 24px; display: flex; justify-content: center; }
 .id-short { font-family: monospace; font-size: 12px; }
 .path { font-family: monospace; font-size: 12px; word-break: break-all; }
-.empty { color: var(--text-3); }
+.empty { color: var(--text-2); }
 pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
 </style>

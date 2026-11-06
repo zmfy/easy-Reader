@@ -152,7 +152,7 @@ function emitModified(): void {
   border-radius: 4px;
 }
 .member-row.canonical { background: var(--el-color-success-light-9); }
-.member-row.rejected .path { text-decoration: line-through; color: var(--text-3); }
+.member-row.rejected .path { text-decoration: line-through; color: var(--text-2); }
 .canonical-label { color: var(--el-color-success); font-size: 12px; margin-left: 6px; }
 .path { font-family: monospace; font-size: 13px; }
 .member-actions { display: flex; gap: 8px; }
