@@ -34,6 +34,9 @@ export function buildBookMap(input: {
 }): MapNode {
   const { chapters, nodes, highlights } = input
   const root: MapNode = { id: 'book', type: 'book', label: input.bookTitle, hasNotes: false, children: [] }
+  // 没有目录（浏览器原生打开的 PDF）：书根充当唯一的「章节」，节点按第 0 章添加并挂在书根下
+  const noToc = chapters.length === 0
+  if (noToc) root.chapterIndex = 0
 
   // 目录骨架：分组行（负 index）→ group，其余 → chapter
   const tree = buildTocTree(chapters)
@@ -79,9 +82,9 @@ export function buildBookMap(input: {
     const self = mindById.get(n.id)!
     const parent = n.parent_id
       ? mindById.get(n.parent_id)
-      : skeleton.get(n.chapter_index)
+      : noToc ? root : skeleton.get(n.chapter_index)
     // 父缺失（或章节不在当前目录，或章节序号落在分组行上）、父链成环 → 未归类
-    const target = !cyclic(n) && parent && parent !== self && (n.parent_id || parent.type === 'chapter') ? parent : orphans
+    const target = !cyclic(n) && parent && parent !== self && (n.parent_id || parent.type === 'chapter' || parent === root) ? parent : orphans
     target.children.push(self)
   }
 

@@ -25,7 +25,8 @@
     <div class="map-body">
       <main class="map-main">
         <div v-if="ready && nodes.length === 0" class="map-empty">
-          还没有知识节点。在阅读器里划线后点「AI 展开」，或在章节上手动添加节点。<template v-if="onlyNotes">关闭「只看有笔记的章节」后，可在章节上手动添加节点。</template>
+          <template v-if="chapters.length === 0">还没有知识节点。这本书没有目录，点击书名可手动添加节点。</template>
+          <template v-else>还没有知识节点。在阅读器里划线后点「AI 展开」，或在章节上手动添加节点。<template v-if="onlyNotes">关闭「只看有笔记的章节」后，可在章节上手动添加节点。</template></template>
         </div>
         <div v-if="loading" class="map-loading"><el-skeleton :rows="6" animated /></div>
         <div v-else-if="loadFailed" class="map-error">
@@ -53,6 +54,13 @@
             <div class="detail-actions">
               <el-button type="primary" :disabled="busy" @click="addUnderChapter(selected)">添加节点</el-button>
               <el-button @click="readChapter(selected)">去阅读这一章</el-button>
+            </div>
+          </template>
+
+          <!-- 没有目录的书（浏览器原生打开的 PDF）：节点直接加在书名下 -->
+          <template v-else-if="selected.type === 'book' && selected.chapterIndex !== undefined">
+            <div class="detail-actions">
+              <el-button type="primary" :disabled="busy" @click="addUnderChapter(selected)">添加节点</el-button>
             </div>
           </template>
 

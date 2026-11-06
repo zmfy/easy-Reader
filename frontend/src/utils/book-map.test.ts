@@ -99,6 +99,21 @@ describe('book-map', () => {
     expect(root.children[root.children.length - 1].id).toBe('orphans')
   })
 
+  it('attaches top-level nodes to the book root when there is no toc (native PDF)', () => {
+    const empty = buildBookMap({ bookTitle: '书', chapters: [], nodes: [], highlights: [] })
+    expect(empty.chapterIndex).toBe(0)
+    expect(empty.hasNotes).toBe(false)
+    const root = buildBookMap({
+      bookTitle: '书', chapters: [], highlights: [],
+      nodes: [mind('a', { chapter_index: 0 }), mind('b', { chapter_index: 7 }), mind('a1', { parent_id: 'a' })],
+    })
+    expect(ids(root)).toEqual(['a', 'b'])
+    expect(ids(root.children[0])).toEqual(['a1'])
+    expect(root.hasNotes).toBe(true)
+    // 有目录时书根不提供 chapterIndex（只能在章节上添加）
+    expect(buildBookMap({ bookTitle: '书', chapters: flat, nodes: [], highlights: [] }).chapterIndex).toBeUndefined()
+  })
+
   it('falls back to node.label when the highlight row is missing', () => {
     const nodes = [mind('h', { kind: 'highlight', highlight_id: 'nope', label: '原标签' })]
     const root = buildBookMap({ bookTitle: '书', chapters: flat, nodes, highlights: [] })
