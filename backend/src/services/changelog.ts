@@ -10,7 +10,7 @@ export interface ReleaseSection {
 }
 
 export interface Release {
-  version: string; // 去掉后缀的 X.Y.Z
+  version: string; // 去掉后缀的 X.Y.Z，学习版还可以是 X.Y.Z.N（N 为同一看书版基础上的学习版修订号）
   date: string | null;
   intro: string;
   sections: ReleaseSection[];
@@ -44,11 +44,13 @@ function sectionKind(title: string): ReleaseSection['kind'] {
 }
 
 /** 解析 CHANGELOG.md，只取 `## [X.Y.Z<suffix>]` 的版本节（suffix 由紧跟的 `]` 精确限定），按文件顺序（新→旧）返回。
+ *  有后缀（学习版）时还接受 `## [X.Y.Z.N<suffix>]`，N 为学习版修订号；看书版（无后缀）只认 X.Y.Z。
  *  日期分隔符可为 `-`、`–`、`—`，日期后允许其他文字。
  *  条目文字中的「【需操作】」前缀会被去掉，由 actionRequired 标记表示。 */
 export function parseChangelog(md: string, suffix: string): Release[] {
   const text = stripHtmlComments(md.replace(/\r\n?/g, '\n'));
-  const headRe = new RegExp('^## \\[(\\d{1,6}\\.\\d{1,6}\\.\\d{1,6})' + escapeRegExp(suffix) + '\\](?:\\s*[-–—]\\s*(\\d{4}-\\d{2}-\\d{2}))?.*$');
+  const revision = suffix ? '(?:\\.\\d{1,6})?' : '';
+  const headRe = new RegExp('^## \\[(\\d{1,6}\\.\\d{1,6}\\.\\d{1,6}' + revision + ')' + escapeRegExp(suffix) + '\\](?:\\s*[-–—]\\s*(\\d{4}-\\d{2}-\\d{2}))?.*$');
   const releases: Release[] = [];
   let release: Release | null = null;
   let section: ReleaseSection | null = null;
@@ -101,11 +103,11 @@ export function parseChangelog(md: string, suffix: string): Release[] {
   return releases;
 }
 
-/** 只比较 X.Y.Z 数字 */
+/** 比较 X.Y.Z[.N]，缺少的部分按 0（1.1.1 < 1.1.1.1 < 1.1.2） */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(n => parseInt(n, 10) || 0);
   const pb = b.split('.').map(n => parseInt(n, 10) || 0);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     const d = (pa[i] || 0) - (pb[i] || 0);
     if (d !== 0) return d;
   }

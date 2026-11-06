@@ -167,3 +167,21 @@ describe('versions', () => {
     expect(newerReleases([], null)).toEqual([]);
   });
 });
+
+describe('study revision (4th version part)', () => {
+  it('study accepts X.Y.Z.N, main does not, 5 parts never', () => {
+    const md = '## [1.1.1.2-study] - 2026-11-09\n\n## [1.1.1.1-study] - 2026-11-08\n\n## [1.1.1.1] - 2026-11-08\n\n## [1.1.1.1.1-study] - 2026-11-07\n\n## [1.1.1-study] - 2026-11-06\n\n## [1.1.1] - 2026-11-06\n';
+    expect(parseChangelog(md, '-study').map(r => r.version)).toEqual(['1.1.1.2', '1.1.1.1', '1.1.1']);
+    expect(parseChangelog(md, '').map(r => r.version)).toEqual(['1.1.1']);
+  });
+  it('compares the 4th part, missing counts as 0', () => {
+    expect(compareVersions('1.1.1.1', '1.1.1')).toBeGreaterThan(0);
+    expect(compareVersions('1.1.1.2', '1.1.1.1')).toBeGreaterThan(0);
+    expect(compareVersions('1.1.2', '1.1.1.9')).toBeGreaterThan(0);
+    expect(compareVersions('1.1.1', '1.1.1.0')).toBe(0);
+  });
+  it('lists study revisions newer than the current version', () => {
+    const mk = (version: string) => ({ version, date: null, intro: '', sections: [] });
+    expect(newerReleases([mk('1.1.1'), mk('1.1.1.1'), mk('1.1.2')], '1.1.1').map(r => r.version)).toEqual(['1.1.2', '1.1.1.1']);
+  });
+});
