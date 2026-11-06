@@ -105,6 +105,23 @@ describe('summary-doc', () => {
     expect(isValidDoc(doc({ type: 'orderedList', attrs: { start: 1, type: 3 }, content: [] }))).toBe(false);
   });
 
+  it('isValidDoc rejects prototype-chain attr names and never throws', () => {
+    for (const k of ['constructor', 'toString', 'valueOf', '__proto__', 'hasOwnProperty']) {
+      for (const v of ['"x"', 'null', '{"a":1}']) {
+        const d = JSON.parse(`{"type":"doc","content":[{"type":"paragraph","attrs":{"${k}":${v}}}]}`);
+        expect(isValidDoc(d)).toBe(false);
+      }
+    }
+    expect(isValidDoc(JSON.parse('{"type":"doc","content":[{"type":"heading","attrs":{"level":2,"constructor":1},"content":[]}]}'))).toBe(false);
+  });
+
+  it('isValidDoc rejects null or missing heading.level and noteRef.ref', () => {
+    expect(isValidDoc(doc({ type: 'heading', attrs: { level: null as any }, content: [t('x')] }))).toBe(false);
+    expect(isValidDoc(doc({ type: 'heading', content: [t('x')] }))).toBe(false);
+    expect(isValidDoc(doc(p({ type: 'noteRef', attrs: { ref: null as any } })))).toBe(false);
+    expect(isValidDoc(doc(p({ type: 'noteRef', attrs: {} })))).toBe(false);
+  });
+
   it('isValidDoc accepts tiptap default attrs', () => {
     const d = doc(
       { type: 'orderedList', attrs: { start: 1, type: null }, content: [{ type: 'listItem', content: [p(t('a'))] }] },

@@ -100,13 +100,18 @@ export function docText(doc: DocNode): string {
 
 // ---- 校验 ----
 
-const isStrOrNull = (v: unknown) => v === null || typeof v === 'string';
-const ATTR_RULES: Record<string, Record<string, (v: unknown) => boolean>> = {
-  heading: { level: v => v === 2 || v === 3 },
-  orderedList: { start: v => Number.isInteger(v), type: isStrOrNull },
-  codeBlock: { language: isStrOrNull },
-  noteRef: { ref: v => typeof v === 'string' && REF_RE.test(v) },
+// nullable：Tiptap 默认值可能输出 null 的属性；其余属性必须有合法值
+type AttrRule = { ok: (v: unknown) => boolean; nullable: boolean };
+const ATTR_RULES: Record<string, Record<string, AttrRule>> = {
+  heading: { level: { ok: v => v === 2 || v === 3, nullable: false } },
+  orderedList: {
+    start: { ok: v => Number.isInteger(v), nullable: true },
+    type: { ok: v => typeof v === 'string', nullable: true },
+  },
+  codeBlock: { language: { ok: v => typeof v === 'string', nullable: true } },
+  noteRef: { ref: { ok: v => typeof v === 'string' && REF_RE.test(v), nullable: false } },
 };
+const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 const NODE_TYPES = new Set(['doc', 'heading', 'paragraph', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'hardBreak', 'text', 'noteRef']);
 const MARK_TYPES = new Set(['bold', 'italic', 'code']);
 const NODE_KEYS = new Set(['type', 'attrs', 'content', 'text', 'marks']);
@@ -116,6 +121,14 @@ function isObj(x: unknown): x is Record<string, unknown> {
 }
 
 export function isValidDoc(x: unknown): x is DocNode {
+  try {
+    return isValidDocUnsafe(x);
+  } catch {
+    return false;
+  }
+}
+
+function isValidDocUnsafe(x: unknown): boolean {
   if (!isObj(x) || x.type !== 'doc') return false;
   let count = 0;
   const check = (n: unknown, depth: number): boolean => {
@@ -125,17 +138,17 @@ export function isValidDoc(x: unknown): x is DocNode {
     // attrs：只允许白名单属性；null / 缺省都可（Tiptap 会输出默认值）
     if (n.attrs !== undefined) {
       if (!isObj(n.attrs)) return false;
-      const rules = ATTR_RULES[n.type] || {};
-      for (const [k, v] of Object.entries(n.attrs)) {
+      const rules = hasOwn(ATTR_RULES, n.type) ? ATTR_RULES[n.type] : {};
+      for (const k of Object.keys(n.attrs)) {
+        const v = n.attrs[k];
         if (v === undefined) continue;
+        if (!hasOwn(rules, k)) return false;
         const rule = rules[k];
-        if (!rule) return false;
-        if (v === null && k !== 'type' && k !== 'language') continue;
-        if (!rule(v)) return false;
+        if (v === null ? !rule.nullable : !rule.ok(v)) return false;
       }
     }
-    if (n.type === 'heading' && n.attrs?.level === undefined) return false;
-    if (n.type === 'noteRef' && n.attrs?.ref === undefined) return false;
+    if (n.type === 'heading' && (!isObj(n.attrs) || n.attrs.level == null)) return false;
+    if (n.type === 'noteRef' && (!isObj(n.attrs) || n.attrs.ref == null)) return false;
     if (n.type === 'text') {
       if (typeof n.text !== 'string' || n.content !== undefined) return false;
     } else if (n.text !== undefined || n.marks !== undefined) {
