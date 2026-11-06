@@ -95,7 +95,7 @@ docker compose up -d --build
 | `1.0.0`、`1.0` 等 | 固定版本 / 固定次版本（只接收修订更新） |
 | `edge` | `main` 分支最新代码，尝鲜用，可能不稳定 |
 
-学习版（看书 + 学习，`study` 分支）使用独立的镜像仓库 `dls7788/easy-learner`，tag 规则与上面相同（`latest`、`X.Y.Z`、`X.Y`、`edge`，`edge` 对应 `study` 分支）；学习版按 `study-vX.Y.Z` 这样的 git tag 发版，版本记录在 CHANGELOG 的 `X.Y.Z-study` 一节。Docker Hub 上的说明见 [DOCKERHUB-study.md](DOCKERHUB-study.md)。
+学习版（看书 + 学习，`study` 分支）使用独立的镜像仓库 `dls7788/easy-learner`，tag 规则与上面相同（`latest`、`X.Y.Z`、`X.Y`、`edge`，`edge` 对应 `study` 分支）；学习版按 `study-vX.Y.Z` 这样的 git tag 发版，版本记录在 CHANGELOG 的 `X.Y.Z-study` 一节；看书版没有新版本时，学习版自己的更新用第 4 位修订号（`study-v1.1.1.1`、镜像 `1.1.1.1`）。Docker Hub 上的说明见 [DOCKERHUB-study.md](DOCKERHUB-study.md)。
 
 升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。学习版改为拉取 `dls7788/easy-learner:latest`。
 

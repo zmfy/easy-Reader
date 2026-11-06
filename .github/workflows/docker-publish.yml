@@ -2,7 +2,7 @@ name: Build and Push to Docker Hub
 
 # 学习版（study 分支）镜像发布到独立的 Docker Hub 仓库 easy-learner，与看书版 easy-reader 完全分开：
 #   推送 study 分支        → edge、sha-xxxxxxx（开发版，尝鲜用）
-#   推送 study-vX.Y.Z tag → X.Y.Z、X.Y、latest，
+#   推送 study-vX.Y.Z tag → X.Y.Z、X.Y、latest（学习版修订为 study-vX.Y.Z.N → X.Y.Z.N、X.Y、latest），
 #                           并用 CHANGELOG.md 中「## [X.Y.Z-study]」一节创建 GitHub Release
 #   推送 tag 或手动运行    → 用 DOCKERHUB-study.md 更新 easy-learner 的仓库说明
 # git 仍是同一个仓库：发版 tag 用 study-vX.Y.Z，避免与看书版的 vX.Y.Z 冲突；
@@ -35,7 +35,8 @@ jobs:
           BASE="${GITHUB_REF_NAME#study-v}"
           VERSION="${BASE}-study"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
-          echo "minor=${BASE%.*}" >> "$GITHUB_OUTPUT"
+          # 版本可为 X.Y.Z 或 X.Y.Z.N（N 为学习版修订号），次版本 tag 一律取前两段
+          echo "minor=$(echo "$BASE" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
           awk -v v="$VERSION" '
             index($0, "## [" v "]") == 1 { found = 1; next }
             found && /^## / { exit }

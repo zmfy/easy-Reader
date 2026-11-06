@@ -8,7 +8,7 @@
 
 Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`1.0`），`latest` 指向最新发布的版本。
 
-学习版（`study` 分支）的版本记为 `X.Y.Z-study`，发版用 tag `study-vX.Y.Z`，镜像发布到独立仓库 `dls7788/easy-learner`（tag 为 `X.Y.Z`、`X.Y` 与 `latest`）；学习版的 GitHub Release 不标记为 Latest。
+学习版（`study` 分支）的版本记为 `X.Y.Z-study`（X.Y.Z 为所基于的看书版版本），发版用 tag `study-vX.Y.Z`，镜像发布到独立仓库 `dls7788/easy-learner`（tag 为 `X.Y.Z`、`X.Y` 与 `latest`）；看书版没有新版本时，学习版自己的更新在第 4 位加修订号：`X.Y.Z.N-study`、tag `study-vX.Y.Z.N`、镜像 `X.Y.Z.N`（如 1.1.1 → 1.1.1.1 → 1.1.1.2，合并看书版 1.1.2 后为 1.1.2）。学习版的 GitHub Release 不标记为 Latest。
 <!-- 本文件同时是站点的更新提醒来源：站点会读取远端 CHANGELOG，把比本站版本新的版本节展示给管理员，格式要保持一致。
 - 版本节标题：`## [x.y.z] - YYYY-MM-DD`；`## [Unreleased]` 是未发布内容，不参与提醒。
 - 版本节内用 `### 新增`、`### 修复` 分组，条目写成 `- **模块**：说明`。
@@ -16,11 +16,11 @@ Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`
 - 学习版（study 分支）的版本节写成 `## [x.y.z-study] - 日期`，与看书版版本分开比较。 -->
 
 <!-- 发版：在下面最新版本之前新增一节 `## [x.y.z] - YYYY-MM-DD`，然后打 tag `vx.y.z` 并推送，CI 会构建镜像并用该节内容创建 GitHub Release。 -->
-<!-- 学习版发版：新增一节 `## [X.Y.Z-study] - YYYY-MM-DD`，打 tag `study-vX.Y.Z` 并推送。 -->
+<!-- 学习版发版：新增一节 `## [X.Y.Z-study] - YYYY-MM-DD`，打 tag `study-vX.Y.Z` 并推送；基于同一看书版版本再发时用 `## [X.Y.Z.N-study]` 与 tag `study-vX.Y.Z.N`（N 从 1 起）。 -->
 
 ## [Unreleased-study]
 
-> 学习版（`study` 分支）独有的变化记录在此；学习版发版时改为 `## [X.Y.Z-study] - 日期`，并打 tag `study-vX.Y.Z`。
+> 学习版（`study` 分支）独有的变化记录在此；学习版发版时改为 `## [X.Y.Z-study] - 日期`（看书版版本未变时为 `## [X.Y.Z.N-study]`），并打对应的 tag `study-vX.Y.Z` / `study-vX.Y.Z.N`。
 
 ## [1.1.1-study] - 2026-11-06
 
