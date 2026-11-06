@@ -426,6 +426,7 @@ html.dark {
   min-height: 100%;
 }
 .page--narrow {
+  width: 100%; /* 布局 .main-content 是 flex 列，不写宽度会按内容收缩 */
   max-width: 1200px;
   margin-inline: auto;
 }

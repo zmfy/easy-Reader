@@ -1,192 +1,196 @@
 <template>
   <DefaultLayout>
-    <div class="settings-page">
-      <div class="page-header">
-        <h1 class="page-title">系统设置</h1>
-      </div>
+    <div class="page page--narrow">
+      <PageHeader title="设置" />
 
-      <!-- 手机端顶部横向标签栏 -->
-      <div class="settings-tabs-mobile">
+      <div class="segmented settings-tabs" role="tablist">
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          class="tab-chip"
-          :class="{ active: activeTab === tab.key }"
+          type="button"
+          role="tab"
+          class="segmented-item"
+          :class="{ 'is-active': activeTab === tab.key }"
+          :aria-selected="activeTab === tab.key"
           @click="activeTab = tab.key"
         >
-          <el-icon><component :is="tab.icon" /></el-icon>
-          <span>{{ tab.label }}</span>
+          {{ tab.label }}
         </button>
       </div>
 
-      <div class="settings-layout">
-        <!-- 桌面端左侧竖向导航 -->
-        <nav class="settings-nav">
-          <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            class="nav-item"
-            :class="{ active: activeTab === tab.key }"
-            @click="activeTab = tab.key"
-          >
-            <el-icon><component :is="tab.icon" /></el-icon>
-            {{ tab.label }}
-          </button>
-        </nav>
-
-        <div class="settings-content">
-          <!-- System Settings -->
-          <div v-if="activeTab === 'system'" class="setting-section">
-            <h2 class="section-title">系统设置</h2>
-            <div class="form-grid">
-              <div class="form-field">
-                <label>站点名称</label>
-                <el-input v-model="sysForm.site_name" placeholder="留空则使用默认：简单书房" />
-              </div>
-              <div class="form-field">
-                <label>站点副标题</label>
-                <el-input v-model="sysForm.site_subtitle" placeholder="留空则使用默认：Easy Reader · NAS Novel Platform" />
-              </div>
-              <div class="form-field">
-                <label>站点公开地址</label>
-                <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
-                <div class="field-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
-              </div>
-              <div class="form-field">
-                <label>书库目录</label>
-                <el-input v-model="sysForm.books_dir" placeholder="/app/books" />
-              </div>
+      <!-- System Settings -->
+      <div v-if="activeTab === 'system'" class="setting-section">
+        <section class="section-card">
+          <h2 class="section-title">站点信息</h2>
+          <div class="form-grid">
+            <div class="form-field">
+              <label>站点名称</label>
+              <el-input v-model="sysForm.site_name" placeholder="留空则使用默认：简单书房" />
             </div>
+            <div class="form-field">
+              <label>站点副标题</label>
+              <el-input v-model="sysForm.site_subtitle" placeholder="留空则使用默认：Easy Reader · NAS Novel Platform" />
+            </div>
+            <div class="form-field span-2">
+              <label>站点公开地址</label>
+              <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
+              <div class="form-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
+            </div>
+          </div>
+        </section>
 
-            <!-- 主题选择 -->
-            <div class="form-field theme-field">
-              <label>网站主题</label>
-              <div class="theme-cards">
-                <div
-                  v-for="t in siteThemes"
-                  :key="t.key"
-                  class="theme-card"
-                  :class="{ active: sysForm.site_theme === t.key }"
-                  @click="sysForm.site_theme = t.key"
-                >
-                  <div class="theme-preview" :style="{ background: t.bg }">
-                    <div class="theme-preview-bar" :style="{ background: t.panel }">
-                      <div class="theme-preview-dot" :style="{ background: t.accent }" />
-                      <div class="theme-preview-dot" :style="{ background: t.accent, opacity: 0.5 }" />
-                    </div>
-                    <div class="theme-preview-lines">
-                      <div class="theme-preview-line" :style="{ background: t.text, width: '70%' }" />
-                      <div class="theme-preview-line" :style="{ background: t.text, width: '90%', opacity: 0.6 }" />
-                      <div class="theme-preview-line" :style="{ background: t.text, width: '55%', opacity: 0.4 }" />
-                    </div>
-                    <div class="theme-preview-accent" :style="{ background: t.accent }" />
-                  </div>
-                  <div class="theme-card-info">
-                    <span class="theme-name">{{ t.label }}</span>
-                    <span class="theme-desc">{{ t.desc }}</span>
-                  </div>
-                  <div v-if="sysForm.site_theme === t.key" class="theme-check">✓</div>
+        <section class="section-card">
+          <h2 class="section-title">书库</h2>
+          <div class="form-grid">
+            <div class="form-field">
+              <label>书库目录</label>
+              <el-input v-model="sysForm.books_dir" placeholder="/app/books" />
+            </div>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <h2 class="section-title">外观主题</h2>
+          <p class="section-desc">网站整体配色，保存后生效</p>
+          <div class="theme-cards">
+            <div
+              v-for="t in siteThemes"
+              :key="t.key"
+              class="theme-card"
+              :class="{ active: sysForm.site_theme === t.key }"
+              @click="sysForm.site_theme = t.key"
+            >
+              <div class="theme-preview" :style="{ background: t.bg }">
+                <div class="theme-preview-bar" :style="{ background: t.panel }">
+                  <div class="theme-preview-dot" :style="{ background: t.accent }" />
+                  <div class="theme-preview-dot" :style="{ background: t.accent, opacity: 0.5 }" />
                 </div>
+                <div class="theme-preview-lines">
+                  <div class="theme-preview-line" :style="{ background: t.text, width: '70%' }" />
+                  <div class="theme-preview-line" :style="{ background: t.text, width: '90%', opacity: 0.6 }" />
+                  <div class="theme-preview-line" :style="{ background: t.text, width: '55%', opacity: 0.4 }" />
+                </div>
+                <div class="theme-preview-accent" :style="{ background: t.accent }" />
+              </div>
+              <div class="theme-card-info">
+                <span class="theme-name">{{ t.label }}</span>
+                <span class="theme-desc">{{ t.desc }}</span>
+              </div>
+              <div v-if="sysForm.site_theme === t.key" class="theme-check">
+                <IconCheck :size="14" :stroke-width="1.75" />
               </div>
             </div>
-
+          </div>
+          <div class="section-actions">
             <el-button type="primary" :loading="saving" @click="saveSettings('system')">保存系统设置</el-button>
           </div>
+        </section>
+      </div>
 
-          <!-- SMTP Settings (暂时隐藏) -->
-          <!-- <div v-if="activeTab === 'smtp'" class="setting-section"> ... </div> -->
+      <!-- SMTP Settings (暂时隐藏) -->
+      <!-- <div v-if="activeTab === 'smtp'" class="setting-section"> ... </div> -->
 
-          <!-- Changelog / Feedback -->
-          <div v-if="activeTab === 'feedback'" class="setting-section">
-            <h2 class="section-title">更新说明</h2>
-            <div class="notice-switch">
-              <span class="notice-switch-label">系统提醒</span>
-              <el-switch
-                :model-value="updateStatus?.noticeEnabled ?? false"
-                :disabled="!updateStatus || updateStatus.envDisabled"
-                :loading="savingNotice"
-                @change="(val: string | number | boolean) => toggleSystemNotice(!!val)"
-              />
-              <span class="notice-switch-hint">{{ updateStatus?.envDisabled ? '已通过环境变量关闭' : '在侧栏铃铛提示新版本与配置问题；关闭后停止后台检查更新' }}</span>
+      <!-- Changelog / Feedback -->
+      <div v-if="activeTab === 'feedback'" class="setting-section">
+        <section class="section-card">
+          <h2 class="section-title">系统提醒</h2>
+          <p class="section-desc">{{ updateStatus?.envDisabled ? '已通过环境变量关闭' : '在侧栏铃铛提示新版本与配置问题；关闭后停止后台检查更新' }}</p>
+          <div class="notice-switch">
+            <span class="notice-switch-label">开启系统提醒</span>
+            <el-switch
+              :model-value="updateStatus?.noticeEnabled ?? false"
+              :disabled="!updateStatus || updateStatus.envDisabled"
+              :loading="savingNotice"
+              @change="(val: string | number | boolean) => toggleSystemNotice(!!val)"
+            />
+          </div>
+          <div class="update-status">
+            <div class="update-status-main">
+              <span class="update-current">当前版本 {{ currentVersionLabel }}</span>
+              <span class="update-remote" :class="{ 'is-new': (updateStatus?.newer.length ?? 0) > 0, 'is-error': !!updateStatus?.error }">{{ updateStatusText }}</span>
             </div>
-            <div class="update-status">
-              <div class="update-status-main">
-                <span class="update-current">当前版本 {{ currentVersionLabel }}</span>
-                <span class="update-remote" :class="{ 'is-new': (updateStatus?.newer.length ?? 0) > 0, 'is-error': !!updateStatus?.error }">{{ updateStatusText }}</span>
-              </div>
-              <el-button
-                size="small"
-                :loading="checkingUpdate"
-                :disabled="updateStatus?.noticeEnabled === false"
-                @click="checkUpdatesNow"
+            <el-button
+              size="small"
+              :loading="checkingUpdate"
+              :disabled="updateStatus?.noticeEnabled === false"
+              @click="checkUpdatesNow"
+            >
+              立即检查
+            </el-button>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <h2 class="section-title">版本记录</h2>
+          <p v-if="changelogMissing" class="section-desc">未找到更新说明文件</p>
+          <p v-else-if="releases.length === 0" class="section-desc">暂无已发布版本</p>
+          <p v-else class="section-desc">最近 {{ releases.length }} 次更新，点击标题查看本次调整内容。</p>
+          <div class="changelog-list">
+            <div
+              v-for="release in releases"
+              :key="release.version"
+              class="changelog-release"
+              :class="{ 'is-open': openedReleases.has(release.version) }"
+            >
+              <button
+                type="button"
+                class="changelog-release-header"
+                :aria-expanded="openedReleases.has(release.version)"
+                @click="toggleRelease(release.version)"
               >
-                立即检查
-              </el-button>
-            </div>
-            <p v-if="changelogMissing" class="section-desc">未找到更新说明文件</p>
-            <p v-else-if="releases.length === 0" class="section-desc">暂无已发布版本</p>
-            <p v-else class="section-desc">最近 {{ releases.length }} 次更新，点击标题查看本次调整内容。</p>
-            <div class="changelog-list">
-              <div
-                v-for="release in releases"
-                :key="release.version"
-                class="changelog-release"
-                :class="{ 'is-open': openedReleases.has(release.version) }"
-              >
-                <button
-                  type="button"
-                  class="changelog-release-header"
-                  :aria-expanded="openedReleases.has(release.version)"
-                  @click="toggleRelease(release.version)"
-                >
-                  <span class="changelog-release-title">
-                    v{{ release.version }}<template v-if="release.date"> · <span class="changelog-date">{{ release.date }}</span></template>
-                  </span>
-                  <span class="changelog-release-meta">
-                    <span class="changelog-arrow">▸</span>
-                  </span>
-                </button>
-                <div v-if="release.intro" class="changelog-intro">{{ release.intro }}</div>
-                <div v-if="openedReleases.has(release.version)" class="changelog-release-body">
-                  <div v-for="(section, si) in release.sections" :key="si" class="changelog-section">
-                    <div class="changelog-section-title">{{ section.title }}</div>
-                    <div v-for="(item, i) in section.items" :key="i" class="changelog-item">
-                      <div class="changelog-main">
-                        <span v-if="item.actionRequired" class="changelog-tag">需操作</span>
-                        <span class="changelog-text"><template v-for="(seg, k) in boldSegments(item.text)" :key="k"><strong v-if="seg.bold">{{ seg.text }}</strong><template v-else>{{ seg.text }}</template></template></span>
-                      </div>
+                <span class="changelog-release-title">
+                  v{{ release.version }}<template v-if="release.date"> · <span class="changelog-date">{{ release.date }}</span></template>
+                </span>
+                <IconChevronRight class="changelog-arrow" :size="16" :stroke-width="1.75" />
+              </button>
+              <div v-if="release.intro" class="changelog-intro">{{ release.intro }}</div>
+              <div v-if="openedReleases.has(release.version)" class="changelog-release-body">
+                <div v-for="(section, si) in release.sections" :key="si" class="changelog-section">
+                  <div class="changelog-section-title">{{ section.title }}</div>
+                  <div v-for="(item, i) in section.items" :key="i" class="changelog-item">
+                    <div class="changelog-main">
+                      <span v-if="item.actionRequired" class="changelog-tag">需操作</span>
+                      <span class="changelog-text"><template v-for="(seg, k) in boldSegments(item.text)" :key="k"><strong v-if="seg.bold">{{ seg.text }}</strong><template v-else>{{ seg.text }}</template></template></span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+          <div class="section-actions">
+            <el-button type="primary" @click="openFeedback">
+              意见反馈
+            </el-button>
+          </div>
+        </section>
+      </div>
 
-            <div style="margin-top: 24px;">
-              <el-button type="primary" @click="openFeedback">
-                意见反馈
-              </el-button>
+      <!-- AI Settings -->
+      <div v-if="activeTab === 'ai'" class="setting-section">
+        <section class="section-card">
+          <h2 class="section-title">AI 插件</h2>
+          <p class="section-desc">用于 AI 填充书籍信息、自动分类与听书语音</p>
+          <div class="note ai-tips">
+            <div class="ai-tip-title">已测试通过的配置</div>
+            <div class="ai-tip-item">
+              <span class="ai-tip-name">DeepSeek</span>
+              <span class="ai-tip-desc">模型：<code>deepseek-flash</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
+            </div>
+            <div class="ai-tip-item">
+              <span class="ai-tip-name">MiniMax</span>
+              <span class="ai-tip-desc">模型：<code>MiniMax-M3.1-Flash</code></span>
+            </div>
+            <div class="ai-tip-item">
+              <span class="ai-tip-name">AI 语音</span>
+              <span class="ai-tip-desc">听书的 AI 语音目前只支持 MiniMax（选择 MiniMax 后开启「听书功能」），其他插件暂不支持；未开启时阅读器的听书使用浏览器自带语音</span>
             </div>
           </div>
-
-          <!-- AI Settings -->
-          <div v-if="activeTab === 'ai'" class="setting-section">
-            <h2 class="section-title">AI 插件设置</h2>
-            <div class="ai-tips">
-              <div class="ai-tip-title">已测试通过的配置</div>
-              <div class="ai-tip-item">
-                <span class="ai-tip-name">DeepSeek</span>
-                <span class="ai-tip-desc">模型：<code>deepseek-flash</code>，接口地址：<code>https://api.deepseek.com/v1</code></span>
-              </div>
-              <div class="ai-tip-item">
-                <span class="ai-tip-name">MiniMax</span>
-                <span class="ai-tip-desc">模型：<code>MiniMax-M3.1-Flash</code></span>
-              </div>
-              <div class="ai-tip-item">
-                <span class="ai-tip-name">AI 语音</span>
-                <span class="ai-tip-desc">听书的 AI 语音目前只支持 MiniMax（选择 MiniMax 后开启「听书功能」），其他插件暂不支持；未开启时阅读器的听书使用浏览器自带语音</span>
-              </div>
-            </div>
-            <div class="form-field" style="margin-bottom: 20px">
+          <div v-if="aiConfigWarning" class="note note--warning ai-warning">
+            <IconAlertTriangle class="ai-warning-icon" :size="16" :stroke-width="1.75" />
+            <span>{{ aiConfigWarning }}</span>
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
               <label>选择 AI 插件</label>
               <el-select v-model="selectedAiPlugin" style="width: 100%">
                 <el-option
@@ -197,15 +201,7 @@
                 />
               </el-select>
             </div>
-            <el-alert
-              v-if="aiConfigWarning"
-              type="warning"
-              show-icon
-              :closable="false"
-              :title="aiConfigWarning"
-              style="margin-bottom: 20px"
-            />
-            <div v-if="currentAiPlugin" class="form-grid">
+            <template v-if="currentAiPlugin">
               <div
                 v-for="field in currentAiPlugin.fields"
                 :key="field"
@@ -232,10 +228,16 @@
                   :placeholder="field === 'apiKey' ? (aiApiKeySet ? '已设置（输入新 Key 以修改）' : getFieldPlaceholder(field)) : getFieldPlaceholder(field)"
                   :show-password="field === 'apiKey'"
                 />
-                <div v-if="fieldHints[field]" class="field-hint">{{ fieldHints[field] }}</div>
+                <div v-if="fieldHints[field]" class="form-hint">{{ fieldHints[field] }}</div>
               </div>
-            </div>
-            <div class="form-field" style="margin-top: 16px">
+            </template>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <h2 class="section-title">高级参数</h2>
+          <div class="form-grid">
+            <div class="form-field">
               <label>书籍简介长度（字）</label>
               <el-select v-model="aiSummaryLength" style="width: 100%">
                 <el-option label="50 字（极简）" :value="50" />
@@ -244,9 +246,9 @@
                 <el-option label="300 字" :value="300" />
                 <el-option label="500 字" :value="500" />
               </el-select>
-              <div class="field-hint">影响 AI 填充 + 批量填充时生成的简介字数</div>
+              <div class="form-hint">影响 AI 填充 + 批量填充时生成的简介字数</div>
             </div>
-            <div class="form-field" style="margin-top: 16px">
+            <div class="form-field">
               <label>AI 填充并发数</label>
               <el-select v-model="aiFillConcurrency" style="width: 100%">
                 <el-option label="1（最稳，限流套餐推荐）" :value="1" />
@@ -254,88 +256,98 @@
                 <el-option label="3" :value="3" />
                 <el-option label="5（最快，易触发限流）" :value="5" />
               </el-select>
-              <div class="field-hint">同时向 AI 发起请求的书籍数量，MiniMax 个人版建议设为 1 或 2</div>
+              <div class="form-hint">同时向 AI 发起请求的书籍数量，MiniMax 个人版建议设为 1 或 2</div>
             </div>
+          </div>
+          <div class="section-actions">
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
           </div>
+        </section>
+      </div>
 
-          <!-- User Management -->
-          <div v-if="activeTab === 'users'" class="setting-section">
-            <div class="section-header">
-              <h2 class="section-title">用户管理</h2>
-              <el-button type="primary" size="small" @click="openInviteDialog" :loading="creatingInvite">
-                生成邀请码
-              </el-button>
-            </div>
-            <el-table :data="users" class="users-table" stripe>
-              <el-table-column prop="username" label="用户名" />
-              <el-table-column prop="role" label="角色">
-                <template #default="{ row }">
-                  <el-tag :type="row.role === 'admin' ? 'primary' : 'info'" effect="plain">
-                    {{ row.role === 'admin' ? '管理员' : '普通用户' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="created_at" label="注册时间">
-                <template #default="{ row }">
-                  {{ formatServerTime(row.created_at, 'date') }}
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="260">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="row.id !== authStore.user?.id"
-                    size="small"
-                    link
-                    type="primary"
-                    @click="toggleRole(row)"
-                  >
-                    {{ row.role === 'admin' ? '降为普通' : '升为管理员' }}
-                  </el-button>
-                  <el-button size="small" link type="primary" @click="openPwdDialog(row)">
-                    修改密码
-                  </el-button>
-                  <el-popconfirm
-                    v-if="row.id !== authStore.user?.id"
-                    title="确定删除该用户？此操作不可恢复。"
-                    confirm-button-text="删除"
-                    cancel-button-text="取消"
-                    confirm-button-type="danger"
-                    @confirm="deleteUser(row.id)"
-                  >
-                    <template #reference>
-                      <el-button size="small" link type="danger">删除</el-button>
-                    </template>
-                  </el-popconfirm>
-                </template>
-              </el-table-column>
-            </el-table>
+      <!-- User Management -->
+      <div v-if="activeTab === 'users'" class="setting-section">
+        <section class="section-card section-card--flush users-card">
+          <div class="card-head">
+            <h2 class="section-title">用户</h2>
+            <el-button type="primary" size="small" @click="openInviteDialog" :loading="creatingInvite">
+              生成邀请码
+            </el-button>
           </div>
+          <el-table :data="users" stripe>
+            <el-table-column prop="username" label="用户名" />
+            <el-table-column prop="role" label="角色">
+              <template #default="{ row }">
+                <el-tag :type="row.role === 'admin' ? 'primary' : 'info'">
+                  {{ row.role === 'admin' ? '管理员' : '普通用户' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="注册时间">
+              <template #default="{ row }">
+                {{ formatServerTime(row.created_at, 'date') }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="260">
+              <template #default="{ row }">
+                <el-button
+                  v-if="row.id !== authStore.user?.id"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="toggleRole(row)"
+                >
+                  {{ row.role === 'admin' ? '降为普通' : '升为管理员' }}
+                </el-button>
+                <el-button size="small" link type="primary" @click="openPwdDialog(row)">
+                  修改密码
+                </el-button>
+                <el-popconfirm
+                  v-if="row.id !== authStore.user?.id"
+                  title="确定删除该用户？此操作不可恢复。"
+                  confirm-button-text="删除"
+                  cancel-button-text="取消"
+                  confirm-button-type="danger"
+                  @confirm="deleteUser(row.id)"
+                >
+                  <template #reference>
+                    <el-button size="small" link type="danger">删除</el-button>
+                  </template>
+                </el-popconfirm>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </div>
 
-          <!-- Plugin Info -->
-          <div v-if="activeTab === 'plugins'" class="setting-section">
-            <h2 class="section-title">插件管理</h2>
-            <div class="plugins-grid">
-              <div v-for="plugin in readerPlugins" :key="plugin.format" class="plugin-card">
-                <el-icon class="plugin-icon"><component :is="formatIcon(plugin.format)" /></el-icon>
-                <div class="plugin-info">
-                  <div class="plugin-name">{{ plugin.label }}</div>
-                  <div class="plugin-desc">{{ plugin.description }}</div>
-                </div>
-                <template v-if="plugin.format === 'pdf'">
-                  <div class="plugin-switch">
-                    <span class="plugin-switch-label">{{ plugin.usePlugin ? '阅读器逐页显示' : '浏览器原生' }}</span>
-                    <el-switch
-                      :model-value="plugin.usePlugin"
-                      @change="(val: string | number | boolean) => togglePdfPlugin(!!val)"
-                    />
-                  </div>
-                </template>
-                <el-tag v-else type="success">已加载</el-tag>
+      <!-- Plugin Info -->
+      <div v-if="activeTab === 'plugins'" class="setting-section">
+        <section class="section-card">
+          <h2 class="section-title">阅读插件</h2>
+          <p class="section-desc">负责解析书籍文件，按格式自动选用</p>
+          <div class="plugin-list">
+            <div v-for="plugin in readerPlugins" :key="plugin.format" class="plugin-row">
+              <component :is="formatIcon(plugin.format)" class="plugin-icon" :size="20" :stroke-width="1.75" />
+              <div class="plugin-info">
+                <div class="plugin-name">{{ plugin.label }}</div>
+                <div class="plugin-desc">{{ plugin.description }}</div>
               </div>
+              <el-tag type="success">已加载</el-tag>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section v-if="pdfPlugin" class="section-card">
+          <h2 class="section-title">PDF 显示方式</h2>
+          <p class="section-desc">阅读器逐页显示保留原版式，支持进度和书签；关闭后用浏览器原生方式打开</p>
+          <div class="plugin-switch">
+            <el-switch
+              :model-value="pdfPlugin.usePlugin"
+              @change="(val: string | number | boolean) => togglePdfPlugin(!!val)"
+            />
+            <span class="plugin-switch-label">{{ pdfPlugin.usePlugin ? '阅读器逐页显示' : '浏览器原生' }}</span>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -358,7 +370,7 @@
           <div class="invite-url-row">
             <el-input :value="inviteUrl" readonly size="small" class="invite-url-input" />
             <el-button type="primary" size="small" @click="copyInviteLink">
-              <el-icon><CopyDocument /></el-icon>
+              <IconCopy :size="14" :stroke-width="1.75" />
               复制
             </el-button>
           </div>
@@ -432,22 +444,22 @@
         </div>
         <div class="pwd-rules">
           <div class="pwd-rule" :class="pwdRules.minLen ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.minLen ? '✓' : '✗' }}</span> 至少 8 位
+            <IconCheck v-if="pwdRules.minLen" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />至少 8 位
           </div>
           <div class="pwd-rule" :class="pwdRules.hasUpper ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.hasUpper ? '✓' : '✗' }}</span> 至少 1 个大写字母
+            <IconCheck v-if="pwdRules.hasUpper" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />至少 1 个大写字母
           </div>
           <div class="pwd-rule" :class="pwdRules.hasLower ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.hasLower ? '✓' : '✗' }}</span> 至少 1 个小写字母
+            <IconCheck v-if="pwdRules.hasLower" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />至少 1 个小写字母
           </div>
           <div class="pwd-rule" :class="pwdRules.hasNumber ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.hasNumber ? '✓' : '✗' }}</span> 至少 1 个数字
+            <IconCheck v-if="pwdRules.hasNumber" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />至少 1 个数字
           </div>
           <div class="pwd-rule" :class="pwdRules.hasSpecial ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.hasSpecial ? '✓' : '✗' }}</span> 至少 1 个特殊字符（如 !@#$%^&*）
+            <IconCheck v-if="pwdRules.hasSpecial" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />至少 1 个特殊字符（如 !@#$%^&*）
           </div>
           <div class="pwd-rule" :class="pwdRules.matched ? 'pass' : 'fail'">
-            <span class="rule-icon">{{ pwdRules.matched ? '✓' : '✗' }}</span> 两次密码一致
+            <IconCheck v-if="pwdRules.matched" class="rule-icon" :size="14" :stroke-width="1.75" /><IconX v-else class="rule-icon" :size="14" :stroke-width="1.75" />两次密码一致
           </div>
         </div>
       </div>
@@ -470,10 +482,11 @@
 import { ref, reactive, computed, watch, onMounted, type Component } from 'vue'
 import { formatServerTime, parseServerTime } from '@/utils/time'
 import { passwordRules, passwordValid } from '@/utils/password-policy'
-import { Setting, User, MagicStick, Cpu, Message, CopyDocument, Document, Notebook, Tickets, Collection, Files } from '@element-plus/icons-vue'
+import { IconAlertTriangle, IconBook, IconBooks, IconCheck, IconChevronRight, IconCopy, IconFile, IconFileText, IconFileTypePdf, IconX } from '@tabler/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { settingsApi } from '@/api/settings'
 import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
@@ -615,12 +628,12 @@ const smtpForm = reactive({
 })
 
 const tabs = [
-  { key: 'system', label: '系统', icon: Setting },
-  // { key: 'smtp', label: '邮件', icon: Message },  // 暂时隐藏邮件设置
-  { key: 'ai', label: 'AI 设置', icon: MagicStick },
-  { key: 'users', label: '用户管理', icon: User },
-  { key: 'plugins', label: '插件', icon: Cpu },
-  { key: 'feedback', label: '更新说明', icon: Message },
+  { key: 'system', label: '系统' },
+  // { key: 'smtp', label: '邮件' },  // 暂时隐藏邮件设置
+  { key: 'ai', label: 'AI 设置' },
+  { key: 'users', label: '用户管理' },
+  { key: 'plugins', label: '插件' },
+  { key: 'feedback', label: '更新说明' },
 ]
 
 
@@ -751,9 +764,11 @@ const inviteUrl = computed(() => {
 })
 
 function formatIcon(format: string) {
-  const icons: Record<string, Component> = { txt: Document, epub: Notebook, pdf: Tickets, umd: Collection }
-  return icons[format] || Files
+  const icons: Record<string, Component> = { txt: IconFileText, epub: IconBook, pdf: IconFileTypePdf, umd: IconBooks }
+  return icons[format] || IconFile
 }
+
+const pdfPlugin = computed(() => readerPlugins.value.find(p => p.format === 'pdf'))
 
 async function togglePdfPlugin(val: boolean) {
   await settingsApi.update({ pdf_use_plugin: val ? 'true' : 'false' })
@@ -964,72 +979,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.settings-page {
-  padding: 32px;
-  min-height: 100%;
-}
-
-.page-header {
-  margin-bottom: 28px;
-}
-
-.page-title {
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--text-0);
-}
-
-.settings-layout {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 24px;
-  align-items: start;
-}
-
-.settings-nav {
-  background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.1);
-  border-radius: var(--radius-lg);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: sticky;
-  top: 20px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-2);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 14px;
-  font-family: var(--font-sans);
-  text-align: left;
-  transition: all 0.15s ease;
-}
-
-.nav-item:hover {
-  background: rgba(124, 92, 255, 0.08);
-  color: var(--text-1);
-}
-
-.nav-item.active {
-  background: rgba(124, 92, 255, 0.18);
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.settings-content {
-  background: var(--bg-1);
-  border: 1px solid rgba(124, 92, 255, 0.1);
-  border-radius: var(--radius-lg);
-  padding: 28px;
+.settings-tabs {
+  margin-bottom: 20px;
 }
 
 .setting-section {
@@ -1041,36 +992,9 @@ onMounted(async () => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-0);
-  margin-bottom: 20px;
-}
-
-.section-desc {
-  font-size: 14px;
-  color: var(--text-2);
-  margin-top: -12px;
-  margin-bottom: 20px;
-}
-
-.section-header .section-title {
-  margin-bottom: 0;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+/* 卡片没有说明行时，小标题与表单之间留出间距 */
+.section-title + .form-grid {
+  margin-top: 16px;
 }
 
 .form-field {
@@ -1081,93 +1005,130 @@ onMounted(async () => {
 
 .form-field label {
   font-size: 13px;
-  color: var(--text-2);
   font-weight: 500;
+  color: var(--text-1);
 }
 
-.field-hint {
-  font-size: 12px;
-  color: var(--text-2);
-  opacity: 0.7;
-  margin-top: -2px;
+.form-field .form-hint {
+  margin-top: 0;
 }
 
-.users-table {
-  background: transparent !important;
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(124, 92, 255, 0.05);
+/* 贴边卡片（表格）的标题行 */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--card-border);
 }
 
+.card-head .section-title {
+  margin: 0;
+}
+
+/* 表格首末列与卡片标题行对齐 */
+.users-card :deep(.el-table__cell:first-child .cell) {
+  padding-left: 24px;
+}
+
+.users-card :deep(.el-table__cell:last-child .cell) {
+  padding-right: 24px;
+}
+
+/* 卡片自带边框，去掉表格末行与底边线，避免双线 */
+.users-card :deep(.el-table__inner-wrapper::before) {
+  display: none;
+}
+
+.users-card :deep(.el-table__body tr:last-child > td.el-table__cell) {
+  border-bottom: none;
+}
+
+/* ── AI ── */
 .ai-tips {
-  background: rgba(0, 212, 184, 0.06);
-  border: 1px solid rgba(0, 212, 184, 0.18);
-  border-radius: var(--radius-md);
-  padding: 14px 18px;
-  margin-bottom: 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-bottom: 16px;
 }
 
 .ai-tip-title {
-  font-size: 12px;
   font-weight: 600;
-  color: var(--accent-2);
-  margin-bottom: 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--accent);
 }
 
 .ai-tip-item {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-size: 13px;
 }
 
 .ai-tip-name {
-  color: var(--text-1);
+  color: var(--text-0);
   font-weight: 600;
   min-width: 64px;
   flex-shrink: 0;
 }
 
 .ai-tip-desc {
-  color: var(--text-2);
+  color: var(--text-1);
 }
 
 .ai-tip-desc code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
-  background: rgba(124, 92, 255, 0.12);
+  background: var(--card-bg);
+  border: 1px solid var(--accent-line);
   color: var(--accent);
-  padding: 1px 5px;
-  border-radius: 3px;
+  padding: 0 5px;
+  border-radius: 4px;
 }
 
-.plugins-grid {
+.ai-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ai-warning-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+/* ── 插件 ── */
+.plugin-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
-.plugin-card {
+.plugin-row {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 18px;
-  background: var(--bg-2);
-  border-radius: var(--radius-md);
+  padding: 12px 0;
+  border-top: 1px solid var(--card-border);
+}
+
+.plugin-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.plugin-row:last-child {
+  padding-bottom: 0;
 }
 
 .plugin-icon {
-  font-size: 24px;
+  flex-shrink: 0;
   color: var(--accent);
 }
 
 .plugin-info {
   flex: 1;
+  min-width: 0;
 }
 
 .plugin-name {
@@ -1185,14 +1146,12 @@ onMounted(async () => {
 .plugin-switch {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  gap: 10px;
 }
 
 .plugin-switch-label {
-  font-size: 12px;
-  color: var(--text-2);
-  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-1);
 }
 
 /* Invite Dialog */
@@ -1203,8 +1162,8 @@ onMounted(async () => {
 }
 
 .invite-code-block {
-  background: rgba(0, 212, 184, 0.08);
-  border: 1px solid rgba(0, 212, 184, 0.2);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
   border-radius: var(--radius-md);
   padding: 14px 18px;
   text-align: center;
@@ -1219,12 +1178,12 @@ onMounted(async () => {
 .invite-code-value {
   font-size: 26px;
   font-weight: 700;
-  color: var(--accent-2);
+  color: var(--accent);
   letter-spacing: 4px;
 }
 
 .invite-action {
-  border: 1px solid rgba(124, 92, 255, 0.12);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
   padding: 14px 16px;
 }
@@ -1245,6 +1204,10 @@ onMounted(async () => {
   align-items: center;
 }
 
+.invite-url-row .el-button :deep(> span) {
+  gap: 4px;
+}
+
 .invite-url-input,
 .email-input {
   flex: 1;
@@ -1255,97 +1218,7 @@ onMounted(async () => {
   color: var(--text-2);
 }
 
-/* ── 手机端横向标签栏 ── */
-.settings-tabs-mobile {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  /* 顶部横向标签栏：仅手机显示 */
-  .settings-tabs-mobile {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    padding: 12px 16px;
-    background: var(--bg-0);
-    border-bottom: 1px solid rgba(124, 92, 255, 0.1);
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  .settings-tabs-mobile::-webkit-scrollbar { display: none; }
-
-  .tab-chip {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 7px 14px;
-    border: 1px solid rgba(124, 92, 255, 0.18);
-    border-radius: 20px;
-    background: transparent;
-    color: var(--text-2);
-    font-size: 13px;
-    font-family: var(--font-sans);
-    white-space: nowrap;
-    cursor: pointer;
-    transition: all 0.18s ease;
-    flex-shrink: 0;
-  }
-  .tab-chip .el-icon {
-    font-size: 14px;
-  }
-  .tab-chip:hover {
-    border-color: var(--accent);
-    color: var(--text-1);
-  }
-  .tab-chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-    font-weight: 500;
-    box-shadow: 0 2px 10px rgba(124, 92, 255, 0.35);
-  }
-
-  /* 桌面左侧导航：手机隐藏 */
-  .settings-nav {
-    display: none;
-  }
-
-  /* 内容区改为单列 */
-  .settings-layout {
-    display: block;
-    gap: 0;
-  }
-
-  .settings-content {
-    border-radius: var(--radius-md);
-    padding: 20px 16px;
-  }
-
-  .settings-page {
-    padding: 16px;
-  }
-
-  /* 主题卡片在手机上更紧凑 */
-  .theme-cards {
-    gap: 10px;
-  }
-  .theme-card {
-    width: 100px;
-  }
-
-  /* 表单网格单列 */
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ── Site theme selector ── */
-.theme-field {
-  margin-bottom: 20px;
-}
-
 .theme-cards {
   display: flex;
   gap: 14px;
@@ -1354,21 +1227,24 @@ onMounted(async () => {
 
 .theme-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: 130px;
   border-radius: var(--radius-md);
-  border: 2px solid rgba(128, 128, 128, 0.2);
+  border: 2px solid var(--card-border);
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.15s ease;
 }
 .theme-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(128, 128, 128, 0.5);
+  border-color: var(--accent-line);
 }
 .theme-card.active {
   border-color: var(--accent);
 }
 
+/* 预览色块为各主题的示意色（例外：主题预览色卡），由模板内联给出 */
 .theme-preview {
   height: 80px;
   padding: 8px;
@@ -1414,6 +1290,7 @@ onMounted(async () => {
 }
 
 .theme-card-info {
+  flex: 1;
   display: flex;
   flex-direction: column;
   padding: 6px 10px 8px;
@@ -1436,16 +1313,14 @@ onMounted(async () => {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  color: white;
-  font-size: 11px;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
 }
 
 /* ── Password Dialog ── */
@@ -1473,7 +1348,7 @@ onMounted(async () => {
 }
 
 .pwd-rule.pass {
-  color: #22c55e;
+  color: var(--success);
 }
 
 .pwd-rule.fail {
@@ -1481,18 +1356,65 @@ onMounted(async () => {
 }
 
 .rule-icon {
-  font-size: 12px;
-  font-weight: 700;
-  width: 14px;
   flex-shrink: 0;
 }
 
-/* ── Changelog ── */
+/* ── 更新说明 ── */
+.notice-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.notice-switch-label {
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+.update-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+
+.update-status-main {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.update-current {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.update-remote {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.update-remote.is-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.update-remote.is-error {
+  color: var(--warning);
+}
+
 .changelog-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 600px;
 }
 
 .changelog-item {
@@ -1500,9 +1422,6 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 14px;
-  background: var(--bg-2);
-  border-radius: var(--radius-md);
   font-size: 14px;
   color: var(--text-1);
 }
@@ -1546,20 +1465,14 @@ onMounted(async () => {
   outline-offset: -2px;
 }
 
-.changelog-release-title .changelog-date {
+.changelog-date {
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);
 }
 
-.changelog-release-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
 .changelog-arrow {
+  flex-shrink: 0;
   color: var(--text-2);
   transition: transform 0.2s, color 0.2s;
 }
@@ -1576,10 +1489,8 @@ onMounted(async () => {
 }
 
 .changelog-release-body .changelog-item {
-  padding: 8px 0 0;
-  background: none;
+  padding-top: 8px;
   border-top: 1px solid var(--card-border);
-  border-radius: 0;
 }
 
 .changelog-release-body .changelog-item:first-child {
@@ -1592,13 +1503,6 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 10px;
   flex: 1;
-}
-
-.changelog-date {
-  font-size: 12px;
-  color: var(--text-2);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .changelog-tag {
@@ -1633,67 +1537,40 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
-.notice-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  max-width: 600px;
-  margin-bottom: 12px;
-  font-size: 14px;
-}
-
-.notice-switch-label {
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.notice-switch-hint {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.update-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  max-width: 600px;
-  margin-bottom: 12px;
-  padding: 10px 14px;
-  background: var(--bg-2);
-  border-radius: var(--radius-md);
-  font-size: 14px;
-}
-
-.update-status-main {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.update-current {
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.update-remote {
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-.update-remote.is-new {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.update-remote.is-error {
-  color: var(--warning);
-}
-
 .changelog-text {
   line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .settings-tabs {
+    margin-bottom: 16px;
+  }
+
+  .card-head {
+    padding: 12px 16px;
+  }
+
+  .users-card :deep(.el-table__cell:first-child .cell) {
+    padding-left: 16px;
+  }
+
+  .users-card :deep(.el-table__cell:last-child .cell) {
+    padding-right: 16px;
+  }
+
+  .ai-tip-item {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* 主题卡片在手机上一行三张 */
+  .theme-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .theme-card {
+    width: auto;
+  }
 }
 </style>
