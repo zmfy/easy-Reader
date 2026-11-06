@@ -7,7 +7,7 @@
       </div>
 
       <div class="toolbar">
-        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、主题" clearable :prefix-icon="Search" />
+        <el-input v-model="keyword" class="search-input" placeholder="搜索书名、总结内容" clearable :prefix-icon="Search" />
         <el-radio-group v-model="sortBy" size="default">
           <el-radio-button value="updated">最近更新</el-radio-button>
           <el-radio-button value="title">书名</el-radio-button>
@@ -39,10 +39,13 @@
             <div v-if="item.themes.length" class="card-tags">
               <span v-for="t in item.themes.slice(0, 5)" :key="t" class="tag">{{ t }}</span>
             </div>
-            <div v-if="item.newNoteCount > 0" class="badge">有 {{ item.newNoteCount }} 条新笔记未整理</div>
+            <div v-if="item.hasSummary && item.newNoteCount > 0" class="badge">有 {{ item.newNoteCount }} 条新笔记未整理</div>
           </div>
           <div class="card-actions">
-            <el-button v-if="isRunning(item)" size="small" disabled>整理中…</el-button>
+            <template v-if="isRunning(item)">
+              <el-button size="small" disabled>整理中…</el-button>
+              <el-button size="small" type="primary" @click="open(item)">打开总结</el-button>
+            </template>
             <template v-else-if="item.hasSummary">
               <el-button size="small" type="primary" @click="open(item)">打开总结</el-button>
               <el-button v-if="item.newNoteCount > 0 && item.bookTitle !== null" size="small" @click="open(item, 'update')">更新</el-button>
@@ -77,13 +80,19 @@ const sortBy = ref<'updated' | 'title'>('updated')
 const loading = ref(false)
 const loaded = ref(false)
 const loadFailed = ref(false)
+const POLL_INTERVAL = 3000
 let seq = 0
 let timer: ReturnType<typeof setTimeout> | null = null
+let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const sorted = computed(() => {
   const list = [...items.value]
   if (sortBy.value === 'title') {
-    return list.sort((a, b) => (a.bookTitle ?? '').localeCompare(b.bookTitle ?? '', 'zh-CN'))
+    // 书已删除（无书名）的排在最后
+    return list.sort((a, b) => {
+      if (a.bookTitle === null || b.bookTitle === null) return (a.bookTitle === null ? 1 : 0) - (b.bookTitle === null ? 1 : 0)
+      return a.bookTitle.localeCompare(b.bookTitle, 'zh-CN')
+    })
   }
   const ts = (i: SummaryOverview) => (i.updatedAt ? parseServerTime(i.updatedAt)?.getTime() ?? 0 : 0)
   return list.sort((a, b) => ts(b) - ts(a))
@@ -109,8 +118,14 @@ function open(item: SummaryOverview, start?: 'update' | 'generate') {
   router.push({ path: `/book/${item.bookId}/summary`, query: start ? { start } : {} })
 }
 
+function clearPoll() {
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+}
+
 async function load() {
   const my = ++seq
+  clearPoll()
   loading.value = true
   loadFailed.value = false
   try {
@@ -119,6 +134,8 @@ async function load() {
     if (my !== seq) return
     items.value = resp.data.data || []
     loaded.value = true
+    // 有整理中的任务：定时刷新，直到没有为止
+    if (items.value.some(isRunning)) pollTimer = setTimeout(load, POLL_INTERVAL)
   } catch (err: any) {
     if (my !== seq) return
     if (!loaded.value) loadFailed.value = true
@@ -136,6 +153,7 @@ watch(keyword, () => {
 onMounted(load)
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer)
+  clearPoll()
   seq++
 })
 </script>
