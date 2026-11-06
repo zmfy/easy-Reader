@@ -295,7 +295,7 @@ defineExpose({ fit, collapseAll, expandAll, exportPng })
   user-select: none;
   -webkit-user-select: none;
 }
-:global(html.dark) .mm-canvas {
+html.dark .mm-canvas {
   --mm-chapter-fill: #1e293b; --mm-chapter-stroke: #475569; --mm-chapter-text: #e2e8f0;
   --mm-highlight-fill: #422006; --mm-highlight-stroke: #d97706; --mm-highlight-text: #fde68a;
   --mm-event-fill: #172554; --mm-event-stroke: #3b82f6; --mm-event-text: #bfdbfe;
