@@ -264,7 +264,7 @@ async function remove(n: MapNode) {
   const count = countMindDescendants(n)
   if (count > 0) {
     try {
-      await ElMessageBox.confirm(`将同时删除它下面的 ${count} 个节点，确定删除吗？`, '删除节点', { confirmButtonText: '删除节点', type: 'warning' })
+      await ElMessageBox.confirm(`将同时删除它下面的 ${count} 个节点，确定删除吗？`, '删除节点', { confirmButtonText: '删除节点', cancelButtonText: '取消', type: 'warning' })
     } catch {
       return
     }
@@ -295,7 +295,7 @@ async function goSource(n: MapNode) {
   if (m.source_chapter === null) return
   if (m.source_later) {
     try {
-      await ElMessageBox.confirm('这是你还没读到的后文，可能会剧透。确定查看吗？', '查看后文', { confirmButtonText: '查看后文', type: 'warning' })
+      await ElMessageBox.confirm('这是你还没读到的后文，可能会剧透。确定查看吗？', '查看后文', { confirmButtonText: '查看后文', cancelButtonText: '取消', type: 'warning' })
     } catch {
       return
     }

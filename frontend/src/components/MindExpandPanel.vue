@@ -225,7 +225,7 @@ async function remove(node: TreeNode) {
   const n = countKeptBelow(node)
   if (n > 0) {
     try {
-      await ElMessageBox.confirm(`将同时删除它下面的 ${n} 个节点，确定删除吗？`, '删除节点', { confirmButtonText: '删除节点', type: 'warning' })
+      await ElMessageBox.confirm(`将同时删除它下面的 ${n} 个节点，确定删除吗？`, '删除节点', { confirmButtonText: '删除节点', cancelButtonText: '取消', type: 'warning' })
     } catch {
       return
     }
@@ -246,7 +246,7 @@ async function jump(node: TreeNode) {
   if (!node.source) return
   if (node.source.later) {
     try {
-      await ElMessageBox.confirm('这是你还没读到的后文，跳转后阅读进度会移到那一章。确定跳转吗？', '跳转到后文', { confirmButtonText: '跳转到后文', type: 'warning' })
+      await ElMessageBox.confirm('这是你还没读到的后文，跳转后阅读进度会移到那一章。确定跳转吗？', '跳转到后文', { confirmButtonText: '跳转到后文', cancelButtonText: '取消', type: 'warning' })
     } catch {
       return
     }
