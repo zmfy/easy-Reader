@@ -17,6 +17,17 @@ function requestBody(prompt: string, config: Record<string, string>): string {
   return JSON.stringify(body);
 }
 
+// 2069：模型已下线 / 不可用（如 MiniMax-M2 系列）
+async function apiError(resp: { status: number; text(): Promise<string> }, config: Record<string, string>): Promise<Error> {
+  const errText = await resp.text();
+  let code: unknown;
+  try { code = JSON.parse(errText)?.base_resp?.status_code; } catch { /* 非 JSON */ }
+  if (code === 2069 || /\b2069\b/.test(errText)) {
+    return new Error(`MiniMax 模型「${config.model || DEFAULT_MODEL}」已下线或不可用，请到「设置 → AI 插件」重新选择模型`);
+  }
+  return new Error(`MiniMax API error: ${resp.status} - ${errText}`);
+}
+
 const minmaxPlugin: AiPlugin = {
   name: 'minmax',
   label: 'MiniMax',
@@ -61,6 +72,14 @@ const minmaxPlugin: AiPlugin = {
     ],
   },
 
+  // MiniMax-M2 系列已下线：仍保存着旧模型名时提醒用户重新设置
+  configWarning(config: Record<string, string>): string | null {
+    if ((config.model || '').trim().toLowerCase().startsWith('minimax-m2')) {
+      return `MiniMax-M2 系列模型已下线，请在「设置 → AI 插件」中重新选择模型（清空模型即使用默认的 ${DEFAULT_MODEL}）`;
+    }
+    return null;
+  },
+
   async fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {
     const prompt = buildFillPrompt(rawText, config, hint);
 
@@ -73,10 +92,7 @@ const minmaxPlugin: AiPlugin = {
       body: requestBody(prompt, config),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`MiniMax API error: ${resp.status} - ${errText}`);
-    }
+    if (!resp.ok) throw await apiError(resp, config);
 
     const data = await resp.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string } }> | null | undefined;
@@ -104,10 +120,7 @@ const minmaxPlugin: AiPlugin = {
       body: requestBody(prompt, config),
     });
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`MiniMax API error: ${resp.status} - ${errText}`);
-    }
+    if (!resp.ok) throw await apiError(resp, config);
 
     const data = await resp.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string } }> | null | undefined;
@@ -123,10 +136,7 @@ const minmaxPlugin: AiPlugin = {
       },
       body: requestBody(prompt, config),
     });
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`MiniMax API error: ${resp.status} - ${errText}`);
-    }
+    if (!resp.ok) throw await apiError(resp, config);
     const data = await resp.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string } }> | null | undefined;
     return choices?.[0]?.message?.content || '';

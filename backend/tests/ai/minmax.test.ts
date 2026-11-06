@@ -55,4 +55,53 @@ describe('minmax plugin', () => {
     expect(calls.map(c => c.body.model)).toEqual(['MiniMax-M3', 'MiniMax-M3']);
     expect(calls.every(c => c.url === 'https://api.minimax.cn/v1/chat/completions')).toBe(true);
   });
+
+  describe('configWarning', () => {
+    it.each([
+      ['MiniMax-M2'],
+      [' minimax-m2.5 '],
+    ])('warns for the retired M2 series model %p', (model) => {
+      const w = minmaxPlugin.configWarning!({ apiKey: 'k', model });
+      expect(w).toContain('MiniMax-M2 系列模型已下线');
+      expect(w).toContain('MiniMax-M3.1-Flash');
+    });
+
+    it.each([['MiniMax-M3'], ['MiniMax-M3.1-Flash'], ['']])('no warning for %p', (model) => {
+      expect(minmaxPlugin.configWarning!({ apiKey: 'k', model })).toBeNull();
+    });
+
+    it('no warning when model is not configured at all', () => {
+      expect(minmaxPlugin.configWarning!({ apiKey: 'k' })).toBeNull();
+    });
+  });
+
+  describe('API errors', () => {
+    function mockError(status: number, body: string) {
+      global.fetch = jest.fn(async () => ({ ok: false, status, text: async () => body })) as unknown as typeof fetch;
+    }
+    const body2069 = '{"base_resp":{"status_code":2069,"status_msg":"model is no longer available"}}';
+
+    it('turns 2069 into a readable message naming the model, on all three calls', async () => {
+      mockError(400, body2069);
+      const cfg = { apiKey: 'k', model: 'MiniMax-M2' };
+      for (const run of [
+        () => minmaxPlugin.chat('hi', cfg),
+        () => minmaxPlugin.fillBookInfo('t', cfg),
+        () => minmaxPlugin.classifyBook({ title: 't' }, cfg),
+      ]) {
+        await expect(run()).rejects.toThrow('MiniMax 模型「MiniMax-M2」已下线或不可用，请到「设置 → AI 插件」重新选择模型');
+      }
+    });
+
+    it('names the default model when none configured', async () => {
+      mockError(400, body2069);
+      await expect(minmaxPlugin.chat('hi', { apiKey: 'k' })).rejects.toThrow('「MiniMax-M3.1-Flash」');
+    });
+
+    it('keeps the original format for other errors', async () => {
+      mockError(401, '{"base_resp":{"status_code":1004}}');
+      await expect(minmaxPlugin.chat('hi', { apiKey: 'k' }))
+        .rejects.toThrow('MiniMax API error: 401 - {"base_resp":{"status_code":1004}}');
+    });
+  });
 });

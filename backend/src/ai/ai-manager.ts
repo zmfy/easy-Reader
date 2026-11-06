@@ -44,6 +44,12 @@ export function isAiConfigured(db: Database.Database): boolean {
   return true;
 }
 
+/** 当前启用的插件配置已失效（如旧模型已下线）时的提醒文案，否则 null。 */
+export function getAiConfigWarning(db: Database.Database): string | null {
+  const active = getActivePlugin(db);
+  return active?.plugin.configWarning?.(active.config) ?? null;
+}
+
 /** Name of the selected AI plugin (the raw `ai_plugin` setting), or null. */
 export function getActivePluginName(db: Database.Database): string | null {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined;
