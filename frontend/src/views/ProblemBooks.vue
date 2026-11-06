@@ -21,7 +21,7 @@
       </div>
 
       <div class="section-card section-card--flush">
-      <el-table v-loading="loading" :data="books" empty-text="没有问题书籍" class="problem-table">
+      <el-table v-loading="loading" :data="books" empty-text="没有问题书籍">
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'garbled' ? 'danger' : 'warning'" size="small">

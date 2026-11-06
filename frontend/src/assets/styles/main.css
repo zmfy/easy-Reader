@@ -302,16 +302,17 @@ html.dark {
 .el-pagination { --el-pagination-button-height: var(--el-component-size); }
 
 /* 主按钮 hover / active：在主色里混入少量正文色（浅色主题变深、深色主题变亮） */
-.el-button--danger.is-plain.is-disabled {
-  --el-button-disabled-text-color: color-mix(in srgb, var(--danger) 55%, var(--card-bg));
-  --el-button-disabled-bg-color: color-mix(in srgb, var(--danger) 6%, var(--card-bg));
-  --el-button-disabled-border-color: color-mix(in srgb, var(--danger) 35%, var(--card-bg));
-}
 .el-button--primary {
   --el-button-hover-bg-color: color-mix(in srgb, var(--accent) 88%, var(--text-0));
   --el-button-hover-border-color: color-mix(in srgb, var(--accent) 88%, var(--text-0));
   --el-button-active-bg-color: color-mix(in srgb, var(--accent) 80%, var(--text-0));
   --el-button-active-border-color: color-mix(in srgb, var(--accent) 80%, var(--text-0));
+}
+/* 危险朴素按钮的禁用态：保留可辨的红色（EP 默认几乎透明） */
+.el-button--danger.is-plain.is-disabled {
+  --el-button-disabled-text-color: color-mix(in srgb, var(--danger) 55%, var(--card-bg));
+  --el-button-disabled-bg-color: color-mix(in srgb, var(--danger) 6%, var(--card-bg));
+  --el-button-disabled-border-color: color-mix(in srgb, var(--danger) 35%, var(--card-bg));
 }
 
 /* 输入框 / 下拉框 / 文本域：同一规则（--input-bg 底 + 细边框，hover 淡主色边，focus 主色边） */

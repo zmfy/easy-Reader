@@ -1,8 +1,8 @@
 <template>
   <DefaultLayout>
     <div v-loading="loading" class="page page--narrow">
-      <PageHeader :title="detail?.series.name ?? ''" back>
-        <template v-if="detail" #actions>
+      <PageHeader v-if="detail" :title="detail.series.name" back back-fallback="/library">
+        <template #actions>
           <div class="meta">
             <el-tag type="primary" size="small">系列</el-tag>
             <span>{{ detail.members.length }} 本</span>
