@@ -10,11 +10,11 @@
       <form class="auth-form" @submit.prevent="handleSubmit">
         <label class="auth-field">
           <span>用户名</span>
-          <el-input v-model="form.username" placeholder="请输入用户名" size="large" :prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="请输入用户名" size="large" :prefix-icon="IconUser" />
         </label>
         <label class="auth-field">
           <span>密码</span>
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" :prefix-icon="Lock" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large" :prefix-icon="IconLock" show-password />
         </label>
 
         <div v-if="errorMsg" class="auth-error">
@@ -32,8 +32,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { User, Lock } from '@element-plus/icons-vue'
-import { IconAlertCircle, IconBook2 } from '@tabler/icons-vue'
+import { IconAlertCircle, IconBook2, IconLock, IconUser } from '@tabler/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

@@ -10,15 +10,15 @@
       <form class="auth-form" @submit.prevent="handleSubmit">
         <label class="auth-field">
           <span>用户名</span>
-          <el-input v-model="form.username" placeholder="请输入用户名（3-50字符）" size="large" :prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="请输入用户名（3-50字符）" size="large" :prefix-icon="IconUser" />
         </label>
         <label class="auth-field">
           <span>密码</span>
-          <el-input v-model="form.password" type="password" placeholder="请输入密码（6位以上）" size="large" :prefix-icon="Lock" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码（6位以上）" size="large" :prefix-icon="IconLock" show-password />
         </label>
         <label class="auth-field">
           <span>邀请码 <span class="required">*</span></span>
-          <el-input v-model="form.inviteCode" placeholder="请输入邀请码" size="large" :prefix-icon="Key" />
+          <el-input v-model="form.inviteCode" placeholder="请输入邀请码" size="large" :prefix-icon="IconKey" />
         </label>
 
         <div v-if="errorMsg" class="auth-error">
@@ -41,8 +41,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { User, Lock, Key } from '@element-plus/icons-vue'
-import { IconAlertCircle, IconBook2 } from '@tabler/icons-vue'
+import { IconAlertCircle, IconBook2, IconKey, IconLock, IconUser } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'

@@ -9,7 +9,7 @@
       </div>
       <div class="pdf-viewer-area">
         <div v-if="pdfLoading" class="pdf-loading">
-          <el-icon class="is-loading"><Loading /></el-icon>
+          <el-icon class="is-loading"><IconLoader2 /></el-icon>
           <span>正在加载 PDF…</span>
         </div>
         <iframe
@@ -140,7 +140,7 @@
             <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" />
           </section>
           <div v-if="waterfallLoading" class="waterfall-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中…
+            <el-icon class="is-loading"><IconLoader2 /></el-icon> 加载中…
           </div>
           <div v-else-if="!hasMoreChapters && waterfallChapters.length > 0" class="waterfall-end">
             — 本书完 —
@@ -245,7 +245,7 @@
         </div>
 
         <!-- 重置 -->
-        <el-button size="small" plain class="reset-btn" @click="readerStore.resetSettings()" style="margin-top:8px">恢复默认</el-button>
+        <el-button size="small" plain class="reset-btn" @click="readerStore.resetSettings()">恢复默认</el-button>
 
         <div class="shortcut-hint">快捷键：← → 翻章 · ↑ ↓ / 空格 翻屏 · B 加书签</div>
       </div>
@@ -265,7 +265,7 @@
         <div class="listen-controls">
           <button class="listen-btn" title="上一段" @click="listen.prev()"><IconPlayerSkipBack :size="20" :stroke-width="1.75" /></button>
           <button class="listen-btn main" :title="listenPlaying ? '暂停' : '播放'" @click="listen.toggle()">
-            <el-icon v-if="listenLoading" class="is-loading"><Loading /></el-icon>
+            <el-icon v-if="listenLoading" class="is-loading"><IconLoader2 /></el-icon>
             <IconPlayerPauseFilled v-else-if="listenPlaying" :size="20" />
             <IconPlayerPlayFilled v-else :size="20" />
           </button>
@@ -312,7 +312,7 @@
         <p v-else-if="recapError" class="recap-text recap-error">{{ recapError }}</p>
         <div v-if="!recapText" class="recap-actions">
           <button class="end-btn primary" :disabled="recapLoading" @click="loadRecap">
-            <el-icon v-if="recapLoading" class="is-loading"><Loading /></el-icon>
+            <el-icon v-if="recapLoading" class="is-loading"><IconLoader2 /></el-icon>
             <IconSparkles v-else :size="16" :stroke-width="1.75" />
             {{ recapLoading ? 'AI 正在回顾…' : 'AI 回顾前情' }}
           </button>
@@ -342,7 +342,7 @@
             </div>
             <div v-for="(m, i) in askMessages" :key="i" class="ask-msg" :class="[m.role, { error: m.error }]">
               <div class="ask-bubble">
-                <template v-if="m.pending"><el-icon class="is-loading"><Loading /></el-icon> 正在翻书…</template>
+                <template v-if="m.pending"><el-icon class="is-loading"><IconLoader2 /></el-icon> 正在翻书…</template>
                 <template v-else>{{ m.text }}</template>
               </div>
               <div v-if="m.sources?.length" class="ask-sources">参考：{{ m.sources.map(s => s.title).join('、') }}</div>
@@ -434,7 +434,6 @@ import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, onUnmount
 import { formatServerTime } from '@/utils/time'
 import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
-import { Loading } from '@element-plus/icons-vue'
 import { useReader } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
@@ -448,7 +447,7 @@ import { settingsApi } from '@/api/settings'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconLoader2, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -2153,7 +2152,7 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 .mode-btn.active { border-color: var(--accent); color: var(--accent); }
-.reset-btn { border-radius: var(--radius-md); }
+.reset-btn { margin-top: 8px; border-radius: var(--radius-md); }
 
 .theme-options {
   display: grid;

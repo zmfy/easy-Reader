@@ -20,7 +20,8 @@
   --input-bg: #1a263d;
   --radius-lg: 16px;
   --radius-md: 12px;
-  --shadow-soft: 0 12px 40px rgba(8, 12, 24, 0.45);
+  --shadow-soft: 0 6px 24px rgba(8, 12, 24, 0.3);
+  --on-accent: #fff;             /* accent 底上的文字 / 图标色 */
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -68,7 +69,8 @@
   --input-bg: #2e1e10;
   --radius-lg: 16px;
   --radius-md: 12px;
-  --shadow-soft: 0 12px 40px rgba(16, 8, 4, 0.5);
+  --shadow-soft: 0 6px 24px rgba(16, 8, 4, 0.3);
+  --on-accent: var(--bg-0);      /* 亮琥珀底上白字对比度不足，用深色字 */
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -92,7 +94,8 @@
   --input-bg: #102030;
   --radius-lg: 16px;
   --radius-md: 12px;
-  --shadow-soft: 0 12px 40px rgba(4, 8, 16, 0.5);
+  --shadow-soft: 0 6px 24px rgba(4, 8, 16, 0.3);
+  --on-accent: var(--bg-0);      /* 亮冰蓝底上白字对比度不足，用深色字 */
   --font-sans: 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Noto Serif SC', serif;
 }
@@ -289,6 +292,11 @@ html.dark {
   --el-color-info-light-9: color-mix(in srgb, var(--text-2) 10%, var(--card-bg));
   --el-color-info-dark-2: color-mix(in srgb, var(--text-2) 80%, #000);
 }
+/* 冷月的 --text-2 偏暗，占位符混入 --text-1 提亮（对输入框底对比度约 4.4:1）；
+   html[...] 与上面的 html.dark 同优先级，靠后者生效 */
+html[data-theme="cool"] {
+  --el-text-color-placeholder: color-mix(in srgb, var(--text-1) 30%, var(--text-2));
+}
 
 /* 默认尺寸控件高 36px（EP 的按钮 / 下拉框 / 表单标签写死了 32px） */
 .el-button:not(.el-button--small):not(.el-button--large):not(.is-link) { height: var(--el-component-size); }
@@ -307,6 +315,15 @@ html.dark {
   --el-button-hover-border-color: color-mix(in srgb, var(--accent) 88%, var(--text-0));
   --el-button-active-bg-color: color-mix(in srgb, var(--accent) 80%, var(--text-0));
   --el-button-active-border-color: color-mix(in srgb, var(--accent) 80%, var(--text-0));
+  --el-button-text-color: var(--on-accent);
+  --el-button-hover-text-color: var(--on-accent);
+  --el-button-active-text-color: var(--on-accent);
+  --el-button-disabled-text-color: var(--on-accent);
+}
+/* 朴素主按钮 hover / active 时底色变为主色，文字同样用 --on-accent */
+.el-button--primary.is-plain {
+  --el-button-hover-text-color: var(--on-accent);
+  --el-button-active-text-color: var(--on-accent);
 }
 /* 危险朴素按钮的禁用态：保留可辨的红色（EP 默认几乎透明） */
 .el-button--danger.is-plain.is-disabled {
@@ -569,7 +586,7 @@ html.dark {
 .segmented-item.is-active,
 .el-radio-button.is-active .el-radio-button__inner {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: none;
 }
 .segmented-item:focus-visible,
@@ -581,7 +598,7 @@ html.dark {
   --el-segmented-bg-color: var(--card-bg);
   --el-segmented-padding: 4px;
   --el-segmented-color: var(--text-1);
-  --el-segmented-item-selected-color: #fff;
+  --el-segmented-item-selected-color: var(--on-accent);
   --el-segmented-item-selected-bg-color: var(--accent);
   --el-segmented-item-hover-color: var(--text-0);
   --el-segmented-item-hover-bg-color: var(--accent-soft);
@@ -666,7 +683,7 @@ html.dark {
   height: 44px;
   margin-bottom: 12px;
   border-radius: 12px;
-  color: #fff;
+  color: var(--on-accent);
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000));
   box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -696,7 +713,7 @@ html.dark {
   font-weight: 500;
   color: var(--text-1);
 }
-.auth-field .required { color: var(--danger); }
+.auth-field .required { font-size: 12px; color: var(--danger); }
 .auth-error {
   display: flex;
   align-items: center;

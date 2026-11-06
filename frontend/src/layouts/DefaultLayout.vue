@@ -201,7 +201,7 @@ async function handleLogout() {
   border-bottom: 1px solid var(--card-border);
 }
 
-/* logo：强调色渐变圆角方块 + 白色图标 */
+/* logo：强调色渐变圆角方块 + --on-accent 图标（多数主题为白色） */
 .logo-tile {
   flex: none;
   width: 30px;
@@ -210,7 +210,7 @@ async function handleLogout() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--on-accent);
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000));
   box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -278,7 +278,7 @@ async function handleLogout() {
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  color: white;
+  color: var(--on-accent);
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -349,10 +349,11 @@ async function handleLogout() {
     width: 260px;
     transform: translateX(-100%);
     transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
+  /* 阴影只在展开时加：收起时阴影会从屏幕左缘漏出一条灰边 */
   .sidebar.open {
     transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
   /* Main content takes full width */

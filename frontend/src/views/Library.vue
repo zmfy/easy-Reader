@@ -32,7 +32,7 @@
             <template #suffix>
               <el-popover placement="bottom-end" :width="320" trigger="click">
                 <template #reference>
-                  <IconHelpCircle class="search-help" title="搜索帮助" :size="16" :stroke-width="1.75" />
+                  <span class="search-help" title="搜索帮助"><IconHelpCircle :size="16" :stroke-width="1.75" /></span>
                 </template>
                 <div class="search-help-pop">
                   <div class="help-title">搜索框用法</div>
@@ -366,14 +366,14 @@ onMounted(refreshPendingBatch)
   margin-left: auto;   /* 宽屏：搜索与筛选靠右，紧挨扫描按钮 */
 }
 
-.scan-btn :deep(> span) {
+.scan-btn > :deep(span) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
 .search-help {
-  font-size: 16px;
+  display: inline-flex;
   color: var(--text-2);
   cursor: pointer;
   transition: color 0.2s;
@@ -435,14 +435,14 @@ onMounted(refreshPendingBatch)
   margin-top: 0;
 }
 
-/* 手机：两列卡片，否则 172px 最小宽度只能排一列，每本书几乎占满一屏；
-   搜索栏占满整行（flex 子项默认按内容宽度撑开，会超出右侧边距） */
+/* 手机：页面内边距收窄 */
 @media (max-width: 768px) {
   .library-page { padding: 16px; }
 }
 
+/* 窄屏手机：第一行标题 + 扫描图标；第二行搜索框占满整行 + 筛选按钮
+   （flex 子项默认按内容宽度撑开，会超出右侧边距）；两列卡片，否则 172px 最小宽度只能排一列 */
 @media (max-width: 480px) {
-  /* 第一行：标题 + 扫描图标；第二行：搜索框 + 筛选按钮 */
   .page-header {
     gap: 12px;
     margin-bottom: 20px;

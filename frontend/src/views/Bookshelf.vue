@@ -11,7 +11,7 @@
       </div>
 
       <div v-else-if="items.length === 0" class="empty-state">
-        <el-icon class="empty-icon"><CollectionTag /></el-icon>
+        <el-icon class="empty-icon"><IconBookmarks /></el-icon>
         <div class="empty-title">书架还是空的</div>
         <div class="empty-desc">去书库添加你喜欢的书吧</div>
         <el-button type="primary" @click="router.push('/library')">前往书库</el-button>
@@ -72,7 +72,7 @@
                 <div class="row-progress">{{ progressText(item) }}</div>
               </div>
               <el-dropdown trigger="click" @command="(cmd: string) => onRowCommand(cmd, item)">
-                <el-button class="row-more" text :icon="MoreFilled" title="更多" @click.stop />
+                <el-button class="row-more" text :icon="IconDots" title="更多" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="detail">详情</el-dropdown-item>
@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { CollectionTag, MoreFilled } from '@element-plus/icons-vue'
+import { IconBookmarks, IconDots } from '@tabler/icons-vue'
 import { ref, computed, onMounted } from 'vue'
 import { parseServerTime } from '@/utils/time'
 import { useRouter } from 'vue-router'

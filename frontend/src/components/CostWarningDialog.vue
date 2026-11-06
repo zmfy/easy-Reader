@@ -1,7 +1,7 @@
 <template>
   <el-dialog v-model="visible" width="500px" :close-on-click-modal="false">
-    <template #header>
-      <span class="dialog-title"><IconAlertTriangle :size="18" />AI 调用费用提示</span>
+    <template #header="{ titleId, titleClass }">
+      <span :id="titleId" :class="[titleClass, 'dialog-title']"><IconAlertTriangle :size="18" />AI 调用费用提示</span>
     </template>
     <div class="warning-content">
       <el-alert

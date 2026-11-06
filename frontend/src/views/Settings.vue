@@ -1186,7 +1186,7 @@ onMounted(async () => {
   align-items: center;
 }
 
-.invite-url-row .el-button :deep(> span) {
+.invite-url-row .el-button > :deep(span) {
   gap: 4px;
 }
 
@@ -1299,7 +1299,7 @@ onMounted(async () => {
   height: 20px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1448,6 +1448,7 @@ onMounted(async () => {
 }
 
 .changelog-date {
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
   color: var(--accent);

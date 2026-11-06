@@ -36,7 +36,7 @@
       <!-- 悬停操作：封面底部渐变区，主操作「阅读」单独一行，详情 / 删除并排 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" class="overlay-read" @click.stop="$emit('read')">
-          <el-icon><VideoPlay /></el-icon>
+          <el-icon><IconPlayerPlay /></el-icon>
           阅读
         </el-button>
         <div class="overlay-row">
@@ -69,7 +69,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { VideoPlay } from '@element-plus/icons-vue'
+import { IconPlayerPlay } from '@tabler/icons-vue'
 import type { Book } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 
@@ -335,7 +335,8 @@ const placeholderGradient = computed(() => {
   z-index: 4;
   font-size: 11px;
   font-weight: 700;
-  color: var(--warning);
+  /* 封面叠加层例外：角标底固定为深色半透明，--warning 在浅色主题偏暗看不清，固定用亮琥珀 */
+  color: #fbbf24;
   background: rgba(11, 16, 32, 0.7);
   padding: 2px 6px;
   border-radius: 4px;
