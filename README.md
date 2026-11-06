@@ -71,6 +71,8 @@ docker compose up -d --build
 
 首次构建约 3-5 分钟（需编译 C++ 原生模块），之后重建大部分层会命中缓存。
 
+构建默认使用国内源（基础镜像 DaoCloud、npm 淘宝镜像、apt 阿里云），在海外或想用官方源时，在 `.env` 里设置 `NODE_IMAGE`、`NPM_REGISTRY`、`DEBIAN_MIRROR`（见下方环境变量）。
+
 访问 **http://localhost:8080**
 
 ### 默认管理员账户
@@ -141,6 +143,9 @@ docker compose up -d --build
 | `DATA_DIR` | 否 | `/app/data` | 数据库目录（容器内路径） |
 | `TRUST_PROXY` | 否 | — | 经反向代理（Nginx、Caddy、群晖反代等）访问时设置，一层代理填 `1`。不设置时所有访问者都被当作代理的 IP，登录限流会互相影响；直接暴露端口时不要设置 |
 | `CORS_ORIGINS` | 否 | — | 允许跨域访问 API 的网页来源，逗号分隔（如 `https://reader.example.com`）；只有运行在其他网址上的网页客户端需要，原生 App 不需要 |
+| `NODE_IMAGE` | 否 | `docker.m.daocloud.io/library/node:22-slim` | 构建用基础镜像；官方源填 `node:22-slim` |
+| `NPM_REGISTRY` | 否 | `https://registry.npmmirror.com` | 构建时的 npm 源；官方源填 `https://registry.npmjs.org` |
+| `DEBIAN_MIRROR` | 否 | `http://mirrors.aliyun.com` | 构建时的 apt 源；设为空（`DEBIAN_MIRROR=`）则用官方 `deb.debian.org` |
 
 NAS 上的实际路径在 `docker-compose.yml` 的 `volumes` 里配置：
 
