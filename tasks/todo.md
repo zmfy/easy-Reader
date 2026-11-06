@@ -413,3 +413,13 @@
 - [x] 手机 390 宽：双指缩放 0.5 → 1.5、单指拖动、无横向滚动
 - [x] 修复：浏览器原生打开的 PDF（pdf_use_plugin=false）目录为空，导图只有书名、无处添加节点 → 无目录时书名节点可「添加节点」（按第 0 章存，挂在书名下），空状态提示改为「点击书名可手动添加节点」；book-map 测试先行（vitest 159）；Chrome 实测添加 / 子节点 / 导出
 - [ ] 备注：划线根节点经接口写入的节点批注，导图界面不显示（只显示划线批注）但 Markdown 会导出；网页上无法产生这种数据
+
+# 分支策略：学习版作为 main 的长期衍生分支（用户决定 A）
+
+规则：main 主打看书，study 主打看书 + 学习；只从 main 单向合并进 study，绝不反向；通用改动先进 main 再合并；学习代码尽量放独立文件；学习版镜像用同一仓库加 `-study` 后缀，不碰 `latest`。
+
+- [ ] 当前分支 feat/study-notes-phase1 改名为长期分支 `study`（本地 + 远端，远端操作需确认）
+- [ ] 通用提交挪到 main：Docker 国内源 beb29e7、913c5a8、6a10f68、d441aae（cherry-pick 到 main，main 上验证构建）
+- [ ] main 合并进 study（拿到版本号 / CHANGELOG / 发版工作流 / DOCKERHUB.md），解决冲突
+- [ ] study 的发版：工作流在 study 分支推送 → `edge-study`；`study-vX.Y.Z` 标签 → `X.Y.Z-study`、`X.Y-study`、`latest-study`（具体 tag 名待定），main 的工作流不响应 study 标签；学习版更新日志的放法待定
+- [ ] 推送 main / study / 标签前向用户确认
