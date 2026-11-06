@@ -451,12 +451,25 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 | `doc` | 根节点 | 仅作根 |
 | `heading` | 标题 | `attrs.level` 必须是 `2` 或 `3`；AI 生成的「主题」是 2 级标题 |
 | `paragraph` | 段落 | 内含 `text`、`hardBreak`、`noteRef` |
-| `bulletList` / `orderedList` | 无序 / 有序列表 | `orderedList` 可带 `attrs.start`（整数）；内含 `listItem` |
+| `bulletList` / `orderedList` | 无序 / 有序列表 | `orderedList` 可带 `attrs.start`（整数或 `null`）与 `attrs.type`（字符串或 `null`）；内含 `listItem` |
 | `listItem` | 列表项 | 内含段落与嵌套列表 |
-| `codeBlock` | 代码块 | 可带 `attrs.language`（字符串） |
+| `codeBlock` | 代码块 | 可带 `attrs.language`（字符串或 `null`） |
 | `hardBreak` | 换行 | — |
-| `text` | 文字 | `text` 字段；可带 `marks`，类型只能是 `bold`、`italic`、`code` |
+| `text` | 文字 | `text` 字段（非空字符串）；可带 `marks`，类型只能是 `bold`、`italic`、`code` |
 | `noteRef` | 引用某条笔记 | `attrs.ref`：引用标识，格式见下 |
+
+**内容模型**（父节点能包含哪些子节点，不符合时保存返回 422）：
+
+| 父节点 | 允许的子节点 |
+|---|---|
+| `doc` | 块级：`heading`、`paragraph`、`bulletList`、`orderedList`、`codeBlock`（至少一个） |
+| `heading`、`paragraph` | 行内：`text`、`hardBreak`、`noteRef`（可为空） |
+| `codeBlock` | 不带 `marks` 的 `text`（可为空） |
+| `bulletList`、`orderedList` | `listItem`（至少一个） |
+| `listItem` | 第一个必须是 `paragraph`，之后可接 `paragraph`、`bulletList`、`orderedList`、`codeBlock`（不能是标题） |
+| `text`、`hardBreak`、`noteRef` | 叶子节点，不能有 `content` |
+
+`doc` 只能出现在根上；`text` 的 `text` 不能是空字符串（编辑器无法载入空文字节点）。
 
 示例：
 
@@ -474,7 +487,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 }
 ```
 
-文档限制：嵌套深度不超过 20 层、节点总数不超过 20000、序列化后不超过 2MB。不允许出现未列出的节点类型、属性或 marks。
+文档限制：嵌套深度不超过 20 层、节点总数不超过 20000、序列化（`JSON.stringify`）后不超过 2,000,000 字符。不允许出现未列出的节点类型、属性或 marks。
 
 **引用标识（ref）**：`h:<划线 id>` 指向一条划线，`n:<导图节点 id>` 指向一个导图节点（非划线类）。id 是 UUID。引用对应的笔记可能后来被删除，客户端应容错（见 `refs` 接口）。
 
@@ -493,11 +506,11 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 ]
 ```
 
-块类型为 `h`（`level` 为 2 或 3）、`p`、`list`（`ordered`，`items` 是若干个 `parts` 数组；嵌套层级用行首空格 `text` 表示）、`code`。`parts` 的元素是 `{ text, bold?, italic?, code? }`（文字，样式字段只在为真时出现）或 `{ ref }`（引用）。
+块类型为 `h`（`level` 为 2 或 3）、`p`、`list`（`ordered`，`items` 是若干个 `parts` 数组；嵌套层级用行首空格 `text` 表示）、`code`。`parts` 的元素是 `{ text, bold?, italic?, code? }`（文字，样式字段只在为真时出现）或 `{ ref }`（引用）；`hardBreak` 输出为 `{ "text": "\n" }`，即文字中的换行符 `\n`。
 
 #### GET /api/v1/study/summaries
 
-可选查询参数 `q`：按书名或总结正文模糊过滤。返回有笔记或有总结的书，按总结更新时间倒序（没有总结的排在最后）：
+可选查询参数 `q`：按书名或总结正文模糊过滤。返回有笔记或有总结的书（书已删除且没有总结的不返回），按总结更新时间倒序（没有总结的排在最后）：
 
 ```json
 [{
@@ -521,7 +534,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
     "id": "…", "book_id": "…", "revision": 3,
     "included_refs": ["h:…", "n:…"],
     "created_at": "2026-11-06 04:01:28", "updated_at": "2026-11-06 04:20:00",
-    "doc": { "type": "doc", "content": [] }
+    "doc": { "type": "doc", "content": [{ "type": "paragraph" }] }
   },
   "bookTitle": "老人与海", "noteCount": 12, "newNoteCount": 3,
   "job": null
@@ -537,7 +550,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 手动保存整篇文档：
 
 ```json
-{ "doc": { "type": "doc", "content": [] }, "revision": 3 }
+{ "doc": { "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "内容" }] }] }, "revision": 3 }
 ```
 
 成功返回 200 与最新 `summary`（`revision` 加 1）。
@@ -550,7 +563,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 `message` 有两种：「总结已在别处更新」（修订号过期）与「正在整理中，请稍后再改」（该书有 AI 任务正在运行）。客户端的处理：用 `data` 里的最新内容让用户决定（放弃本地修改、或在最新内容上重新编辑后再保存），再用新的 `revision` 提交；整理中则等任务结束后重试。
 
-其他错误：`doc` 不合法（含非白名单节点）或超过 2MB 返回 422；该书还没有总结返回 404。
+其他错误：`doc` 不合法（含非白名单节点、不符合内容模型）或序列化后超过 2,000,000 字符返回 422；该书还没有总结返回 404。
 
 #### POST /api/v1/study/books/:bookId/summary/jobs
 
@@ -614,7 +627,9 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 { "revision": 3 }
 ```
 
-把总结恢复为该版本的内容，并新增一个 `source` 为 `restore` 的版本（不会删除其他版本）。返回 200 与最新 `summary`。`revision` 与 409 的规则同 `PUT`；总结或版本不存在 404。
+把总结恢复为该版本的内容，并新增一个 `source` 为 `restore` 的版本（不会删除其他版本），版本描述为「恢复到『<被恢复版本的来源>』版本」，来源为「AI 生成」「AI 补充」「我」「恢复」之一（不含时间，时间看版本的 `updated_at`）。返回 200 与最新 `summary`。
+
+恢复只替换正文，**不改变「已整理的笔记」集合（`included_refs`）**：恢复点之后才被整理进总结的笔记仍算已整理，之后「更新」不会再把它们补充进来；如需重新整理，可手动编辑或删除总结后重新生成。`revision` 与 409 的规则同 `PUT`；总结或版本不存在 404。
 
 #### GET /api/v1/study/books/:bookId/refs/:ref
 
