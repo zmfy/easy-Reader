@@ -456,3 +456,9 @@
 - [x] 文档：README（USAGE_STATS、隐私说明、支持架构）、DOCKERHUB.md、.env.example、docker-compose、CHANGELOG
 - [x] 验证：jest 52 suites / 492、vitest 123、前后端 tsc；本地官网后端联调（201 / 同日去重 / 非法参数 422 / 第 21 次 429 / 管理统计 / 无令牌 401）；开发后端启动 60s 后官网收到 id+main+1.1.1+x64；设置页关闭后 DB 为 false；Chrome 看菜单两项新标签打开
 - [x] 合并到 study（6a68a6d；工作流保留 easy-learner 规则并加 arm64；edition 仍为 study；菜单「问题反馈 / 提交 Issue」与「源码 AGPL-3.0」并存）；验证 jest 62 suites / 611、vitest 198、前后端 tsc
+
+# 待办路线（11-07 用户确认）
+
+- [ ] 笔记整理第二期：选中文字 AI 整理成列表 / 表格（study；设计与计划已提交，待选执行方式）
+- [ ] PWA（main，再合并进 study）：manifest + Service Worker + 图标（vite-plugin-pwa）、「有新版本，点击刷新」提示、手机浏览器里的「安装到桌面」入口（http 访问时说明需要 HTTPS）；官网配套教程「装到手机桌面」+「从外网访问：DDNS / Tailscale / 内网穿透」
+- 候选：每日回顾（遗忘曲线）+ 微信推送（企业微信机器人 / Server 酱 / PushPlus Webhook）；微信小程序因域名白名单与类目资质，只做「API + 开源模板，用户自建」
