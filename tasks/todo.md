@@ -448,11 +448,11 @@
 决定（用户）：反馈入口同时给官网留言板和 GitHub Issue；匿名实例统计默认开启、设置里可关闭
 
 - [x] A. Dockerfile 前端构建层用 $BUILDPLATFORM；工作流加 QEMU / buildx、platforms amd64+arm64、gha 缓存
-- [ ] A. 本地 arm64 构建并运行验证（health、uname、登录、扫描）— 未做：安装 QEMU binfmt 需特权容器，被权限策略拦下，待用户决定；amd64 本地构建与运行已验证
+- [x] A. 本地 arm64 构建并运行验证（11-07，QEMU binfmt 由用户安装）：buildx --platform linux/arm64 构建成功；容器内 uname aarch64、node arm64；health、首页与 JS 资源 200；登录、改默认密码（bcrypt）、扫描 → 审核批次 → 入库（better-sqlite3）、目录与章节内容均正常
 - [x] B. utils/links.ts；侧栏「⋯」菜单加「问题反馈」「提交 Issue」；Settings openFeedback 复用常量
 - [x] B. .github/ISSUE_TEMPLATE（bug / feature / config）
 - [x] C. services/usage-ping.ts（测试先行）+ 挂到更新检查每日定时器；update-status 返回开关状态；设置页开关
 - [x] C. 官网后端 POST /api/metrics/install + install_pings 表 + GET /api/admin/installs
 - [x] 文档：README（USAGE_STATS、隐私说明、支持架构）、DOCKERHUB.md、.env.example、docker-compose、CHANGELOG
 - [x] 验证：jest 52 suites / 492、vitest 123、前后端 tsc；本地官网后端联调（201 / 同日去重 / 非法参数 422 / 第 21 次 429 / 管理统计 / 无令牌 401）；开发后端启动 60s 后官网收到 id+main+1.1.1+x64；设置页关闭后 DB 为 false；Chrome 看菜单两项新标签打开
-- [ ] 合并到 study（工作流冲突保留 easy-learner 规则）
+- [x] 合并到 study（6a68a6d；工作流保留 easy-learner 规则并加 arm64；edition 仍为 study；菜单「问题反馈 / 提交 Issue」与「源码 AGPL-3.0」并存）；验证 jest 62 suites / 611、vitest 198、前后端 tsc
