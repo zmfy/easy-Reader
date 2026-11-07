@@ -397,5 +397,11 @@
 
 # 分支策略：合并 main → study 的手工处理（补充；study 的 todo.md 已有「分支策略」一节，合并时并入该节）
 
-- [ ] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
-- [ ] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）
+- [x] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
+- [x] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）
+
+# Element Plus 中文语言包（录部署视频时发现）
+
+- [x] 原因：组件按需引入，没有 app.use(ElementPlus)，也没设置 locale；函数式弹窗 ElMessageBox 从 `_context` 取应用上下文，未 app.use 时为空，只能用默认英文
+- [x] utils/element-plus.ts `setupElementPlus`：provideGlobalConfig({ locale: zhCn }, app, true) + app.use(ElMessageBox)；main.ts 调用（测试先行 2 个用例）
+- [x] 验证：vitest 18 files / 123、vue-tsc；临时后端 + vite 实测确认弹窗按钮为「取消 / 确定」

@@ -6,6 +6,7 @@ import router from './router'
 import App from './App.vue'
 import './assets/styles/main.css'
 import { applySiteTheme } from './utils/theme'
+import { setupElementPlus } from './utils/element-plus'
 
 // 默认深色主题，站点设置加载后再按实际主题切换
 applySiteTheme()
@@ -13,6 +14,7 @@ applySiteTheme()
 const app = createApp(App)
 const pinia = createPinia()
 
+setupElementPlus(app)
 app.use(pinia)
 app.use(router)
 
