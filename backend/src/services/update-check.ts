@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { UPDATE_BRANCH, VERSION_SUFFIX } from '../edition';
 import { Release, parseChangelog, newerReleases } from './changelog';
+import { isUsageStatsEnabled, isUsageStatsEnvDisabled, sendUsagePing } from './usage-ping';
 
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_BODY_BYTES = 1024 * 1024; // 远端响应体上限 1MB
@@ -20,6 +21,8 @@ export interface UpdateStatus {
   checkedAt: string | null;
   error: string | null;
   newer: Release[];
+  usageStatsEnabled: boolean;
+  usageStatsEnvDisabled: boolean;
 }
 
 type FetchImpl = (url: string, init?: any) => Promise<any>;
@@ -180,6 +183,8 @@ export function getUpdateStatus(db: Database.Database): UpdateStatus {
     checkedAt: getSetting(db, 'update_checked_at'),
     error: getSetting(db, 'update_check_error') || null,
     newer: newerReleases(remote, currentVersion),
+    usageStatsEnabled: isUsageStatsEnabled(db),
+    usageStatsEnvDisabled: isUsageStatsEnvDisabled(),
   };
 }
 
@@ -218,6 +223,8 @@ function startTimers(db: Database.Database, delayMs: number): void {
     try {
       if (!isNoticeEnabled(db)) return;
       checkForUpdates(db).catch(warn);
+      // 匿名使用统计随每日检查发送一次；关闭或失败都不影响更新检查
+      void sendUsagePing(db);
     } catch (e) {
       warn(e);
     }

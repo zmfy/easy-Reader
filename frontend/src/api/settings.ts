@@ -51,6 +51,9 @@ export const settingsApi = {
   setSystemNotice: (enabled: boolean) =>
     http.put<ApiResponse<null>>('/settings', { system_notice_enabled: enabled ? 'true' : 'false' }),
 
+  setUsageStats: (enabled: boolean) =>
+    http.put<ApiResponse<null>>('/settings', { usage_stats_enabled: enabled ? 'true' : 'false' }),
+
   checkUpdates: () =>
     http.post<ApiResponse<UpdateStatus>>('/settings/update-check', {}),
 

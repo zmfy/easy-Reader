@@ -118,6 +118,21 @@
               立即检查
             </el-button>
           </div>
+          <div class="usage-stats">
+            <div class="notice-switch">
+              <span class="notice-switch-label">匿名使用统计</span>
+              <el-switch
+                :model-value="updateStatus?.usageStatsEnabled ?? false"
+                :disabled="!updateStatus || updateStatus.usageStatsEnvDisabled"
+                :loading="savingUsageStats"
+                @change="(val: string | number | boolean) => toggleUsageStats(!!val)"
+              />
+            </div>
+            <p class="form-hint">
+              <template v-if="updateStatus?.usageStatsEnvDisabled">已通过环境变量 USAGE_STATS=off 关闭。</template>
+              每天随更新检查向官网发送一次：随机生成的实例 ID、版本线、版本号、CPU 架构，用于了解大约有多少台在运行。不含书名、账号和阅读记录，官网不记录 IP；关闭系统提醒时也不会发送。
+            </p>
+          </div>
         </section>
 
         <section class="section-card">
@@ -494,6 +509,7 @@ import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { Release, UpdateStatus } from '@/types'
+import { FEEDBACK_URL } from '@/utils/links'
 
 const authStore = useAuthStore()
 const noticeStore = useSystemNoticeStore()
@@ -643,6 +659,7 @@ const changelogMissing = ref(false)
 const updateStatus = ref<UpdateStatus | null>(null)
 const checkingUpdate = ref(false)
 const savingNotice = ref(false)
+const savingUsageStats = ref(false)
 // 默认展开最近一次
 const openedReleases = ref(new Set<string>())
 
@@ -695,6 +712,20 @@ async function checkUpdatesNow() {
   }
 }
 
+async function toggleUsageStats(enabled: boolean) {
+  savingUsageStats.value = true
+  try {
+    await settingsApi.setUsageStats(enabled)
+    const resp = await settingsApi.getUpdateStatus()
+    updateStatus.value = resp.data.data ?? updateStatus.value
+    ElMessage.success(enabled ? '匿名使用统计已开启' : '匿名使用统计已关闭')
+  } catch {
+    ElMessage.error('保存失败，请稍后再试')
+  } finally {
+    savingUsageStats.value = false
+  }
+}
+
 async function toggleSystemNotice(enabled: boolean) {
   savingNotice.value = true
   try {
@@ -719,7 +750,7 @@ function toggleRelease(key: string) {
 }
 
 function openFeedback() {
-  window.open('https://easyreader.ucool.uk/bbs', '_blank')
+  window.open(FEEDBACK_URL, '_blank', 'noopener')
 }
 
 const fieldLabels: Record<string, string> = {
@@ -1349,6 +1380,14 @@ onMounted(async () => {
   margin-bottom: 12px;
   font-size: 14px;
 }
+
+.usage-stats {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--card-border);
+}
+
+.usage-stats .notice-switch { margin-bottom: 6px; }
 
 .notice-switch-label {
   font-weight: 500;

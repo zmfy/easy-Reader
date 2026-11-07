@@ -5,7 +5,8 @@
 ARG NODE_IMAGE=node:22-slim
 
 # Stage 1: Build frontend
-FROM ${NODE_IMAGE} AS frontend-builder
+# 产物是静态文件，与目标架构无关：多平台构建时固定在构建机架构上运行，避免在 QEMU 模拟下跑 vite
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-builder
 ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY frontend/package*.json ./
@@ -14,6 +15,7 @@ COPY frontend/ .
 RUN npm run build
 
 # Stage 2: Build backend + prune to production deps
+# 在目标架构下构建（arm64 由 QEMU 模拟）：better-sqlite3 要编译出对应架构的原生模块
 FROM ${NODE_IMAGE} AS backend-builder
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG DEBIAN_MIRROR=

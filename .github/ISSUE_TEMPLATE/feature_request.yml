@@ -1,0 +1,27 @@
+name: 功能建议
+description: 希望增加或改进的功能
+title: "[建议] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 版本线
+      options:
+        - 看书版 easy-reader
+        - 学习版 easy-learner
+        - 都适用
+    validations:
+      required: true
+  - type: textarea
+    id: scene
+    attributes:
+      label: 使用场景
+      description: 你在什么情况下需要这个功能？现在是怎么做的、哪里不方便？
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 希望的做法
+      description: 你设想的功能是什么样的（可选）

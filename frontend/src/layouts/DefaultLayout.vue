@@ -56,6 +56,16 @@
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
               </router-link>
+              <a :href="FEEDBACK_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
+                <IconMessageCircle class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>问题反馈</span>
+                <span class="menu-meta">留言板</span>
+              </a>
+              <a :href="ISSUE_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
+                <IconBrandGithub class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>提交 Issue</span>
+                <span class="menu-meta">GitHub</span>
+              </a>
               <!-- 学习版以 AGPL-3.0 发布：网络用户可从这里获取对应源码（AGPL 第 13 条） -->
               <a :href="SOURCE_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
                 <IconCode class="menu-icon" :size="16" :stroke-width="1.75" />
@@ -97,7 +107,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconCode, IconDots, IconKey, IconLogout, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconCode, IconDots, IconKey, IconLogout, IconMessageCircle, IconNotebook, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { FEEDBACK_URL, ISSUE_URL } from '@/utils/links'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
