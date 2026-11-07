@@ -354,4 +354,6 @@ export interface UpdateStatus {
   checkedAt: string | null
   error: string | null
   newer: Release[]
+  usageStatsEnabled: boolean
+  usageStatsEnvDisabled: boolean
 }

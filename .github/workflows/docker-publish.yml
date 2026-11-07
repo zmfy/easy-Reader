@@ -38,14 +38,21 @@ jobs:
             exit 1
           fi
 
-      # 3. 登录 Docker Hub
+      # 3. 多平台构建：QEMU 模拟 arm64，buildx 同时产出 amd64 / arm64 镜像
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 4. 登录 Docker Hub
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 4. 设置镜像元数据（自动生成 tag 与 OCI 标签）
+      # 5. 设置镜像元数据（自动生成 tag 与 OCI 标签）
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -60,16 +67,20 @@ jobs:
             type=edge,branch=main
             type=sha,prefix=sha-
 
-      # 5. 构建并推送
+      # 6. 构建并推送（amd64 + arm64）
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 复用上次构建的层缓存，arm64 在 QEMU 下编译 better-sqlite3 较慢
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # 6. 发版时把 DOCKERHUB.md 同步为 Docker Hub 的仓库说明
+      # 7. 发版时把 DOCKERHUB.md 同步为 Docker Hub 的仓库说明
       #    需要 DOCKERHUB_TOKEN 具有 Read, Write, Delete 权限，否则这一步会失败（镜像已推送，不受影响）
       #    在 Actions 页面手动运行本 workflow 也会同步，改了说明不必为此发版
       - name: Update Docker Hub description
@@ -83,7 +94,7 @@ jobs:
           readme-filepath: ./DOCKERHUB.md
           short-description: NAS 自托管小说阅读器：TXT/EPUB/PDF/UMD，AI 补全书籍信息，听书与 AI 问书
 
-      # 7. 创建 GitHub Release
+      # 8. 创建 GitHub Release
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

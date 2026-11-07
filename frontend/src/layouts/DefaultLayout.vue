@@ -56,6 +56,16 @@
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
               </router-link>
+              <a :href="FEEDBACK_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
+                <IconMessageCircle class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>问题反馈</span>
+                <span class="menu-meta">留言板</span>
+              </a>
+              <a :href="ISSUE_URL" target="_blank" rel="noopener noreferrer" class="menu-row" @click="closeMenu()">
+                <IconBrandGithub class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>提交 Issue</span>
+                <span class="menu-meta">GitHub</span>
+              </a>
               <div class="menu-sep" />
               <div class="menu-row menu-row--danger" role="button" tabindex="0" @click="closeMenu(); handleLogout()" @keydown.enter.prevent="closeMenu(); handleLogout()" @keydown.space.prevent="closeMenu(); handleLogout()">
                 <IconLogout class="menu-icon" :size="16" :stroke-width="1.75" />
@@ -91,7 +101,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconDots, IconKey, IconLogout, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconDots, IconKey, IconLogout, IconMessageCircle, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { FEEDBACK_URL, ISSUE_URL } from '@/utils/links'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
@@ -446,6 +457,7 @@ async function handleLogout() {
   transition: background 0.15s ease;
 }
 .user-menu-popper .menu-row span { flex: 1; }
+.user-menu-popper .menu-row .menu-meta { flex: none; font-size: 11px; color: var(--text-2); }
 .user-menu-popper .menu-icon { flex: none; color: var(--text-2); }
 .user-menu-popper .menu-row:hover,
 .user-menu-popper .menu-row:focus-visible { background: color-mix(in srgb, var(--accent) 10%, transparent); outline: none; }

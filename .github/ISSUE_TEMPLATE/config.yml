@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 官网留言板（不用注册）
+    url: https://easyreader.ucool.uk/bbs
+    about: 使用中的疑问、想法都可以在这里留言
+  - name: 部署指南
+    url: https://easyreader.ucool.uk/guides
+    about: 通用 Docker Compose、绿联 NAS、学习版的部署与使用说明

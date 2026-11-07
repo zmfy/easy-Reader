@@ -405,3 +405,17 @@
 - [x] 原因：组件按需引入，没有 app.use(ElementPlus)，也没设置 locale；函数式弹窗 ElMessageBox 从 `_context` 取应用上下文，未 app.use 时为空，只能用默认英文
 - [x] utils/element-plus.ts `setupElementPlus`：provideGlobalConfig({ locale: zhCn }, app, true) + app.use(ElMessageBox)；main.ts 调用（测试先行 2 个用例）
 - [x] 验证：vitest 18 files / 123、vue-tsc；临时后端 + vite 实测确认弹窗按钮为「取消 / 确定」
+
+# ARM 镜像 + 反馈渠道 + 匿名安装统计（11-07）
+
+决定（用户）：反馈入口同时给官网留言板和 GitHub Issue；匿名实例统计默认开启、设置里可关闭
+
+- [x] A. Dockerfile 前端构建层用 $BUILDPLATFORM；工作流加 QEMU / buildx、platforms amd64+arm64、gha 缓存
+- [ ] A. 本地 arm64 构建并运行验证（health、uname、登录、扫描）— 未做：安装 QEMU binfmt 需特权容器，被权限策略拦下，待用户决定；amd64 本地构建与运行已验证
+- [x] B. utils/links.ts；侧栏「⋯」菜单加「问题反馈」「提交 Issue」；Settings openFeedback 复用常量
+- [x] B. .github/ISSUE_TEMPLATE（bug / feature / config）
+- [x] C. services/usage-ping.ts（测试先行）+ 挂到更新检查每日定时器；update-status 返回开关状态；设置页开关
+- [x] C. 官网后端 POST /api/metrics/install + install_pings 表 + GET /api/admin/installs
+- [x] 文档：README（USAGE_STATS、隐私说明、支持架构）、DOCKERHUB.md、.env.example、docker-compose、CHANGELOG
+- [x] 验证：jest 52 suites / 492、vitest 123、前后端 tsc；本地官网后端联调（201 / 同日去重 / 非法参数 422 / 第 21 次 429 / 管理统计 / 无令牌 401）；开发后端启动 60s 后官网收到 id+main+1.1.1+x64；设置页关闭后 DB 为 false；Chrome 看菜单两项新标签打开
+- [ ] 合并到 study（工作流冲突保留 easy-learner 规则）

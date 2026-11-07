@@ -93,6 +93,8 @@ docker compose up -d --build
 | `1.0.0`、`1.0` 等 | 固定版本 / 固定次版本（只接收修订更新） |
 | `edge` | `main` 分支最新代码，尝鲜用，可能不稳定 |
 
+镜像支持 x86_64（amd64）和 ARM64（aarch64）两种架构，拉取时自动选择；ARM64 从 1.1.1 之后发布的版本（及 `edge`）开始提供。
+
 升级：`docker pull dls7788/easy-reader:latest` 后重建容器即可，书库和 `data` 目录中的数据会自动迁移。
 
 ---
@@ -144,6 +146,7 @@ docker compose up -d --build
 | `TRUST_PROXY` | 否 | — | 经反向代理（Nginx、Caddy、群晖反代等）访问时设置，一层代理填 `1`。不设置时所有访问者都被当作代理的 IP，登录限流会互相影响；直接暴露端口时不要设置 |
 | `CORS_ORIGINS` | 否 | — | 允许跨域访问 API 的网页来源，逗号分隔（如 `https://reader.example.com`）；只有运行在其他网址上的网页客户端需要，原生 App 不需要 |
 | `UPDATE_CHECK` | 否 | 开启 | 设为 `off` 关闭更新检查（不再访问外网）；默认每天检查一次，有新版本或需调整设置时，在侧栏铃铛提醒管理员；可在设置页关闭「系统提醒」 |
+| `USAGE_STATS` | 否 | 开启 | 设为 `off` 关闭匿名使用统计；也可在设置页「更新说明 → 匿名使用统计」关闭。说明见下方[隐私说明](#隐私说明) |
 | `UPDATE_CHANGELOG_URL` | 否 | 官方仓库（GitHub，失败回退 jsDelivr） | 自定义更新来源：一个可访问的 CHANGELOG.md 地址，用于自建镜像等场景 |
 | `CHANGELOG_PATH` | 否 | `/app/CHANGELOG.md` | 本站 CHANGELOG 文件路径，用于判断当前版本；一般不用改 |
 | `NODE_IMAGE` | 否 | `node:22-slim` | 构建用基础镜像；国内可填 `docker.m.daocloud.io/library/node:22-slim` |
@@ -159,6 +162,16 @@ volumes:
 ```
 
 ---
+
+## 隐私说明
+
+书、阅读进度、笔记和账号都只保存在你自己的设备上。easy-Reader 只会在以下情况访问外网：
+
+- **更新检查**（每天一次）：从 GitHub / jsDelivr 读取公开的 CHANGELOG，判断有没有新版本。
+- **匿名使用统计**（随更新检查每天一次）：向官网 `easyreader.ucool.uk` 发送 4 项信息——随机生成的实例 ID、版本线（看书版 / 学习版）、版本号、CPU 架构，用于了解大约有多少台在运行、该优先支持哪些版本和架构。不含书名、账号、阅读记录等任何内容，官网也不记录来源 IP。可在设置页关闭，或设置环境变量 `USAGE_STATS=off`。
+- **AI 功能**：只在你配置并使用 AI 时，向你选择的服务商发送相关内容。
+
+关闭「系统提醒」（或设置 `UPDATE_CHECK=off`）后，更新检查和使用统计都不会再访问外网。
 
 ## AI 服务商
 

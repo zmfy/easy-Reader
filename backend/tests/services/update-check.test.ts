@@ -54,13 +54,15 @@ function makeDb() {
 const ok = (text: string) => ({ ok: true, status: 200, text: async () => text } as any);
 const never = () => new Promise<any>(() => {});
 
-const ENV_KEYS = ['UPDATE_CHECK', 'UPDATE_CHANGELOG_URL', 'CHANGELOG_PATH'];
+const ENV_KEYS = ['UPDATE_CHECK', 'UPDATE_CHANGELOG_URL', 'CHANGELOG_PATH', 'USAGE_STATS', 'USAGE_STATS_URL'];
 const savedEnv: Record<string, string | undefined> = {};
 const savedCwd = process.cwd();
 let tmp: string;
 
 beforeEach(() => {
   ENV_KEYS.forEach(k => { savedEnv[k] = process.env[k]; delete process.env[k]; });
+  // 默认关闭匿名统计，只观察更新检查本身的请求；统计相关行为在下面单独测试
+  process.env.USAGE_STATS = 'off';
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'update-check-'));
 });
 afterEach(() => {
@@ -309,6 +311,48 @@ describe('startUpdateChecker', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
     warn.mockRestore();
+  });
+
+  test('scheduled run also sends usage ping when enabled', async () => {
+    delete process.env.USAGE_STATS;
+    process.env.USAGE_STATS_URL = 'http://stats.test/api/metrics/install';
+    jest.useFakeTimers();
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((async (url: string) =>
+      url === 'http://stats.test/api/metrics/install' ? ({ ok: true, status: 201 } as any) : ok(REMOTE_MD)) as any);
+    const db = makeDb();
+    startUpdateChecker(db);
+    jest.advanceTimersByTime(60000);
+    const urls = fetchSpy.mock.calls.map(c => String(c[0]));
+    expect(urls).toContain('http://stats.test/api/metrics/install');
+    expect(urls.filter(u => u === 'http://stats.test/api/metrics/install')).toHaveLength(1);
+    fetchSpy.mockRestore();
+  });
+
+  test('usage ping skipped when usage_stats_enabled=false', () => {
+    delete process.env.USAGE_STATS;
+    process.env.USAGE_STATS_URL = 'http://stats.test/api/metrics/install';
+    jest.useFakeTimers();
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((async () => ok(REMOTE_MD)) as any);
+    const db = makeDb();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('usage_stats_enabled', 'false')").run();
+    startUpdateChecker(db);
+    jest.advanceTimersByTime(60000);
+    const urls = fetchSpy.mock.calls.map(c => String(c[0]));
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls).not.toContain('http://stats.test/api/metrics/install');
+    const st = getUpdateStatus(db);
+    expect(st.usageStatsEnabled).toBe(false);
+    expect(st.usageStatsEnvDisabled).toBe(false);
+    fetchSpy.mockRestore();
+  });
+
+  test('status reports usage stats env switch', () => {
+    process.env.USAGE_STATS = 'off';
+    const st = getUpdateStatus(makeDb());
+    expect(st.usageStatsEnabled).toBe(false);
+    expect(st.usageStatsEnvDisabled).toBe(true);
+    delete process.env.USAGE_STATS;
+    expect(getUpdateStatus(makeDb()).usageStatsEnabled).toBe(true);
   });
 
   test('env off overrides setting', () => {

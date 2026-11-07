@@ -1,0 +1,73 @@
+name: 问题报告
+description: 部署失败、页面出错、书打不开等问题
+title: "[问题] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量填写完整，方便定位问题。不想注册 GitHub 的话，也可以到[官网留言板](https://easyreader.ucool.uk/bbs)留言。
+        **请不要贴出密码、API Key 等敏感信息。**
+  - type: dropdown
+    id: edition
+    attributes:
+      label: 版本线
+      options:
+        - 看书版 easy-reader
+        - 学习版 easy-learner
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本号
+      description: 在「设置 → 更新说明」中查看「当前版本」，或镜像的 tag（如 1.1.1、latest）
+      placeholder: 1.1.1
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: NAS 型号 / 系统
+      placeholder: 绿联 DH2600（UGOS Pro 1.19）、群晖 DS920+（DSM 7.2）、Unraid 7.0 ……
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: CPU 架构
+      description: Intel / AMD 处理器为 x86_64；ARM 处理器为 arm64
+      options:
+        - x86_64（amd64）
+        - arm64（aarch64）
+        - 不清楚
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 部署方式
+      options:
+        - NAS 自带 Docker 图形界面
+        - Docker Compose（含 NAS 的「项目」功能）
+        - docker run 命令
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 问题描述与复现步骤
+      description: 做了什么、期望看到什么、实际看到了什么；有截图更好
+      placeholder: |
+        1. 打开书库，点「扫描导入」
+        2. ……
+        3. 看到报错 ……
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 容器日志（可选）
+      description: NAS 的 Docker 应用中查看容器日志，或运行 `docker logs easy-reader --tail 100`
+      render: text
