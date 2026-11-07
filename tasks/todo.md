@@ -426,8 +426,8 @@
 - [ ] 推送 study（待用户决定）
 # 分支策略：合并 main → study 的手工处理（补充；study 的 todo.md 已有「分支策略」一节，合并时并入该节）
 
-- [ ] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
-- [ ] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）
+- [x] 合并 main → study 后需手工处理：`CHANGELOG.md` 文件头冲突（两边的约定说明合并保留）；`frontend/src/components.d.ts`（生成文件，取两边并集）；`backend/src/edition.ts` 在 study 上保持 `'study'`
+- [x] 首个学习版发布时在 CHANGELOG 加 `## [x.y.z-study] - 日期` 节（没有 -study 版本节的学习版站点本站版本未知，铃铛会把远端全部 -study 版本列为新版本并注明「当前版本未知」）
 
 # 学习版页面对齐与改名（11-06，study）
 
@@ -436,3 +436,9 @@
 - [x] 修复：导图深色主题节点配色从未生效（scoped 里 :global(html.dark) .mm-canvas 被编译成单独的 html.dark）
 - [x] 验证：jest 596、vitest 196、vue-tsc；Docker 测试容器（数据副本）看导图（靛青 / 冷月）、节点详情、AI 展开面板；笔记入口页烛光 + 手机宽度；笔记整理页靛青 / 暗夜；8080 已部署，用户已验收「笔记」改名
 - [x] 「晴空」主题改为「朱砂」（main 13c229e，key 仍为 sky），随 v1.1.1 发布
+
+# Element Plus 中文语言包（录部署视频时发现）
+
+- [x] 原因：组件按需引入，没有 app.use(ElementPlus)，也没设置 locale；函数式弹窗 ElMessageBox 从 `_context` 取应用上下文，未 app.use 时为空，只能用默认英文
+- [x] utils/element-plus.ts `setupElementPlus`：provideGlobalConfig({ locale: zhCn }, app, true) + app.use(ElMessageBox)；main.ts 调用（测试先行 2 个用例）
+- [x] 验证：vitest 18 files / 123、vue-tsc；临时后端 + vite 实测确认弹窗按钮为「取消 / 确定」
