@@ -144,6 +144,9 @@ describe('SummaryEditor tables, AI marks and tidy', () => {
     expect(ev[0]).toBe('table')
     expect(ev[1].nodes).toEqual([tp('一二三')])
     expect(ev[1].from).toBe(h2Size)
+    // 收起选区，让浮动工具栏隐藏（否则会浮在整理弹框上方）
+    expect(editor.state.selection.empty).toBe(true)
+    expect(editor.state.selection.from).toBe(h2Size + 3)
     // 选区含二级标题：禁用并提示
     editor.commands.setTextSelection({ from: 2, to: h2Size + 3 })
     await frame()

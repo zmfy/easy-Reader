@@ -59,6 +59,7 @@ declare module 'vue' {
     SeriesCard: typeof import('./components/SeriesCard.vue')['default']
     SeriesGroupCard: typeof import('./components/SeriesGroupCard.vue')['default']
     SummaryEditor: typeof import('./components/SummaryEditor.vue')['default']
+    TidyDialog: typeof import('./components/TidyDialog.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

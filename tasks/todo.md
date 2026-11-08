@@ -459,6 +459,6 @@
 
 # 待办路线（11-07 用户确认）
 
-- [ ] 笔记整理第二期：选中文字 AI 整理成列表 / 表格（study；设计与计划已提交，待选执行方式）
+- [x] 笔记整理第二期：选中文字 AI 整理成列表 / 表格（study；11-08 按计划本会话执行，8 个任务完成，见 docs/superpowers/plans/2026-11-07-summary-ai-tidy.md）
 - [ ] PWA（main，再合并进 study）：manifest + Service Worker + 图标（vite-plugin-pwa）、「有新版本，点击刷新」提示、手机浏览器里的「安装到桌面」入口（http 访问时说明需要 HTTPS）；官网配套教程「装到手机桌面」+「从外网访问：DDNS / Tailscale / 内网穿透」
 - 候选：每日回顾（遗忘曲线）+ 微信推送（企业微信机器人 / Server 酱 / PushPlus Webhook）；微信小程序因域名白名单与类目资质，只做「API + 开源模板，用户自建」

@@ -19,6 +19,24 @@
         </span>
         <el-button size="small" :icon="IconHistory" @click="showVersions = !showVersions">修改记录</el-button>
         <el-button size="small" :icon="IconDownload" :disabled="!summary" :loading="exporting" @click="onExport">导出</el-button>
+        <el-popover trigger="click" placement="bottom-end" :width="300" @show="loadPrefs">
+          <template #reference>
+            <el-button size="small" :icon="IconAdjustmentsHorizontal">整理偏好</el-button>
+          </template>
+          <div class="prefs-pop">
+            <div class="prefs-row">
+              <span>整理笔记时允许 AI 补充内容</span>
+              <el-switch
+                :model-value="allowAiAddition"
+                :loading="prefsSaving"
+                :disabled="!prefsLoaded"
+                aria-label="整理笔记时允许 AI 补充内容"
+                @change="onPrefChange"
+              />
+            </div>
+            <p class="form-hint">打开后，AI 可补上笔记里没写的常识，补充的内容会带标记</p>
+          </div>
+        </el-popover>
         <el-tooltip v-if="summary && bookTitle !== null" content="没有新笔记" placement="bottom" :disabled="newNoteCount > 0">
           <span class="btn-wrap">
             <el-button size="small" type="primary" :icon="IconRefresh" :disabled="newNoteCount === 0 || running" @click="startJob('update')">更新（{{ newNoteCount }} 条新笔记）</el-button>
@@ -61,10 +79,14 @@
 
           <SummaryEditor
             v-if="summary"
+            ref="editorRef"
             :model-value="doc"
-            :readonly="running || leaving || restoring"
+            :readonly="running || leaving || restoring || adopting"
             :allowed-refs="summary.included_refs"
+            :tidy-enabled="tidyEnabled"
+            :tidy-disabled-hint="tidyDisabledHint"
             @update:model-value="onEdit"
+            @tidy="onTidy"
             @ref-click="onRefClick"
             @ref-hover="onRefHover"
           />
@@ -126,6 +148,14 @@
       </template>
     </el-dialog>
 
+    <TidyDialog
+      v-model="tidyOpen"
+      :book-id="bookId"
+      :mode="tidyMode"
+      :content="tidySel?.nodes || []"
+      @adopt="onAdopt"
+    />
+
     <el-popover
       :visible="pop.visible"
       :virtual-ref="pop.el ?? undefined"
@@ -147,14 +177,19 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { IconChevronLeft, IconDots, IconDownload, IconHistory, IconRefresh, IconSparkles } from '@tabler/icons-vue'
+import {
+  IconAdjustmentsHorizontal, IconChevronLeft, IconDots, IconDownload, IconHistory, IconRefresh, IconSparkles,
+} from '@tabler/icons-vue'
 import { ElDrawer, ElMessage, ElMessageBox } from 'element-plus'
 import SummaryEditor from '@/components/SummaryEditor.vue'
+import TidyDialog from '@/components/TidyDialog.vue'
 import { studyApi } from '@/api/study'
+import { settingsApi } from '@/api/settings'
+import type { SelectionBlocks } from '@/utils/summary-tidy'
 import { safeFileName } from '@/utils/book-map'
 import { SOURCE_LABEL } from '@/utils/summary-doc'
 import { parseServerTime } from '@/utils/time'
-import type { DocNode, ResolvedRef, StudySummary, SummaryJob, SummaryVersion, SummaryVersionDetail } from '@/types/study'
+import type { DocNode, ResolvedRef, StudySummary, SummaryJob, SummaryVersion, SummaryVersionDetail, TidyMode } from '@/types/study'
 
 const SAVE_DEBOUNCE = 1500
 const POLL_INTERVAL = 2000
@@ -351,10 +386,12 @@ function onConflict(err: unknown, keepLocal: boolean) {
 
 async function doSave() {
   const snapshot = doc.value
+  const opts = tidySaveOpts
   dirty.value = false
   saveState.value = 'saving'
   try {
-    const resp = await studyApi.saveSummary(bookId, snapshot, revision.value)
+    const resp = await studyApi.saveSummary(bookId, snapshot, revision.value, opts ?? undefined)
+    if (opts && tidySaveOpts === opts) tidySaveOpts = null
     const s = resp.data.data!
     summary.value = s
     revision.value = s.revision
@@ -364,7 +401,9 @@ async function doSave() {
     if (showVersions.value) loadVersions()
   } catch (err) {
     if (errorStatus(err) === 409) {
-      onConflict(err, true)
+      // 采用 AI 整理时冲突：本次结果作废，直接载入最新内容
+      tidySaveOpts = null
+      onConflict(err, !opts)
     } else {
       dirty.value = true
       saveState.value = 'error'
@@ -422,6 +461,97 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
   save()
   e.preventDefault()
   e.returnValue = ''
+}
+
+/* ---------- AI 整理成列表 / 表格 ---------- */
+
+const editorRef = ref<InstanceType<typeof SummaryEditor> | null>(null)
+const aiConfigured = ref(false)
+const tidyOpen = ref(false)
+const tidyMode = ref<TidyMode>('table')
+const tidySel = ref<SelectionBlocks | null>(null)
+const adopting = ref(false)
+// 下一次保存记为「AI 整理」版本（采用整理结果时设置，保存成功或冲突后清除）
+let tidySaveOpts: { source: 'ai_tidy'; description: string } | null = null
+
+const tidyEnabled = computed(() => !!summary.value && aiConfigured.value && !running.value && !leaving.value && !restoring.value && !adopting.value)
+const tidyDisabledHint = computed(() => {
+  if (!aiConfigured.value) return '请先在 AI 插件设置中配置'
+  if (running.value) return '正在整理中，请稍后再试'
+  return '暂不可用'
+})
+
+async function loadAiStatus() {
+  try {
+    const resp = await settingsApi.getAiStatus()
+    aiConfigured.value = !!resp.data.data?.configured
+  } catch { /* 视为未配置 */ }
+}
+
+function onTidy(mode: TidyMode, sel: SelectionBlocks) {
+  tidyMode.value = mode
+  tidySel.value = sel
+  tidyOpen.value = true
+}
+
+async function onAdopt(nodes: DocNode[], description: string) {
+  const sel = tidySel.value
+  const ed = editorRef.value
+  if (!sel || !ed || adopting.value) return
+  adopting.value = true
+  try {
+    // 先存掉手动修改（记为「我」），使「AI 整理」版本只含这次整理
+    if (!(await flushSave())) {
+      tidyOpen.value = false
+      ElMessage.warning(saveState.value === 'error' ? '有修改尚未保存，请先重试保存' : '整理内容已在别处更新，请重新选择后再整理')
+      return
+    }
+    // 选区所在的块已变化（如载入了别处的更新）：不能再按原位置替换
+    const current = ed.editor.state.doc.slice(sel.from, sel.to).content.toJSON()
+    if (JSON.stringify(current) !== JSON.stringify(sel.nodes)) {
+      tidyOpen.value = false
+      ElMessage.warning('整理内容已在别处更新，请重新选择后再整理')
+      return
+    }
+    tidySaveOpts = { source: 'ai_tidy', description }
+    ed.replaceBlocks(sel.from, sel.to, nodes)
+    await save()
+    tidyOpen.value = false
+    if (saveState.value === 'saved') ElMessage.success('已采用整理结果')
+  } finally {
+    adopting.value = false
+  }
+}
+
+/* ---------- 整理偏好 ---------- */
+
+const allowAiAddition = ref(false)
+const prefsLoaded = ref(false)
+const prefsSaving = ref(false)
+
+async function loadPrefs() {
+  try {
+    const resp = await studyApi.getPrefs()
+    allowAiAddition.value = !!resp.data.data?.allowAiAddition
+    prefsLoaded.value = true
+  } catch (err) {
+    ElMessage.error(errorText(err, '读取整理偏好失败'))
+  }
+}
+
+async function onPrefChange(v: string | number | boolean) {
+  const old = allowAiAddition.value
+  allowAiAddition.value = !!v
+  prefsSaving.value = true
+  try {
+    const resp = await studyApi.savePrefs({ allowAiAddition: !!v })
+    allowAiAddition.value = !!resp.data.data?.allowAiAddition
+  } catch (err) {
+    allowAiAddition.value = old
+    ElMessage.error(errorText(err, '保存整理偏好失败'))
+  } finally {
+    prefsSaving.value = false
+  }
 }
 
 /* ---------- 修改记录 ---------- */
@@ -691,6 +821,7 @@ async function autoStart() {
 }
 
 onMounted(async () => {
+  loadAiStatus()
   await loadSummary()
   autoStart()
   window.addEventListener('beforeunload', onBeforeUnload)
@@ -801,6 +932,9 @@ onBeforeUnmount(() => {
 .version-desc { margin-top: 4px; font-size: 12px; color: var(--text-2); word-break: break-all; }
 .conflict-bar { margin-bottom: 12px; }
 .version-body { max-height: 65vh; overflow-y: auto; }
+.prefs-pop { display: flex; flex-direction: column; gap: 6px; }
+.prefs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--text-0); }
+.prefs-pop .form-hint { margin: 0; }
 .ref-pop-text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
 
 @media (max-width: 768px) {

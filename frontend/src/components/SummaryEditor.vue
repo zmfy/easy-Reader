@@ -158,6 +158,8 @@ const tidyHint = computed(() => {
 function onTidy(mode: 'list' | 'table') {
   const sel = selectionBlocks(editor.state)
   if (!props.tidyEnabled || tidyDisabledReason(sel)) return
+  // 收起选区：浮动工具栏随之隐藏（否则会浮在整理弹框上方）；整理按 sel 记下的块位置进行
+  editor.commands.setTextSelection(editor.state.selection.to)
   emit('tidy', mode, sel!)
 }
 
@@ -284,8 +286,12 @@ const buttons = computed(() => {
 .se-bbtn-text { height: 28px; padding: 0 8px; font-size: 12px; }
 .se-bubble-tidy { display: inline-flex; }
 /* 表格 */
-.se-content :deep(.tableWrapper) { overflow-x: auto; margin: .8em 0; }
-.se-content :deep(table) { border-collapse: collapse; min-width: 100%; table-layout: auto; font-family: 'Noto Sans SC', sans-serif; font-size: .95em; }
+/* 不可调列宽时 Tiptap 不包 .tableWrapper：表格自身横向滚动，tbody 撑满宽度 */
+.se-content :deep(table) {
+  display: block; max-width: 100%; overflow-x: auto; margin: .8em 0;
+  border-collapse: collapse; font-family: 'Noto Sans SC', sans-serif; font-size: .95em;
+}
+.se-content :deep(table > tbody) { display: table; width: 100%; border-collapse: collapse; }
 .se-content :deep(th), .se-content :deep(td) {
   border: 1px solid var(--card-border, var(--bg-2)); padding: 6px 10px; vertical-align: top; min-width: 4em; position: relative;
 }
