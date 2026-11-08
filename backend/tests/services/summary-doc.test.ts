@@ -1,6 +1,6 @@
 import {
   DocNode, ThemeBlock, buildDoc, listThemes, appendAdditions, extractRefs, docText,
-  isValidDoc, docToBlocks, docToMarkdown,
+  isValidDoc, docToBlocks, docToMarkdown, TABLE_MAX_COLS, TABLE_MAX_ROWS,
 } from '../../src/services/summary-doc';
 
 const t = (text: string): DocNode => ({ type: 'text', text });
@@ -248,5 +248,76 @@ describe('summary-doc', () => {
     const d = doc(p(t('2*3 # a_b')));
     const md = docToMarkdown('书', d, r => r);
     expect(md).toContain('2\\*3 \\# a\\_b');
+  });
+});
+
+const cell = (...c: DocNode[]): DocNode => ({ type: 'tableCell', content: [p(...c)] });
+const hcell = (...c: DocNode[]): DocNode => ({ type: 'tableHeader', content: [p(...c)] });
+const row = (...c: DocNode[]): DocNode => ({ type: 'tableRow', content: c });
+const table = (...r: DocNode[]): DocNode => ({ type: 'table', content: r });
+const marked = (text: string, ...m: string[]): DocNode => ({ type: 'text', text, marks: m.map(type => ({ type })) });
+
+describe('summary-doc tables and aiAdded', () => {
+  it('isValidDoc accepts a top-level table with header row and aiAdded marks', () => {
+    const d = doc(table(row(hcell(t('命令')), hcell(t('作用'))),
+      row(cell(marked('ls', 'code')), cell(marked('列目录', 'aiAdded'), ref('h:1')))));
+    expect(isValidDoc(d)).toBe(true);
+  });
+
+  it('isValidDoc rejects tables in list items, merged cells, widths, ragged rows and oversize', () => {
+    const ok = (c: DocNode) => isValidDoc(doc(table(row(c, cell(t('b'))))));
+    const inList = doc({ type: 'bulletList', content: [{ type: 'listItem', content: [p(t('x')), table(row(cell(t('a'))))] }] });
+    expect(isValidDoc(inList)).toBe(false);
+    expect(isValidDoc(doc(table(row(cell(table(row(cell(t('a')))))))))).toBe(false);
+    expect(ok({ type: 'tableCell', attrs: { colspan: 2 }, content: [p(t('a'))] })).toBe(false);
+    expect(ok({ type: 'tableCell', attrs: { colwidth: [100] }, content: [p(t('a'))] })).toBe(false);
+    expect(ok({ type: 'tableCell', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [p(t('a'))] }] }] })).toBe(false);
+    expect(ok({ type: 'tableCell', content: [] })).toBe(false);
+    expect(ok({ type: 'tableCell', attrs: { colspan: 1, rowspan: null, colwidth: null }, content: [p(t('a'))] })).toBe(true);
+    expect(ok({ type: 'tableCell', content: [{ type: 'paragraph' }] })).toBe(true);
+    expect(isValidDoc(doc(table(row(cell(t('a')), cell(t('b'))), row(cell(t('c'))))))).toBe(false);
+    expect(isValidDoc(doc(table()))).toBe(false);
+    expect(isValidDoc(doc(table(row())))).toBe(false);
+    const cols = (n: number) => row(...Array.from({ length: n }, () => cell(t('x'))));
+    expect(isValidDoc(doc(table(cols(TABLE_MAX_COLS))))).toBe(true);
+    expect(isValidDoc(doc(table(cols(TABLE_MAX_COLS + 1))))).toBe(false);
+    const rows = (n: number) => table(...Array.from({ length: n }, () => row(cell(t('x')))));
+    expect(isValidDoc(doc(rows(TABLE_MAX_ROWS)))).toBe(true);
+    expect(isValidDoc(doc(rows(TABLE_MAX_ROWS + 1)))).toBe(false);
+  });
+
+  it('docText includes table cell text', () => {
+    const d = doc(table(row(hcell(t('命令')), hcell(t('作用'))), row(cell(t('ls')), cell(t('列目录')))));
+    expect(docText(d)).toContain('命令 作用\nls 列目录');
+  });
+
+  it('docToBlocks emits table blocks with header and ai flags', () => {
+    const d = doc(table(row(hcell(t('命令')), hcell(t('作用'))), row(cell(t('ls')), cell(marked('列目录', 'aiAdded'), ref('h:1')))));
+    expect(docToBlocks(d)).toEqual([{
+      type: 'table',
+      header: [[{ text: '命令' }], [{ text: '作用' }]],
+      rows: [[[{ text: 'ls' }], [{ text: '列目录', ai: true }, { ref: 'h:1' }]]],
+    }]);
+    const noHead = doc(table(row(cell(t('a')), cell(t('b')))));
+    expect(docToBlocks(noHead)).toEqual([{ type: 'table', header: [], rows: [[[{ text: 'a' }], [{ text: 'b' }]]] }]);
+    expect(docToBlocks(doc(p(marked('补', 'aiAdded'))))).toEqual([{ type: 'p', parts: [{ text: '补', ai: true }] }]);
+  });
+
+  it('docToMarkdown renders GFM tables and marks AI additions', () => {
+    const d = doc(table(row(hcell(t('命令')), hcell(t('作用'))), row(cell(marked('ls', 'code')), cell(marked('列目录', 'aiAdded'), ref('h:1')))));
+    const md = docToMarkdown('书', d, () => '第1章');
+    expect(md).toContain('| 命令 | 作用 |\n| --- | --- |\n| `ls` | 列目录（AI 补充）（出自：第1章） |');
+    const noHead = docToMarkdown('书', doc(table(row(cell(t('a')), cell(t('b'))))), () => '');
+    expect(noHead).toContain('|  |  |\n| --- | --- |\n| a | b |');
+  });
+
+  it('docToMarkdown escapes pipes and flattens breaks in cells', () => {
+    const d = doc(table(row(hcell(t('a|b')), hcell(t('x'))), row(cell(t('c'), { type: 'hardBreak' }, t('d')), cell(marked('e|f', 'code')))));
+    const md = docToMarkdown('书', d, () => '');
+    const lines = md.split('\n').filter(l => l.startsWith('|'));
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe('| a\\|b | x |');
+    expect(lines[2]).toBe('| c d | `e\\|f` |');
+    for (const l of lines) expect(l.replace(/\\\|/g, '').split('|').length - 1).toBe(3);
   });
 });

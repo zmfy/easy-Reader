@@ -509,18 +509,24 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 | `listItem` | 列表项 | 内含段落与嵌套列表 |
 | `codeBlock` | 代码块 | 可带 `attrs.language`（字符串或 `null`） |
 | `hardBreak` | 换行 | — |
-| `text` | 文字 | `text` 字段（非空字符串）；可带 `marks`，类型只能是 `bold`、`italic`、`code` |
+| `text` | 文字 | `text` 字段（非空字符串）；可带 `marks`，类型只能是 `bold`、`italic`、`code`、`aiAdded`（AI 补充，见下） |
 | `noteRef` | 引用某条笔记 | `attrs.ref`：引用标识，格式见下 |
+| `table` | 表格 | 只能在 `doc` 顶层；内含 `tableRow` |
+| `tableRow` | 表格的一行 | 内含 `tableHeader` 或 `tableCell` |
+| `tableHeader` / `tableCell` | 表头格 / 普通格 | 可带 `attrs.colspan`、`attrs.rowspan`（只能是 `1` 或 `null`）、`attrs.colwidth`（只能是 `null`）——不支持合并单元格与列宽 |
 
 **内容模型**（父节点能包含哪些子节点，不符合时保存返回 422）：
 
 | 父节点 | 允许的子节点 |
 |---|---|
-| `doc` | 块级：`heading`、`paragraph`、`bulletList`、`orderedList`、`codeBlock`（至少一个） |
+| `doc` | 块级：`heading`、`paragraph`、`bulletList`、`orderedList`、`codeBlock`、`table`（至少一个） |
 | `heading`、`paragraph` | 行内：`text`、`hardBreak`、`noteRef`（可为空） |
 | `codeBlock` | 不带 `marks` 的 `text`（可为空） |
 | `bulletList`、`orderedList` | `listItem`（至少一个） |
 | `listItem` | 第一个必须是 `paragraph`，之后可接 `paragraph`、`bulletList`、`orderedList`、`codeBlock`（不能是标题） |
+| `table` | `tableRow`（至少一个，最多 200 行） |
+| `tableRow` | `tableHeader`、`tableCell`（至少一个，最多 8 个；同一表格每行个数必须相同） |
+| `tableHeader`、`tableCell` | 只能是 `paragraph`（至少一个），不能放列表、代码块或表格 |
 | `text`、`hardBreak`、`noteRef` | 叶子节点，不能有 `content` |
 
 `doc` 只能出现在根上；`text` 的 `text` 不能是空字符串（编辑器无法载入空文字节点）。
@@ -541,6 +547,28 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 }
 ```
 
+**表格**：习惯上第一行用 `tableHeader` 作表头（列名），其余行用 `tableCell`。第三方客户端没有专用的「加行 / 改格子」接口：用 `format=json` 读出整篇，直接修改表格节点（加一行就是在 `table.content` 里插入一个格子数相同的 `tableRow`），再用 `PUT` 整篇保存（带 `revision`）。示例：
+
+```json
+{ "type": "table", "content": [
+  { "type": "tableRow", "content": [
+    { "type": "tableHeader", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "命令" }] }] },
+    { "type": "tableHeader", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "作用" }] }] }
+  ] },
+  { "type": "tableRow", "content": [
+    { "type": "tableCell", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "ls", "marks": [{ "type": "code" }] }] }] },
+    { "type": "tableCell", "content": [{ "type": "paragraph", "content": [
+      { "type": "text", "text": "列出目录内容" },
+      { "type": "noteRef", "attrs": { "ref": "h:21904119-cdb3-40f7-8175-11b208951f81" } }
+    ] }] }
+  ] }
+] }
+```
+
+空格子写成 `{ "type": "tableCell", "content": [{ "type": "paragraph" }] }`。
+
+**AI 补充标记 `aiAdded`**：用户允许 AI 补充时（见「学习偏好」），AI 整理结果中笔记里没有、由 AI 补上的文字带 `aiAdded` 标记（无属性，可与其他标记叠加）。客户端应把它显示得与普通文字有区别；去掉标记即表示用户认可这段内容。
+
 文档限制：嵌套深度不超过 20 层、节点总数不超过 20000、序列化（`JSON.stringify`）后不超过 2,000,000 字符。不允许出现未列出的节点类型、属性或 marks。
 
 **引用标识（ref）**：`h:<划线 id>` 指向一条划线，`n:<导图节点 id>` 指向一个导图节点（非划线类）。id 是 UUID。引用对应的笔记可能后来被删除，客户端应容错（见 `refs` 接口）。
@@ -556,11 +584,15 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
     { "ref": "h:21904119-cdb3-40f7-8175-11b208951f81" }
   ] },
   { "type": "list", "ordered": false, "items": [[{ "text": "要点一" }], [{ "text": "要点二" }]] },
-  { "type": "code", "text": "print('hi')" }
+  { "type": "code", "text": "print('hi')" },
+  { "type": "table", "header": [[{ "text": "命令" }], [{ "text": "作用" }]],
+    "rows": [[[{ "text": "ls", "code": true }], [{ "text": "列出目录内容" }, { "text": "，-a 显示隐藏文件", "ai": true }]]] }
 ]
 ```
 
-块类型为 `h`（`level` 为 2 或 3）、`p`、`list`（`ordered`，`items` 是若干个 `parts` 数组；嵌套层级用行首空格 `text` 表示）、`code`。`parts` 的元素是 `{ text, bold?, italic?, code? }`（文字，样式字段只在为真时出现）或 `{ ref }`（引用）；`hardBreak` 输出为 `{ "text": "\n" }`，即文字中的换行符 `\n`。
+块类型为 `h`（`level` 为 2 或 3）、`p`、`list`（`ordered`，`items` 是若干个 `parts` 数组；嵌套层级用行首空格 `text` 表示）、`code`、`table`。`parts` 的元素是 `{ text, bold?, italic?, code?, ai? }`（文字，样式字段只在为真时出现；`ai` 表示 AI 补充）或 `{ ref }`（引用）；`hardBreak` 输出为 `{ "text": "\n" }`，即文字中的换行符 `\n`。
+
+`table` 块：`header` 是表头各格的 `parts`（第一行全是 `tableHeader` 时取第一行，否则为空数组、所有行都在 `rows` 里），`rows` 是数据行，每行是各格 `parts` 的数组。**以后可能新增块类型，客户端遇到不认识的 `type` 应忽略该块。**
 
 #### GET /api/v1/study/summaries
 
@@ -596,7 +628,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 ```
 
 - 还没有总结时 `summary` 为 `null`（仍返回笔记数与 `job`）。
-- `format=blocks` 时 `summary.doc` 换成 `summary.blocks`；`format=markdown` 时换成 `summary.markdown`（字符串，标题为「书名 · 笔记整理」，引用输出为「（出自：书名 章节标题）」，章节标题取不到时用「第 N 章」，已删除的笔记写「原笔记已删除」）。
+- `format=blocks` 时 `summary.doc` 换成 `summary.blocks`；`format=markdown` 时换成 `summary.markdown`（字符串，标题为「书名 · 笔记整理」，引用输出为「（出自：书名 章节标题）」，章节标题取不到时用「第 N 章」，已删除的笔记写「原笔记已删除」；表格输出为 GFM 表格，格子里的 `|` 转义、换行变空格；AI 补充的文字后加「（AI 补充）」）。
 - `revision` 是修订号，保存时要原样带回（见下）。`included_refs` 是已被总结纳入的笔记引用，用来计算新笔记。
 
 #### PUT /api/v1/study/books/:bookId/summary

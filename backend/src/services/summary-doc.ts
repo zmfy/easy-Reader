@@ -13,13 +13,17 @@ export interface ThemeBlock {
   paragraphs: Array<Array<{ text: string } | { ref: string }>>;
 }
 
-type Parts = Array<{ text: string; bold?: true; italic?: true; code?: true } | { ref: string }>;
+export type TextPart = { text: string; bold?: true; italic?: true; code?: true; ai?: true };
+export type Parts = Array<TextPart | { ref: string }>;
 export type DocBlock =
   | { type: 'h'; level: 2 | 3; text: string }
   | { type: 'p'; parts: Parts }
   | { type: 'list'; ordered: boolean; items: Parts[] }
-  | { type: 'code'; text: string };
+  | { type: 'code'; text: string }
+  | { type: 'table'; header: Parts[]; rows: Parts[][] };
 
+export const TABLE_MAX_COLS = 8;
+export const TABLE_MAX_ROWS = 200;
 const MAX_DEPTH = 20;
 const MAX_NODES = 20000;
 const REF_RE = /^(h|n):[\w-]{1,64}$/;
@@ -90,7 +94,8 @@ export function extractRefs(doc: DocNode): string[] {
 const CONTAINERS = new Set(['doc', 'bulletList', 'orderedList', 'listItem']);
 
 function nodeText(n: DocNode): string {
-  if (CONTAINERS.has(n.type)) return (n.content || []).map(nodeText).join('\n');
+  if (CONTAINERS.has(n.type) || n.type === 'table') return (n.content || []).map(nodeText).join('\n');
+  if (n.type === 'tableRow') return (n.content || []).map(nodeText).join(' ');
   return inlineText(n);
 }
 
@@ -111,9 +116,17 @@ const ATTR_RULES: Record<string, Record<string, AttrRule>> = {
   codeBlock: { language: { ok: v => typeof v === 'string', nullable: true } },
   noteRef: { ref: { ok: v => typeof v === 'string' && REF_RE.test(v), nullable: false } },
 };
+// 不支持合并单元格与列宽
+const CELL_ATTRS: Record<string, AttrRule> = {
+  colspan: { ok: v => v === 1, nullable: true },
+  rowspan: { ok: v => v === 1, nullable: true },
+  colwidth: { ok: () => false, nullable: true },
+};
+ATTR_RULES.tableHeader = CELL_ATTRS;
+ATTR_RULES.tableCell = CELL_ATTRS;
 const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
-const NODE_TYPES = new Set(['doc', 'heading', 'paragraph', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'hardBreak', 'text', 'noteRef']);
-const MARK_TYPES = new Set(['bold', 'italic', 'code']);
+const NODE_TYPES = new Set(['doc', 'heading', 'paragraph', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'hardBreak', 'text', 'noteRef', 'table', 'tableRow', 'tableHeader', 'tableCell']);
+const MARK_TYPES = new Set(['bold', 'italic', 'code', 'aiAdded']);
 const NODE_KEYS = new Set(['type', 'attrs', 'content', 'text', 'marks']);
 
 // 内容模型（与前端 Tiptap schema 一致）：父节点 → 允许的子节点；未列出的为叶子，不允许 content
@@ -121,11 +134,13 @@ const BLOCKS = new Set(['heading', 'paragraph', 'bulletList', 'orderedList', 'co
 const INLINES = new Set(['text', 'hardBreak', 'noteRef']);
 const LIST_ITEM_REST = new Set(['paragraph', 'bulletList', 'orderedList', 'codeBlock']);
 const CHILDREN: Record<string, Set<string>> = {
-  doc: BLOCKS, heading: INLINES, paragraph: INLINES, codeBlock: new Set(['text']),
+  doc: new Set([...BLOCKS, 'table']), heading: INLINES, paragraph: INLINES, codeBlock: new Set(['text']),
   bulletList: new Set(['listItem']), orderedList: new Set(['listItem']), listItem: LIST_ITEM_REST,
+  table: new Set(['tableRow']), tableRow: new Set(['tableHeader', 'tableCell']),
+  tableHeader: new Set(['paragraph']), tableCell: new Set(['paragraph']),
 };
 // 至少要有一个子节点的容器
-const NON_EMPTY = new Set(['doc', 'bulletList', 'orderedList', 'listItem']);
+const NON_EMPTY = new Set(['doc', 'bulletList', 'orderedList', 'listItem', 'table', 'tableRow', 'tableHeader', 'tableCell']);
 
 function isObj(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -186,6 +201,12 @@ function isValidDocUnsafe(x: unknown): boolean {
       }
     }
     if (NON_EMPTY.has(n.type) && !(Array.isArray(n.content) && n.content.length > 0)) return false;
+    if (n.type === 'table') {
+      const rows = n.content as Array<Record<string, unknown>>;
+      if (rows.length > TABLE_MAX_ROWS) return false;
+      const cols = (rows[0].content as unknown[]).length;
+      if (cols > TABLE_MAX_COLS || rows.some(r => (r.content as unknown[]).length !== cols)) return false;
+    }
     return true;
   };
   return check(x, 1);
@@ -198,11 +219,12 @@ function inlineParts(n: DocNode, out: Parts): void {
     if (typeof n.attrs?.ref === 'string') out.push({ ref: n.attrs.ref });
   } else if (n.type === 'text') {
     if (!n.text) return;
-    const part: { text: string; bold?: true; italic?: true; code?: true } = { text: n.text };
+    const part: TextPart = { text: n.text };
     for (const m of n.marks || []) {
       if (m.type === 'bold') part.bold = true;
       else if (m.type === 'italic') part.italic = true;
       else if (m.type === 'code') part.code = true;
+      else if (m.type === 'aiAdded') part.ai = true;
     }
     out.push(part);
   } else if (n.type === 'hardBreak') {
@@ -234,7 +256,15 @@ type FlatBlock =
   | { type: 'h'; level: 2 | 3; text: string }
   | { type: 'p'; parts: Parts }
   | { type: 'list'; ordered: boolean; items: FlatItem[] }
-  | { type: 'code'; text: string; language: string };
+  | { type: 'code'; text: string; language: string }
+  | { type: 'table'; header: Parts[]; rows: Parts[][] };
+
+function tableBlock(n: DocNode): FlatBlock {
+  const rows = (n.content || []).map(r => (r.content || []).map(partsOf));
+  const first = n.content?.[0]?.content || [];
+  const hasHeader = first.length > 0 && first.every(c => c.type === 'tableHeader');
+  return hasHeader ? { type: 'table', header: rows[0], rows: rows.slice(1) } : { type: 'table', header: [], rows };
+}
 
 function toFlatBlocks(doc: DocNode): FlatBlock[] {
   const out: FlatBlock[] = [];
@@ -245,7 +275,8 @@ function toFlatBlocks(doc: DocNode): FlatBlock[] {
       const items: FlatItem[] = [];
       flattenList(n, 0, items);
       out.push({ type: 'list', ordered: n.type === 'orderedList', items });
-    } else if (n.type === 'codeBlock') out.push({ type: 'code', text: inlineText(n), language: typeof n.attrs?.language === 'string' && /^[\w+#.-]+$/.test(n.attrs.language) ? n.attrs.language : '' });
+    } else if (n.type === 'table') out.push(tableBlock(n));
+    else if (n.type === 'codeBlock') out.push({ type: 'code', text: inlineText(n), language: typeof n.attrs?.language === 'string' && /^[\w+#.-]+$/.test(n.attrs.language) ? n.attrs.language : '' });
   }
   return out;
 }
@@ -271,13 +302,27 @@ function partsToMd(parts: Parts, refLabel: (ref: string) => string): string {
     if (p.code) {
       const fence = p.text.includes('`') ? '``' : '`';
       const pad = p.text.includes('`') ? ' ' : '';
-      return `${fence}${pad}${p.text}${pad}${fence}`;
+      const code = `${fence}${pad}${p.text}${pad}${fence}`;
+      return p.ai ? `${code}（AI 补充）` : code;
     }
     let s = escapeMd(p.text).replace(/\n/g, '  \n');
     if (p.italic) s = `*${s}*`;
     if (p.bold) s = `**${s}**`;
-    return s;
+    return p.ai ? `${s}（AI 补充）` : s;
   }).join('');
+}
+
+// 格子内：换行变空格，代码里的 | 也转义，避免打破表格结构
+function cellToMd(parts: Parts, refLabel: (ref: string) => string): string {
+  const flat = parts.map(p => ('ref' in p ? p : { ...p, text: p.text.replace(/\n/g, ' ') }));
+  return flat.map(p => {
+    const s = partsToMd([p], refLabel);
+    return 'code' in p && p.code ? s.replace(/\|/g, '\\|') : s;
+  }).join('');
+}
+
+function mdRow(cells: Parts[], refLabel: (ref: string) => string): string {
+  return `| ${cells.map(c => cellToMd(c, refLabel)).join(' | ')} |`;
 }
 
 export function docToMarkdown(title: string, doc: DocNode, refLabel: (ref: string) => string): string {
@@ -295,6 +340,12 @@ export function docToMarkdown(title: string, doc: DocNode, refLabel: (ref: strin
         if (b.ordered && it.depth === 0) marker = `${++n}. `;
         lines.push(`${indent}${marker}${partsToMd(it.parts, refLabel)}`);
       }
+      lines.push('');
+    } else if (b.type === 'table') {
+      const cols = (b.header.length ? b.header : b.rows[0] || []).length;
+      const head = b.header.length ? b.header : Array.from({ length: cols }, () => [] as Parts);
+      lines.push(mdRow(head, refLabel), `|${' --- |'.repeat(cols)}`);
+      for (const r of b.rows) lines.push(mdRow(r, refLabel));
       lines.push('');
     } else {
       let fence = '```';
