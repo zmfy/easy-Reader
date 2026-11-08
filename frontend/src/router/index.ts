@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { loginRedirectFor } from '@/utils/safe-redirect'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -19,6 +20,13 @@ const router = createRouter({
       name: 'Register',
       component: () => import('@/views/Register.vue'),
       meta: { requiresAuth: false },
+    },
+    {
+      // PWA 启动地址（manifest start_url）：进入上次读的书
+      path: '/continue',
+      name: 'ContinueReading',
+      component: () => import('@/views/ContinueReading.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/change-password',
@@ -111,7 +119,7 @@ router.beforeEach(async (to, _from, next) => {
     // accessToken 缺失但 refreshToken 存在时，先尝试静默刷新
     const refreshed = await authStore.tryRefresh()
     if (!refreshed) {
-      next('/login')
+      next(loginRedirectFor(to.fullPath))
       return
     }
   }

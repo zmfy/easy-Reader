@@ -2,6 +2,10 @@ import http from './http'
 import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, AiRecap, AiAnswer } from '@/types'
 
 export const readerApi = {
+  // 最近读的书（PWA 启动进入）；没有 → data 为 null
+  lastRead: () =>
+    http.get<ApiResponse<{ bookId: string } | null>>('/reader/last-read'),
+
   getChapters: (bookId: string) =>
     http.get<ApiResponse<{ chapters: Chapter[]; format: string; pdfUsePlugin?: boolean }>>(`/reader/${bookId}/chapters`),
 
