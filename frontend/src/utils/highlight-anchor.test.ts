@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks } from './highlight-anchor'
+import { rangeToAnchor, locateHighlight, overlaps, applyHighlights, clearHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, HL_CONTENT_SELECTOR } from './highlight-anchor'
 
 const HTML = '<p>项羽者，下相人也。</p><p>字羽。初起时，年二十四。</p><p>其季父项梁。</p>'
 let content: HTMLElement
@@ -177,5 +177,35 @@ describe('flashText / unwrapMarks', () => {
     const marks = flashText(content, '项')
     expect(marks).toHaveLength(1)
     expect(marks[0].parentElement!.textContent).toBe('项羽者，下相人也。')
+  })
+})
+
+describe('pdf text layer as highlight content', () => {
+  function pdfDom() {
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="chapter-content pdf-chapter"><div class="pdf-page"><canvas></canvas>'
+      + '<div class="pdf-text-layer textLayer"><span>quick</span><span class="pdf-eol"> </span><br><span>brown fox</span></div></div></div>'
+    document.body.appendChild(root)
+    return { root, layer: root.querySelector<HTMLElement>('.pdf-text-layer')!, chapter: root.querySelector<HTMLElement>('.pdf-chapter')! }
+  }
+
+  it('chapterContentOf returns the pdf text layer for selections inside it', () => {
+    const { root, layer, chapter } = pdfDom()
+    expect(chapterContentOf(layer.querySelector('span')!.firstChild!, root)).toBe(layer)
+    expect(chapterContentOf(chapter, root)).toBeNull()
+    expect(chapterContentOf(layer.querySelector('span')!.firstChild!, document.createElement('div'))).toBeNull()
+    expect([...root.querySelectorAll(HL_CONTENT_SELECTOR)]).toEqual([layer])
+    root.remove()
+  })
+
+  it('rangeToAnchor and applyHighlights work on a text layer with separator nodes', () => {
+    const { root, layer } = pdfDom()
+    const spans = layer.querySelectorAll('span')
+    const picked = rangeToAnchor(layer, selectIn(spans[0].firstChild!, 0, spans[2].firstChild!, 5))!
+    expect(picked).toEqual({ anchor: { start: 0, end: 11 }, text: 'quick brown' })
+    applyHighlights(layer, [{ id: 'h1', anchor: picked.anchor, hasNote: false }])
+    expect([...layer.querySelectorAll('mark.hl')].map(m => m.textContent).join('')).toBe('quick brown')
+    expect(layer.textContent).toBe('quick brown fox')
+    root.remove()
   })
 })

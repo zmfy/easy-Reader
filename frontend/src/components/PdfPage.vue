@@ -107,15 +107,23 @@ onBeforeUnmount(() => {
 <style scoped>
 .pdf-page {
   position: relative;
+  /* 画布与文字层的混合限定在本页内 */
+  isolation: isolate;
   width: 100%;
   background: #fff;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
 }
 
+/* 画布盖在文字层上并以 multiply 混合：白底透出下面的划线 / 选区底色，黑字保持清晰；
+   不接收指针事件，选字落在下面的文字层上 */
 .pdf-page-canvas {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
+  mix-blend-mode: multiply;
+  pointer-events: none;
 }
 
 /* pdf.js 文字层（取自 pdfjs-dist/web/pdf_viewer.css 的 .textLayer 必需部分）：文字透明、可选中、与画面对齐 */

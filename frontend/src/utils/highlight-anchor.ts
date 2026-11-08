@@ -137,8 +137,13 @@ export function pickChapterHighlights(
 }
 
 /** 节点所在的划线正文容器（root 内、非 PDF 页的 .chapter-content）；选区跨章或在正文外 → null */
+/** 可划线的正文容器：普通章节正文，或 PDF 页的文字层（PDF 页容器本身不是） */
+export const HL_CONTENT_SELECTOR = '.chapter-content:not(.pdf-chapter), .pdf-text-layer'
+
 export function chapterContentOf(node: Node, root: Element | null): HTMLElement | null {
   const el = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement
+  const layer = el?.closest<HTMLElement>('.pdf-text-layer')
+  if (layer) return root?.contains(layer) ? layer : null
   const content = el?.closest<HTMLElement>('.chapter-content')
   if (!content || !root?.contains(content) || content.classList.contains('pdf-chapter')) return null
   return content

@@ -416,6 +416,8 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 对正文的一段文字做划线，可附带批注。每个用户在每本书上各有一份，按阅读顺序（章节、偏移）排列。
 
+PDF（服务器开启 PDF 插件、按页渲染时）同样可以划线：`chapterIndex` 为页码 - 1，偏移基于阅读器在页面上叠加的文字层文字（pdf.js 文字层，去掉了伪粗体重复绘制的字、跨行处按「中文不加、其他加一个空格」补分隔），与 `GET /chapter/:index` 返回的页文字在空白上可能略有差异。扫描版 / 图片页没有文字，不能划线。
+
 ### GET /api/v1/reader/:bookId/highlights
 
 `[{ id, user_id, book_id, chapter_index, start_offset, end_offset, text, note, created_at, updated_at }]`，按 `chapter_index`、`start_offset` 升序。

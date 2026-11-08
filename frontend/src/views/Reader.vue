@@ -6,6 +6,9 @@
       <div class="pdf-topbar">
         <el-button circle title="返回" @click="router.back()"><IconChevronLeft :size="18" :stroke-width="1.75" /></el-button>
         <span class="pdf-topbar-title">PDF 阅读</span>
+        <el-tooltip content="当前 PDF 打开方式不支持划线，可在设置中开启 PDF 插件" placement="bottom">
+          <span class="pdf-topbar-note"><el-button text disabled aria-label="笔记（当前 PDF 打开方式不支持划线）"><IconHighlight :size="18" :stroke-width="1.75" /></el-button></span>
+        </el-tooltip>
         <el-button class="pdf-topbar-map" text @click="openBookMap"><IconSitemap :size="18" :stroke-width="1.75" />&nbsp;学习导图</el-button>
       </div>
       <div class="pdf-viewer-area">
@@ -43,7 +46,7 @@
           <div class="nav-actions">
             <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
-            <button v-if="highlightable" class="nav-btn" title="笔记" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
+            <button v-if="highlightable" class="nav-btn" :class="{ unsupported: pdfNoText }" :title="noteTip" :aria-label="noteTip" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" title="学习导图" @click="openBookMap"><IconSitemap :size="20" :stroke-width="1.75" /></button>
             <button class="nav-btn" :class="{ on: onShelf }" :title="shelfLabel" :aria-label="shelfLabel" :aria-pressed="onShelf" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
             <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
@@ -64,8 +67,8 @@
           <el-tooltip content="书签（B 添加当前位置）" placement="left" :show-after="300">
             <button class="side-tool" aria-label="书签（B 添加当前位置）" :class="{ on: tocVisible && tocTab === 'bookmark' }" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
-          <el-tooltip v-if="highlightable" content="笔记" placement="left" :show-after="300">
-            <button class="side-tool" aria-label="笔记" :class="{ on: tocVisible && tocTab === 'note' }" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
+          <el-tooltip v-if="highlightable" :content="noteTip" placement="left" :show-after="300">
+            <button class="side-tool" :aria-label="noteTip" :class="{ on: tocVisible && tocTab === 'note', unsupported: pdfNoText }" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
           </el-tooltip>
           <el-tooltip content="学习导图" placement="left" :show-after="300">
             <button class="side-tool" aria-label="学习导图" @click="openBookMap"><IconSitemap :size="20" :stroke-width="1.75" /></button>
@@ -108,8 +111,8 @@
               <h1 class="chapter-heading">{{ chapterTitle }}</h1>
               <div class="chapter-meta">{{ chapterMeta(reader.currentContent.value) }}</div>
             </div>
-            <div v-if="isPdfRender" class="chapter-content pdf-chapter">
-              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="reader.currentChapterIndex.value + 1" />
+            <div v-if="isPdfRender" class="chapter-content pdf-chapter" @click.capture="handleContentClick" @pointerup="onContentPointerUp">
+              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="reader.currentChapterIndex.value + 1" @text-ready="onPdfTextReady" />
               <div v-else-if="pdfDocFailed" class="pdf-error">PDF 加载失败，请检查文件是否完整</div>
               <el-skeleton v-else :rows="20" animated />
             </div>
@@ -144,8 +147,8 @@
               <h1 class="chapter-heading">{{ ch.title }}</h1>
               <div class="chapter-meta">{{ chapterMeta(ch.content) }}</div>
             </div>
-            <div v-if="isPdfRender" class="chapter-content pdf-chapter">
-              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" />
+            <div v-if="isPdfRender" class="chapter-content pdf-chapter" @click.capture="handleContentClick" @pointerup="onContentPointerUp">
+              <PdfPage v-if="pdfDoc" :doc="pdfDoc" :page-number="ch.index + 1" @text-ready="onPdfTextReady" />
             </div>
             <div v-else class="chapter-content" :class="{ 'image-page': isImagePage(ch.content), 'fit-width': readerStore.settings.imageFit === 'width' }" v-html="hideLeadingTitle(ch.content, ch.title)" :style="contentStyle" @click.capture="handleContentClick" @pointerup="onContentPointerUp" />
           </section>
@@ -498,7 +501,7 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import HighlightMenu from '@/components/HighlightMenu.vue'
 import MindExpandPanel from '@/components/MindExpandPanel.vue'
-import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, type TextAnchor } from '@/utils/highlight-anchor'
+import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, HL_CONTENT_SELECTOR, type TextAnchor } from '@/utils/highlight-anchor'
 import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
 import { groupHighlightsByChapter } from '@/utils/highlight-list'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
@@ -918,14 +921,26 @@ function handleContentClick(e: MouseEvent) {
   }
 }
 
-// ── 划线 / 批注（PDF 不支持）────────────────────────────────
+// ── 划线 / 批注（PDF 仅按页渲染方式、且本页有文字时可用）────────
 interface HlMenuState {
   x: number; y: number; mode: 'new' | 'existing'; hasNote: boolean; placement: 'above' | 'below'
   content: HTMLElement; chapterIndex: number; anchor?: TextAnchor; text?: string; id?: string
 }
 // 持有 DOM 元素，用 shallowRef 避免被深层代理
 const hlMenu = shallowRef<HlMenuState | null>(null)
-const highlightable = computed(() => !!reader.bookFormat.value && !isPdf.value && !isPdfRender.value)
+// PDF 只在按页渲染方式下可划线（浏览器原生打开拿不到选中的文字）
+const highlightable = computed(() => !!reader.bookFormat.value && !isPdf.value)
+
+// PDF 各页（章节号 = 页码 - 1）是否有可选中的文字：文字层每次渲染完成时更新；无文字页（扫描 / 图片）不能划线
+const pdfPageText = ref<Record<number, boolean>>({})
+const pdfNoText = computed(() => isPdfRender.value && pdfPageText.value[reader.currentChapterIndex.value] === false)
+const noteTip = computed(() => (pdfNoText.value ? 'PDF 格式不支持' : '笔记'))
+
+function onPdfTextReady(pageNumber: number, hasText: boolean) {
+  pdfPageText.value = { ...pdfPageText.value, [pageNumber - 1]: hasText }
+  // 文字层重建后旧的划线已随之消失，按「未绘制」重画
+  refreshHighlights()
+}
 
 // 正文所属章节：翻页模式为当前章，瀑布流取所在 section
 function chapterIndexOf(content: HTMLElement): number {
@@ -945,7 +960,7 @@ const paintedHighlights = new WeakMap<HTMLElement, string>()
 
 function refreshHighlights() {
   if (!highlightable.value) return
-  contentRef.value?.querySelectorAll<HTMLElement>('.chapter-content:not(.pdf-chapter)').forEach(content => {
+  contentRef.value?.querySelectorAll<HTMLElement>(HL_CONTENT_SELECTOR).forEach(content => {
     const idx = chapterIndexOf(content)
     if (idx < 0) return
     const items = locatedHighlights(content, idx)
@@ -1131,13 +1146,18 @@ async function onMindJump({ chapterIndex, label }: { chapterIndex: number; label
 }
 
 // 跳章后正文可能异步渲染：等该章的正文容器出现
+// PDF 页要等画面与文字层渲染完（较慢），给更长的等待
+const contentWaitTries = () => (isPdfRender.value ? 60 : 15)
+
 async function waitChapterContent(chapterIndex: number): Promise<HTMLElement | null> {
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < contentWaitTries(); i++) {
     await nextTick()
     if (!loading.value) {
-      const content = readerStore.settings.pageMode === 'scroll'
-        ? (reader.currentChapterIndex.value === chapterIndex ? contentRef.value?.querySelector<HTMLElement>('.chapter-content:not(.pdf-chapter)') : null)
-        : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] .chapter-content:not(.pdf-chapter)`)
+      let content = readerStore.settings.pageMode === 'scroll'
+        ? (reader.currentChapterIndex.value === chapterIndex ? contentRef.value?.querySelector<HTMLElement>(HL_CONTENT_SELECTOR) : null)
+        : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] :is(${HL_CONTENT_SELECTOR})`)
+      // PDF 文字层元素先于文字出现：本页文字层渲染完成前不算就绪
+      if (content && isPdfRender.value && pdfPageText.value[chapterIndex] === undefined) content = null
       if (content) {
         refreshHighlights()  // 先画好划线，闪烁包裹在划线之后插入
         return content
@@ -1238,7 +1258,7 @@ async function jumpToHighlight(h: Highlight) {
 
 async function scrollToHighlightMark(h: Highlight): Promise<boolean> {
   const sel = `mark.hl[data-hl-id="${h.id}"]`
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < contentWaitTries(); i++) {
     await nextTick()
     if (!loading.value) refreshHighlights()
     const marks = contentRef.value?.querySelectorAll<HTMLElement>(sel)
@@ -1779,9 +1799,7 @@ onMounted(async () => {
 
   await reader.loadProgress()
   reader.loadBookmarks()
-  const highlightsLoaded = isPdfRender.value
-    ? Promise.resolve()
-    : reader.loadHighlights().catch(() => ElMessage.error('划线加载失败'))
+  const highlightsLoaded = reader.loadHighlights().catch(() => ElMessage.error('划线加载失败'))
   // 带跳转参数：等划线加载完再定位（划线目标要查找；查找闪烁要在划线绘制之后）
   let jumpTarget: JumpTarget | null = null
   if (wantJump) {
@@ -1924,6 +1942,8 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .nav-btn:hover { color: var(--reader-text); background: var(--reader-hover-bg); }
+/* PDF 无文字页：笔记入口灰化（仍可打开查看其他页的划线） */
+.nav-btn.unsupported, .side-tool.unsupported { opacity: .4; }
 
 /* 纸张：白色卡片，细边框 + 柔和阴影 */
 .paper {
@@ -2343,6 +2363,8 @@ onUnmounted(() => {
   border-radius: 2px;
   cursor: pointer;
 }
+/* PDF：文字层在画布之下（画布以 multiply 叠加，见 PdfPage），划线底色像荧光笔一样透出 */
+.chapter-content :deep(.pdf-text-layer mark.hl) { border-radius: 0; }
 .chapter-content :deep(mark.hl.hl-flash) {
   animation: hl-flash 1.6s ease-out;
 }
