@@ -11,6 +11,8 @@ const CERT = read('cert.pem');
 const KEY = read('key.pem');
 const CHAIN = read('chain.pem');
 const OTHER_KEY = read('other-key.pem');
+const WEAK_CERT = read('weak-cert.pem');
+const WEAK_KEY = read('weak-key.pem');
 
 describe('https-cert', () => {
   it('inspects a valid pair', () => {
@@ -87,5 +89,20 @@ describe('https-cert', () => {
     const json = JSON.stringify(saveUploadedCert(dir, CERT, KEY));
     expect(json).not.toContain('PRIVATE KEY');
     for (const line of KEY.split('\n').filter(l => l.length > 20 && !l.startsWith('-----'))) expect(json).not.toContain(line);
+  });
+
+  it('rejects a pair that parses and matches but TLS refuses to use', () => {
+    expect(inspectCertificate(WEAK_CERT, WEAK_KEY)).toEqual({ ok: false, error: '证书无法用于 HTTPS' });
+    const dir = certDir(fs.mkdtempSync(path.join(os.tmpdir(), 'https-up-')));
+    writeCertFiles(dir, CERT, KEY);
+    expect(saveUploadedCert(dir, WEAK_CERT, WEAK_KEY)).toEqual({ ok: false, error: '证书无法用于 HTTPS' });
+    expect(readCertFiles(dir)).toEqual({ cert: CERT, key: KEY });
+  });
+
+  it('writeCertFiles leaves no temporary files behind when a write fails', () => {
+    const dir = certDir(fs.mkdtempSync(path.join(os.tmpdir(), 'https-up-')));
+    fs.mkdirSync(path.join(dir, 'fullchain.pem'), { recursive: true });  // 目标被目录占用：rename 失败
+    expect(() => writeCertFiles(dir, CERT, KEY)).toThrow();
+    expect(fs.readdirSync(dir).filter(f => f.endsWith('.tmp'))).toEqual([]);
   });
 });

@@ -13,6 +13,8 @@ const CERT = read('cert.pem');
 const KEY = read('key.pem');
 const OTHER_CERT = read('other-cert.pem');
 const OTHER_KEY = read('other-key.pem');
+const WEAK_CERT = read('weak-cert.pem');
+const WEAK_KEY = read('weak-key.pem');
 
 const fingerprint = (pem: string) => new X509Certificate(pem).fingerprint256;
 
@@ -115,5 +117,18 @@ describe('https manager', () => {
     } finally {
       await new Promise<void>(r => blocker.close(() => r()));
     }
+  });
+
+  it('never throws on a certificate TLS refuses, and keeps the last good one', async () => {
+    const { m, port } = await make();
+    writeCertFiles(dir, WEAK_CERT, WEAK_KEY);
+    await expect(m.check()).resolves.toBeUndefined();
+    expect(m.state()).toMatchObject({ listening: false, lastError: '证书无法用于 HTTPS' });
+    writeCertFiles(dir, CERT, KEY);
+    await m.check();
+    writeCertFiles(dir, WEAK_CERT, WEAK_KEY);
+    await expect(m.check()).resolves.toBeUndefined();
+    expect(m.state()).toMatchObject({ listening: true, lastError: '证书无法用于 HTTPS' });
+    expect(await handshake(port, CERT, 'book.example.com')).toBe(fingerprint(CERT));
   });
 });

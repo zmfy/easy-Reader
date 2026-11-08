@@ -29,12 +29,22 @@ export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) 
 
   function listen(cert: string, key: string): Promise<void> {
     return new Promise(resolve => {
-      const s = https.createServer({ cert, key }, handler);
+      let s: https.Server;
+      try {
+        s = https.createServer({ cert, key }, handler);
+      } catch {
+        lastError = '证书无法用于 HTTPS';
+        resolve();
+        return;
+      }
       s.once('error', (err: NodeJS.ErrnoException) => {
         lastError = err.code === 'EADDRINUSE' ? `HTTPS 端口 ${opts.port} 被占用` : `HTTPS 启动失败：${err.code || err.message}`;
         resolve();
       });
       s.listen(opts.port, () => {
+        // 启动成功后换成常驻监听：之后的运行期错误只记日志，不影响状态与进程
+        s.removeAllListeners('error');
+        s.on('error', err => console.error('[https] 服务错误', err.message));
         server = s;
         loaded = { cert, key };
         lastError = null;
@@ -66,7 +76,12 @@ export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) 
       return;
     }
     if (server) {
-      server.setSecureContext({ cert, key });
+      try {
+        server.setSecureContext({ cert, key });
+      } catch {
+        lastError = '证书无法用于 HTTPS';  // 保留当前在用的证书
+        return;
+      }
       loaded = { cert, key };
       info = checked.info;
       lastError = null;

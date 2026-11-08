@@ -3,6 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { X509Certificate, createPrivateKey } from 'crypto';
+import tls from 'tls';
 
 export interface CertInfo {
   domains: string[];
@@ -14,7 +15,7 @@ export interface CertInfo {
   daysLeft: number;
 }
 
-export type CertError = '缺少证书文件' | '无法解析证书' | '无法解析私钥' | '证书与私钥不匹配';
+export type CertError = '缺少证书文件' | '无法解析证书' | '无法解析私钥' | '证书与私钥不匹配' | '证书无法用于 HTTPS';
 export type CertCheck = { ok: true; info: CertInfo } | { ok: false; error: CertError };
 
 const CERT_FILE = 'fullchain.pem';
@@ -51,6 +52,12 @@ export function inspectCertificate(certPem: string | null, keyPem: string | null
     return { ok: false, error: '无法解析私钥' };
   }
   if (!x509.checkPrivateKey(key)) return { ok: false, error: '证书与私钥不匹配' };
+  // 能解析、能配对，TLS 仍可能拒绝（如密钥太短）：实际建一次安全上下文
+  try {
+    tls.createSecureContext({ cert: certPem.trim(), key: keyPem.trim() });
+  } catch {
+    return { ok: false, error: '证书无法用于 HTTPS' };
+  }
   const from = new Date(x509.validFrom);
   const to = new Date(x509.validTo);
   return {
@@ -91,19 +98,27 @@ export function readCertFiles(dir: string): { cert: string | null; key: string |
   return { cert: readOrNull(path.join(dir, CERT_FILE)), key: readOrNull(path.join(dir, KEY_FILE)) };
 }
 
-// 先写临时文件再改名：重新加载时不会读到写了一半的文件
-function writeAtomic(file: string, content: string, mode: number): void {
-  const tmp = `${file}.${process.pid}.tmp`;
+// 临时文件 + 改名：重新加载时不会读到写了一半的文件；chmod 防止遗留同名文件时权限偏宽
+function writeTmp(tmp: string, content: string, mode: number): void {
   fs.writeFileSync(tmp, content, { mode });
   fs.chmodSync(tmp, mode);
-  fs.renameSync(tmp, file);
 }
 
 export function writeCertFiles(dir: string, cert: string, key: string): void {
   fs.mkdirSync(dir, { recursive: true });
-  // 私钥先写：避免出现「新证书 + 旧私钥」的中间状态被当成不匹配
-  writeAtomic(path.join(dir, KEY_FILE), key, 0o600);
-  writeAtomic(path.join(dir, CERT_FILE), cert, 0o644);
+  // 先把两个临时文件都写好再改名：写入失败时原有证书不受影响；失败时删除临时文件（含私钥内容）
+  const keyFile = path.join(dir, KEY_FILE);
+  const certFile = path.join(dir, CERT_FILE);
+  const keyTmp = `${keyFile}.${process.pid}.tmp`;
+  const certTmp = `${certFile}.${process.pid}.tmp`;
+  try {
+    writeTmp(keyTmp, key, 0o600);
+    writeTmp(certTmp, cert, 0o644);
+    fs.renameSync(keyTmp, keyFile);
+    fs.renameSync(certTmp, certFile);
+  } finally {
+    for (const t of [keyTmp, certTmp]) fs.rmSync(t, { force: true });
+  }
 }
 
 export function deleteCertFiles(dir: string): void {

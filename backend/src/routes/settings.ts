@@ -126,16 +126,27 @@ router.get('/https', authMiddleware, adminMiddleware, (_req: Request, res: Respo
 router.put('/https', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const parsed = z.object({ cert: z.string().min(1).max(65536), key: z.string().min(1).max(65536) }).safeParse(req.body ?? {});
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
-  const r = saveUploadedCert(HTTPS_CERT_DIR, parsed.data.cert, parsed.data.key);
-  if (!r.ok) { errorResponse(res, 422, 'VALIDATION_ERROR', r.error); return; }
-  const state = await recheckHttps();
-  successResponse(res, { ...httpsView(state), warnings: r.warnings }, '证书已保存');
+  try {
+    const r = saveUploadedCert(HTTPS_CERT_DIR, parsed.data.cert, parsed.data.key);
+    if (!r.ok) { errorResponse(res, 422, 'VALIDATION_ERROR', r.error); return; }
+    const state = await recheckHttps();
+    successResponse(res, { ...httpsView(state), warnings: r.warnings }, '证书已保存');
+  } catch (err) {
+    // 写文件失败（只读、磁盘满、权限）：不能让异常冒出去拖垮进程
+    console.error('[https] 保存证书失败', err instanceof Error ? err.message : err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', `证书保存失败：${(err as NodeJS.ErrnoException)?.code || '写入错误'}`);
+  }
 });
 
 // DELETE /api/settings/https — 删除证书，关闭 HTTPS
 router.delete('/https', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
-  deleteCertFiles(HTTPS_CERT_DIR);
-  successResponse(res, httpsView(await recheckHttps()), '证书已删除');
+  try {
+    deleteCertFiles(HTTPS_CERT_DIR);
+    successResponse(res, httpsView(await recheckHttps()), '证书已删除');
+  } catch (err) {
+    console.error('[https] 删除证书失败', err instanceof Error ? err.message : err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', `证书删除失败：${(err as NodeJS.ErrnoException)?.code || '删除错误'}`);
+  }
 });
 
 // GET /api/settings/ai-status — whether AI is usable (plugin selected + credential filled)
