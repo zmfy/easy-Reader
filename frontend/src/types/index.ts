@@ -357,3 +357,27 @@ export interface UpdateStatus {
   usageStatsEnabled: boolean
   usageStatsEnvDisabled: boolean
 }
+
+// ── HTTPS（使用自己的证书）────────────────────────────────
+export interface HttpsCertInfo {
+  domains: string[]
+  issuer: string
+  notBefore: string
+  notAfter: string
+  expired: boolean
+  notYetValid: boolean
+  daysLeft: number
+}
+
+export interface HttpsStatus {
+  /** 设置页「启用 HTTPS」开关；关闭时不提供 HTTPS */
+  enabled: boolean
+  listening: boolean
+  port: number
+  cert: HttpsCertInfo | null
+  lastError: string | null
+  /** 到期提醒文案（剩余 14 天内 / 已过期），否则 null */
+  warning: string | null
+  /** 仅上传接口返回：如「证书已过期」 */
+  warnings?: string[]
+}

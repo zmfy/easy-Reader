@@ -10,13 +10,21 @@
     <div class="nb-panel">
       <div v-if="!isNarrow" class="nb-head">系统提醒</div>
 
-      <div v-if="!noticeStore.configWarning && !latest" class="nb-empty">暂无提醒</div>
+      <div v-if="!noticeStore.configWarning && !noticeStore.certWarning && !latest" class="nb-empty">暂无提醒</div>
+
+      <div v-if="noticeStore.certWarning" class="nb-notice nb-notice--warning">
+        <IconAlertTriangle class="nb-notice-icon" :size="17" :stroke-width="2" />
+        <div class="nb-notice-body">
+          <div class="nb-notice-text">{{ noticeStore.certWarning }}</div>
+          <el-button size="small" type="warning" plain @click="goSettings('system')">去设置</el-button>
+        </div>
+      </div>
 
       <div v-if="noticeStore.configWarning" class="nb-notice nb-notice--warning">
         <IconAlertTriangle class="nb-notice-icon" :size="17" :stroke-width="2" />
         <div class="nb-notice-body">
           <div class="nb-notice-text">{{ noticeStore.configWarning }}</div>
-          <el-button size="small" type="warning" plain @click="goSettings">去设置</el-button>
+          <el-button size="small" type="warning" plain @click="goSettings('ai')">去设置</el-button>
         </div>
       </div>
 
@@ -120,11 +128,11 @@ function actionItems(release: Release): ReleaseItem[] {
   return release.sections.flatMap(s => s.items.filter(i => i.actionRequired))
 }
 
-function goSettings() {
+function goSettings(tab: 'ai' | 'system' = 'ai') {
   close()
   // 手机端铃铛可能在侧栏里，跳转时通知布局一并收起侧栏
   emit('navigate')
-  router.push({ path: '/settings', query: { tab: 'ai' } })
+  router.push({ path: '/settings', query: { tab } })
 }
 </script>
 

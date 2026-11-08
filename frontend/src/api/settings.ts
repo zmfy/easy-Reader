@@ -2,6 +2,14 @@ import http from './http'
 import type { ApiResponse, ReaderSettings, Release, UpdateStatus } from '@/types'
 
 export const settingsApi = {
+  // HTTPS（使用自己的证书，管理员）：只返回证书元数据
+  getHttps: () => http.get<ApiResponse<import('@/types').HttpsStatus>>('/settings/https'),
+  uploadHttps: (cert: string, key: string) =>
+    http.put<ApiResponse<import('@/types').HttpsStatus>>('/settings/https', { cert, key }),
+  deleteHttps: () => http.delete<ApiResponse<import('@/types').HttpsStatus>>('/settings/https'),
+  setHttpsEnabled: (enabled: boolean) =>
+    http.put<ApiResponse<import('@/types').HttpsStatus>>('/settings/https/enabled', { enabled }),
+
   getPublic: () =>
     http.get<ApiResponse<{ site_name: string; site_subtitle: string; site_theme: string }>>('/settings/public'),
 

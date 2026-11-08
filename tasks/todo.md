@@ -429,4 +429,19 @@
 - [x] Service Worker（vite-plugin-pwa）、新版本提示、没网提示（含服务器连不上）
 - [x] /continue 启动路由、登录回跳（只允许站内路径）
 - [x] 用户菜单「安装到桌面」：系统安装框 / iOS 步骤 / 非 HTTPS 提示 / 不支持提示
-- [ ] 合入 main，合并到 study；官网教程「装到手机桌面」「从外网访问：DDNS / 证书 / Tailscale」
+- [x] 合入 main（11-08 本地，与 feature/https 一起）
+- [ ] 官网教程「装到手机桌面」「从外网访问：DDNS / 证书 / Tailscale」
+# 使用自己的证书提供 HTTPS（11-08，main 上 feature/https）
+
+决定（用户）：只做软件供应商，不申请 / 续签证书；放文件与设置页上传两种都做；证书过期继续用、只提醒；PWA 分支与本分支一起合入 main
+
+- [x] 证书检查与存储、HTTPS 管理器（热更新、保留上一张可用证书、端口占用）
+- [x] 管理员接口 GET/PUT/DELETE /settings/https（不返回私钥）
+- [x] 设置页「HTTPS 证书」卡片、铃铛到期提醒
+- [x] docker-compose 8443:3443、README / DOCKERHUB / CHANGELOG
+- [x] 与 feature/pwa 一起合入 main（11-08 本地）
+
+# PWA / HTTPS 审查遗留的小问题（11-08，待定）
+
+- PWA：默认密码账号先去改密码 / 已登录访问 /login?redirect= 时回跳丢失；后台挂着的页面要冷启动才看到更新提示；未被 SW 接管的页面点「刷新」无反应；globPatterns 不含 mjs；short_name 可能截断组合 emoji；撤掉 PWA 需发 selfDestroying 版本
+- HTTPS：check() 合并调用时开关 / 上传可能返回旧状态（最多等 1 分钟轮询）；带密码私钥只提示「无法解析私钥」；只有 IP 的证书不显示地址；关闭「系统提醒」后铃铛隐藏证书提醒；通用 PUT /api/settings 改 https_enabled 不立即生效；开关关闭时经 API 上传只提示「证书已保存」

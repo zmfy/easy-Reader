@@ -39,6 +39,8 @@
           </div>
         </section>
 
+        <HttpsCertCard />
+
         <section class="section-card">
           <h2 class="section-title">书库</h2>
           <div class="form-grid">
@@ -502,6 +504,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import HttpsCertCard from '@/components/HttpsCertCard.vue'
 import { settingsApi } from '@/api/settings'
 import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'
