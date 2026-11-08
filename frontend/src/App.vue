@@ -4,6 +4,8 @@
       <component :is="Component" :key="route.path" />
     </transition>
   </router-view>
+  <OfflineNotice />
+  <PwaUpdatePrompt v-if="pwaEnabled" />
 </template>
 
 <script setup lang="ts">
@@ -11,6 +13,11 @@ import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { settingsApi } from '@/api/settings'
 import { applySiteTheme } from '@/utils/theme'
+import OfflineNotice from '@/components/OfflineNotice.vue'
+import PwaUpdatePrompt from '@/components/PwaUpdatePrompt.vue'
+
+// 浏览器只在安全上下文（HTTPS / localhost）允许 Service Worker；开发模式不注册
+const pwaEnabled = import.meta.env.PROD && window.isSecureContext && 'serviceWorker' in navigator
 
 const authStore = useAuthStore()
 

@@ -7,6 +7,10 @@ import App from './App.vue'
 import './assets/styles/main.css'
 import { applySiteTheme } from './utils/theme'
 import { setupElementPlus } from './utils/element-plus'
+import { initPwaInstall } from './composables/usePwaInstall'
+
+// 「安装到桌面」：浏览器在加载早期派发安装提示事件，须在挂载前开始监听
+initPwaInstall()
 
 // 默认深色主题，站点设置加载后再按实际主题切换
 applySiteTheme()

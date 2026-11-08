@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { isNetworkFailure, reportNetworkError, reportNetworkOk } from '@/utils/network-status'
+import { loginHrefFor } from '@/utils/safe-redirect'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
 const http: AxiosInstance = axios.create({
@@ -52,14 +54,22 @@ function redirectToLogin(): void {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('refreshToken')
   if (window.location.pathname !== '/login') {
-    window.location.href = '/login'
+    // 带上回跳：例如从桌面图标打开 /continue 时登录已过期，登录后仍进入上次读的书
+    const { pathname, search, hash } = window.location
+    window.location.href = loginHrefFor(pathname + search + hash)
   }
 }
 
 // Response interceptor: 401 时尝试 refresh-token 静默续期；失败再跳 /login
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    reportNetworkOk()
+    return response
+  },
   async (error) => {
+    // 「没有网络连接」提示：没拿到响应 → 显示；拿到任何响应（含错误码）→ 服务器可达
+    if (isNetworkFailure(error)) reportNetworkError()
+    else if (error.response) reportNetworkOk()
     // 账号仍在使用默认密码：后端拒绝除改密码外的请求，转到改密码页
     if (error.response?.status === 403 && error.response.data?.code === 'AUTH_PASSWORD_CHANGE_REQUIRED') {
       if (window.location.pathname !== '/change-password') window.location.href = '/change-password'

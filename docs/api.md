@@ -195,6 +195,51 @@
 
 `missing` 为 `true` 表示本站找不到 CHANGELOG 文件。
 
+### HTTPS 证书（管理员）
+
+使用自己的证书直接提供 HTTPS（服务器不申请、不续签证书）。需要先打开「启用 HTTPS」开关（见下方 `PUT /settings/https/enabled`，默认关闭）；证书也可以不经接口、直接放进数据目录的 `certs/`（`fullchain.pem` + `privkey.pem`），开关打开时替换后自动生效。开关关闭时上传的证书会被保存，但要等打开开关后才生效。接口只返回证书的元数据，**从不返回私钥**。
+
+**状态对象**：
+
+```json
+{
+  "enabled": true,
+  "listening": true, "port": 3443,
+  "cert": { "domains": ["book.example.com"], "issuer": "C=US, O=Let's Encrypt, CN=R11",
+            "notBefore": "2026-11-01T00:00:00.000Z", "notAfter": "2027-01-30T00:00:00.000Z",
+            "expired": false, "notYetValid": false, "daysLeft": 83 },
+  "lastError": null,
+  "warning": null
+}
+```
+
+- `enabled`：设置页「启用 HTTPS」开关（默认关闭）。关闭时不提供 HTTPS（即使 `certs/` 里有证书），也没有到期提醒。
+- `listening`：HTTPS 是否在 `port`（环境变量 `HTTPS_PORT`，默认 3443）上提供服务；`cert` 为当前生效的证书，未开启时为 `null`。
+- `lastError`：最近一次加载证书的问题（「缺少证书文件」「无法解析证书」「无法解析私钥」「证书与私钥不匹配」「证书无法用于 HTTPS」（如密钥太短）「HTTPS 端口 N 被占用」）。新证书有问题时会继续使用上一张可用证书，此时 `listening` 仍为 `true`。
+- `warning`：到期提醒，证书剩余 14 天内为「HTTPS 证书将在 N 天后到期（域名）」，过期后为「HTTPS 证书已过期（域名）」，否则 `null`。过期证书仍会继续使用。
+
+#### GET /api/v1/settings/https
+
+返回状态对象。
+
+#### PUT /api/v1/settings/https
+
+上传证书（含证书链）与私钥，PEM 文本，各不超过 65536 字符：
+
+```json
+{ "cert": "-----BEGIN CERTIFICATE-----\n…", "key": "-----BEGIN PRIVATE KEY-----\n…" }
+```
+
+校验通过后写入 `certs/` 并立即生效，返回状态对象并附 `warnings`（如 `["证书已过期"]`、`["证书尚未生效"]`，此类证书仍会被接受）。无法解析、证书与私钥不匹配或证书无法用于 HTTPS 时返回 422 `VALIDATION_ERROR`，`message` 为具体原因，原有证书保持不变；数据目录不可写等写入失败返回 500。
+
+#### PUT /api/v1/settings/https/enabled
+
+打开或关闭「启用 HTTPS」开关：`{ "enabled": true }`，返回状态对象。关闭时证书文件保留，下次打开直接生效。
+
+#### DELETE /api/v1/settings/https
+
+删除证书并关闭 HTTPS，返回新的状态对象。
+
 ## 4. 书库
 
 ### GET /api/v1/library
@@ -355,6 +400,12 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 ## 7. 阅读进度
 
 进度按用户、按书保存，网页版与各客户端共用，读到哪里在所有设备上同步。
+
+### GET /api/v1/reader/last-read
+
+最近读的书：当前用户最近一次更新阅读进度、且书仍在书库中的那本书（不判断是否读完）。返回 `{ "bookId": "…" }`；没有读过任何书时 `data` 为 `null`。网页版「安装到桌面」后从桌面图标打开时用它进入上次读的书。
+
+> 网页清单：`GET /manifest.webmanifest`（无需登录，不在 `/api` 下）返回 PWA 清单，`name` 取网站名称（未设置时为「简单书房」）。
 
 ### GET /api/v1/reader/:bookId/progress
 

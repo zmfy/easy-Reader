@@ -2,6 +2,8 @@ import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import { VitePWA } from 'vite-plugin-pwa'
+import { workboxOptions } from './src/pwa/workbox-options'
 import fs from 'fs'
 import path from 'path'
 
@@ -40,6 +42,14 @@ export default defineConfig({
       resolvers: [ElementPlusResolver({ importStyle: false })],
       dts: 'src/components.d.ts',
     }),
+    // 只生成 Service Worker；清单由后端按网站名称动态提供（/manifest.webmanifest）
+    VitePWA({
+      registerType: 'prompt',
+      injectRegister: false,
+      manifest: false,
+      workbox: workboxOptions,
+      devOptions: { enabled: false },
+    }),
   ],
   resolve: {
     alias: {
@@ -50,6 +60,11 @@ export default defineConfig({
     port: 8080,
     proxy: {
       '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      // PWA 清单由后端按网站名称动态生成
+      '/manifest.webmanifest': {
         target: 'http://localhost:3000',
         changeOrigin: true,
       },

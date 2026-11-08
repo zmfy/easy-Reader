@@ -34,12 +34,14 @@
 import { ref, reactive, onMounted } from 'vue'
 import { IconAlertCircle, IconBook2, IconLock, IconUser } from '@tabler/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { safeRedirect } from '@/utils/safe-redirect'
 import { ElMessage } from 'element-plus'
 import { settingsApi } from '@/api/settings'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const siteName = ref('简单书房')
 const siteSubtitle = ref('Easy Reader · NAS Novel Platform')
@@ -73,7 +75,7 @@ async function handleSubmit() {
     await authStore.login(form.username, form.password)
     // 默认密码账号会被带到设置新密码页，那里有说明，不再弹「欢迎回来」
     if (!authStore.user?.mustChangePassword) ElMessage.success('欢迎回来，' + form.username)
-    router.push('/library')
+    router.push(safeRedirect(route.query.redirect))
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '登录失败，请重试'
     triggerError(msg)
