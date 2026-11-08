@@ -377,14 +377,15 @@ watch(() => route.params.bookId, () => { fetchBook() })
 
 .detail-main {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 40px;
   align-items: start;
 }
 
 @media (max-width: 768px) {
   .detail-main {
-    grid-template-columns: 1fr;
+    /* minmax(0, …)：列宽不随不换行的内容（如「继续阅读 · 章节名」）撑开，手机上不会被截掉 */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -405,7 +406,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
   /* Cover + action buttons side by side */
   .cover-section {
     display: grid;
-    grid-template-columns: 110px 1fr;
+    grid-template-columns: 110px minmax(0, 1fr);
     gap: 16px;
     align-items: end;
     margin-bottom: 20px;
