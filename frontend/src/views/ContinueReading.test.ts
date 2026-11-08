@@ -13,11 +13,11 @@ const lastRead = readerApi.lastRead as unknown as ReturnType<typeof vi.fn>
 describe('ContinueReading', () => {
   beforeEach(() => { replace.mockReset(); lastRead.mockReset() })
 
-  it('ContinueReading opens the last read book or falls back to the shelf', async () => {
+  it('ContinueReading opens the last read book page or falls back to the shelf', async () => {
     lastRead.mockResolvedValueOnce({ data: { success: true, data: { bookId: 'b1' } } })
     mount(ContinueReading)
     await flushPromises()
-    expect(replace).toHaveBeenLastCalledWith('/reader/b1')
+    expect(replace).toHaveBeenLastCalledWith('/book/b1')
 
     lastRead.mockResolvedValueOnce({ data: { success: true, data: null } })
     mount(ContinueReading)
