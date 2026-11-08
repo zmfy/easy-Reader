@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-// 从桌面图标打开（PWA start_url）：进入上次读的书；没有或取不到时进书架
+// 从桌面图标打开（PWA start_url）：进入上次读的书的书页（不直接进阅读器，返回才有去处）；没有或取不到时进书架
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconLoader2 } from '@tabler/icons-vue'
@@ -17,7 +17,7 @@ onMounted(async () => {
   try {
     const resp = await readerApi.lastRead()
     const bookId = resp.data.data?.bookId
-    router.replace(bookId ? `/reader/${bookId}` : '/shelf')
+    router.replace(bookId ? `/book/${bookId}` : '/shelf')
   } catch {
     router.replace('/shelf')
   }

@@ -4,7 +4,7 @@
     <!-- ── PDF 原生渲染模式 ── -->
     <template v-if="isPdf">
       <div class="pdf-topbar">
-        <el-button circle title="返回" @click="router.back()"><IconChevronLeft :size="18" :stroke-width="1.75" /></el-button>
+        <el-button circle title="返回" @click="goBack"><IconChevronLeft :size="18" :stroke-width="1.75" /></el-button>
         <span class="pdf-topbar-title">PDF 阅读</span>
         <el-tooltip content="当前 PDF 打开方式不支持划线，可在设置中开启 PDF 插件" placement="bottom">
           <span class="pdf-topbar-note"><el-button text disabled aria-label="笔记（当前 PDF 打开方式不支持划线）"><IconHighlight :size="18" :stroke-width="1.75" /></el-button></span>
@@ -37,7 +37,7 @@
     >
       <header class="reader-nav" :class="{ hidden: !toolbarVisible }" @click.stop>
         <div class="nav-inner">
-          <button class="nav-btn" title="返回" @click="router.back()"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
+          <button class="nav-btn" title="返回" @click="goBack"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
           <span class="nav-title">{{ bookTitle }}</span>
           <span class="nav-progress">
             {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
@@ -491,6 +491,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue'
 import { formatServerTime } from '@/utils/time'
+import { resolveBack } from '@/utils/page-back'
 import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -522,6 +523,13 @@ const bookId = route.params.bookId as string
 // 书架：工具栏按钮加入 / 移出当前书
 const { onShelf, toggle: toggleShelf, refresh: refreshShelf } = useShelfToggle(() => bookId)
 const shelfLabel = computed(() => onShelf.value ? '已在书架（点击移出）' : '加入书架')
+
+// 返回：有站内历史则回退；从桌面图标、链接或新标签页直接打开时回到这本书的书页
+function goBack() {
+  const action = resolveBack(true, !!window.history.state?.back, `/book/${bookId}`)
+  if (action?.type === 'push') router.push(action.path)
+  else if (action) router.back()
+}
 
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
