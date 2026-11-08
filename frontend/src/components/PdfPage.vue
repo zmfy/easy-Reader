@@ -1,7 +1,7 @@
 <template>
   <div ref="rootRef" class="pdf-page" :style="{ aspectRatio }">
     <canvas ref="canvasRef" class="pdf-page-canvas" />
-    <div ref="textRef" class="pdf-text-layer textLayer" />
+    <div ref="textRef" class="pdf-text-layer textLayer" @mousedown="onLayerMouseDown" />
     <div v-if="failed" class="pdf-page-error">本页渲染失败</div>
   </div>
 </template>
@@ -41,6 +41,8 @@ async function render() {
   renderTask = null
   textTask?.cancel()
   textTask = null
+  // 文字层重建中：父组件据此判断本页文字是否可用（data-ready 在渲染完成后才设置）
+  textRef.value?.removeAttribute('data-ready')
   failed.value = false
   try {
     const page = await props.doc.getPage(props.pageNumber)
@@ -76,7 +78,23 @@ async function renderText(page: Awaited<ReturnType<PDFDocumentProxy['getPage']>>
   } catch (err) {
     if (seq === renderSeq) console.error('[pdf] text layer failed', props.pageNumber, err)
   }
-  if (seq === renderSeq) emit('text-ready', props.pageNumber, hasText)
+  if (seq !== renderSeq) return
+  // 与 pdf.js 查看器一致：末尾放 endOfContent，拖选时（selecting）铺满整层，
+  // 鼠标经过行间空白时命中它而不是文字层本身，避免选区跳到整页开头 / 结尾
+  const end = document.createElement('div')
+  end.className = 'endOfContent'
+  el.append(end)
+  el.dataset.ready = '1'
+  emit('text-ready', props.pageNumber, hasText)
+}
+
+function onLayerMouseDown() {
+  textRef.value?.classList.add('selecting')
+  document.addEventListener('mouseup', onDocMouseUp, { once: true })
+}
+
+function onDocMouseUp() {
+  textRef.value?.classList.remove('selecting')
 }
 
 // 容器宽度变化（旋转屏幕、调整页面宽度）时按新宽度重绘，保持清晰
@@ -99,6 +117,7 @@ onBeforeUnmount(() => {
   renderSeq++
   renderTask?.cancel()
   textTask?.cancel()
+  document.removeEventListener('mouseup', onDocMouseUp)
   observer.disconnect()
   cancelAnimationFrame(resizeRaf)
 })
@@ -167,6 +186,7 @@ onBeforeUnmount(() => {
 .pdf-text-layer :deep(.endOfContent) {
   display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none;
 }
+.pdf-text-layer.selecting :deep(.endOfContent) { top: 0; }
 .pdf-text-layer :deep(.pdf-eol) { font-size: 0; }
 
 .pdf-page-error {

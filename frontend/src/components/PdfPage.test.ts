@@ -66,3 +66,37 @@ describe('PdfPage text layer', () => {
     w.unmount()
   })
 })
+
+describe('PdfPage readiness and selection guard', () => {
+  beforeEach(() => renderText.mockReset())
+
+  it('marks the text layer ready only after it rendered, and clears it while re-rendering', async () => {
+    let finish!: (v: boolean) => void
+    renderText.mockReturnValueOnce(ok(true)).mockReturnValueOnce({ promise: new Promise<boolean>(r => { finish = r }), cancel: vi.fn() })
+    const w = mount(PdfPage, { props: { doc: fakeDoc(), pageNumber: 3 } })
+    await flushPromises()
+    const layer = () => w.find('.pdf-text-layer').element as HTMLElement
+    expect(layer().dataset.ready).toBe('1')
+    await w.setProps({ pageNumber: 4 })
+    await flushPromises()
+    expect(layer().dataset.ready).toBeUndefined()
+    finish(false)
+    await flushPromises()
+    expect(layer().dataset.ready).toBe('1')
+    w.unmount()
+  })
+
+  it('adds an endOfContent guard and toggles selecting during a mouse drag', async () => {
+    renderText.mockReturnValue(ok(true))
+    const w = mount(PdfPage, { props: { doc: fakeDoc(), pageNumber: 3 }, attachTo: document.body })
+    await flushPromises()
+    const layer = w.find('.pdf-text-layer').element as HTMLElement
+    expect(layer.lastElementChild?.classList.contains('endOfContent')).toBe(true)
+    expect(layer.textContent).toBe('')
+    layer.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(layer.classList.contains('selecting')).toBe(true)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    expect(layer.classList.contains('selecting')).toBe(false)
+    w.unmount()
+  })
+})

@@ -501,6 +501,7 @@ import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import HighlightMenu from '@/components/HighlightMenu.vue'
 import MindExpandPanel from '@/components/MindExpandPanel.vue'
+import { pollUntil } from '@/utils/poll'
 import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, HL_CONTENT_SELECTOR, type TextAnchor } from '@/utils/highlight-anchor'
 import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
 import { groupHighlightsByChapter } from '@/utils/highlight-list'
@@ -1146,26 +1147,26 @@ async function onMindJump({ chapterIndex, label }: { chapterIndex: number; label
 }
 
 // 跳章后正文可能异步渲染：等该章的正文容器出现
-// PDF 页要等画面与文字层渲染完（较慢），给更长的等待
-const contentWaitTries = () => (isPdfRender.value ? 60 : 15)
+// 跳转后等正文 / 划线出现的轮询：PDF 页要等画面与文字层渲染完（较慢），给更长的等待；
+// PDF 文件还在下载时不计时（大文件、慢网络下不能因超时误报「找不到」）
+const contentWait = () => ({
+  tries: isPdfRender.value ? 60 : 15,
+  interval: 100,
+  hold: () => isPdfRender.value && !pdfDoc.value && !pdfDocFailed.value,
+})
 
 async function waitChapterContent(chapterIndex: number): Promise<HTMLElement | null> {
-  for (let i = 0; i < contentWaitTries(); i++) {
+  return pollUntil(async () => {
     await nextTick()
-    if (!loading.value) {
-      let content = readerStore.settings.pageMode === 'scroll'
-        ? (reader.currentChapterIndex.value === chapterIndex ? contentRef.value?.querySelector<HTMLElement>(HL_CONTENT_SELECTOR) : null)
-        : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] :is(${HL_CONTENT_SELECTOR})`)
-      // PDF 文字层元素先于文字出现：本页文字层渲染完成前不算就绪
-      if (content && isPdfRender.value && pdfPageText.value[chapterIndex] === undefined) content = null
-      if (content) {
-        refreshHighlights()  // 先画好划线，闪烁包裹在划线之后插入
-        return content
-      }
-    }
-    await new Promise(r => setTimeout(r, 100))
-  }
-  return null
+    if (loading.value) return null
+    const content = readerStore.settings.pageMode === 'scroll'
+      ? (reader.currentChapterIndex.value === chapterIndex ? contentRef.value?.querySelector<HTMLElement>(HL_CONTENT_SELECTOR) : null)
+      : contentRef.value?.querySelector<HTMLElement>(`[data-chapter-index="${chapterIndex}"] :is(${HL_CONTENT_SELECTOR})`)
+    // PDF 文字层元素先于文字出现（重新挂载、重渲染时为空）：渲染完成（data-ready）前不算就绪
+    if (!content || (content.classList.contains('pdf-text-layer') && !content.dataset.ready)) return null
+    refreshHighlights()  // 先画好划线，闪烁包裹在划线之后插入
+    return content
+  }, contentWait())
 }
 
 async function onHlNote() {
@@ -1258,20 +1259,18 @@ async function jumpToHighlight(h: Highlight) {
 
 async function scrollToHighlightMark(h: Highlight): Promise<boolean> {
   const sel = `mark.hl[data-hl-id="${h.id}"]`
-  for (let i = 0; i < contentWaitTries(); i++) {
+  const marks = await pollUntil(async () => {
     await nextTick()
     if (!loading.value) refreshHighlights()
-    const marks = contentRef.value?.querySelectorAll<HTMLElement>(sel)
-    if (marks && marks.length) {
-      await document.fonts.ready
-      marks[0].scrollIntoView({ block: 'center' })
-      marks.forEach(m => m.classList.add('hl-flash'))
-      setTimeout(() => marks.forEach(m => m.classList.remove('hl-flash')), 1600)
-      return true
-    }
-    await new Promise(r => setTimeout(r, 100))
-  }
-  return false
+    const found = contentRef.value?.querySelectorAll<HTMLElement>(sel)
+    return found && found.length ? found : null
+  }, contentWait())
+  if (!marks) return false
+  await document.fonts.ready
+  marks[0].scrollIntoView({ block: 'center' })
+  marks.forEach(m => m.classList.add('hl-flash'))
+  setTimeout(() => marks.forEach(m => m.classList.remove('hl-flash')), 1600)
+  return true
 }
 
 // 瀑布流模式下容器里同时有多个章节，书签保存相对当前章节顶部的偏移
