@@ -13,6 +13,10 @@ import {
 } from '../services/study-summary';
 import { startSummaryJob, getCurrentJob } from '../services/summary-job';
 import { getStudyPrefs, setStudyPrefs } from '../services/study-prefs';
+import {
+  tidySelection, TidyBusyError, TidyNotFoundError, TidyValidationError, TIDY_MIN_COLS, TIDY_MAX_COLS,
+} from '../services/summary-tidy';
+import { SummaryAiOutputError } from '../services/summary-ai';
 import { isValidDoc, docToBlocks, docToMarkdown, extractRefs } from '../services/summary-doc';
 
 const router = Router();
@@ -172,6 +176,32 @@ router.post('/books/:bookId/summary/jobs', authMiddleware, (req: Request, res: R
     errorResponse(res, 422, 'VALIDATION_ERROR', msg); return;
   }
   successResponse(res, r.job, '任务已启动', 202);
+});
+
+// POST /api/study/books/:bookId/summary/tidy — 选中内容 AI 整理成列表 / 表格（同步返回预览，不写库）
+router.post('/books/:bookId/summary/tidy', authMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({
+    mode: z.enum(['list', 'table']),
+    content: z.array(z.unknown()),
+    columns: z.array(z.string().trim().min(1).max(20)).min(TIDY_MIN_COLS).max(TIDY_MAX_COLS).optional(),
+  }).refine(b => b.columns === undefined || b.mode === 'table').safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const db = getDb();
+  if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
+  const book = findBookRow(req.params.bookId);
+  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  try {
+    const { mode, content, columns } = parsed.data;
+    const result = await tidySelection(db, req.user!.userId, book.id, { mode, content: content as never, columns });
+    successResponse(res, result);
+  } catch (err) {
+    if (err instanceof TidyValidationError) { errorResponse(res, 422, 'VALIDATION_ERROR', err.message); return; }
+    if (err instanceof TidyNotFoundError) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', err.message); return; }
+    if (err instanceof TidyBusyError) { errorResponse(res, 409, 'BUSINESS_CONFLICT', err.message); return; }
+    if (err instanceof SummaryAiOutputError) { errorResponse(res, 422, 'AI_BAD_OUTPUT', 'AI 返回的内容无法解析，请重试'); return; }
+    console.error(`[study:tidy] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', 'AI 整理失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
 });
 
 // GET /api/study/books/:bookId/summary/jobs/current — 最近一次任务（无 → null）

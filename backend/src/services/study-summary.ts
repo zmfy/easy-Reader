@@ -132,7 +132,7 @@ export function writeAiResult(
   })();
 }
 
-function hasRunningJob(db: Database.Database, userId: string, bookId: string): boolean {
+export function hasRunningJob(db: Database.Database, userId: string, bookId: string): boolean {
   return !!db.prepare("SELECT 1 FROM study_summary_jobs WHERE user_id = ? AND book_id = ? AND status = 'running' LIMIT 1").get(userId, bookId);
 }
 

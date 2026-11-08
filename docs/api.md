@@ -723,6 +723,47 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 恢复只替换正文，**不改变「已整理的笔记」集合（`included_refs`）**：恢复点之后才被整理进总结的笔记仍算已整理，之后「更新」不会再把它们补充进来；如需重新整理，可手动编辑或删除总结后重新生成。`revision` 与 409 的规则同 `PUT`；总结或版本不存在 404。
 
+#### POST /api/v1/study/books/:bookId/summary/tidy
+
+AI 整理预览：把总结中选中的一段内容交给 AI 整理成列表或表格。**同步返回结果，不写库、不产生版本**；客户端展示给用户确认后，自己把结果放进文档（替换选中的那些块），再用 `PUT .../summary` 带 `source: "ai_tidy"` 整篇保存。
+
+```json
+{
+  "mode": "table",
+  "content": [
+    { "type": "paragraph", "content": [{ "type": "text", "text": "ls 列出目录内容，-l 显示详细信息" }, { "type": "noteRef", "attrs": { "ref": "h:…" } }] },
+    { "type": "paragraph", "content": [{ "type": "text", "text": "chmod 改文件权限，常用 755、644" }] }
+  ],
+  "columns": ["命令", "作用", "常用参数"]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `mode` | `list`（整理成一个无序列表）或 `table`（整理成一张第一行为表头的表格） |
+| `content` | 选中的**顶层块**（Tiptap JSON 节点数组，按上文文档模型校验）。建议按整块提交：选区碰到的段落、列表、表格整块算入。不能包含二级标题（只能在一个主题内整理），文字总量不超过 6000 字 |
+| `columns` | 仅 `table` 可用，可选，2–6 个列名，每个 1–20 字。不传则由 AI 自定列名；传了则 AI 按这些列名重排 |
+
+是否允许 AI 补充由该用户的「学习偏好」`allowAiAddition` 决定，请求里不传。
+
+响应 `data`：
+
+```json
+{
+  "nodes": [{ "type": "table", "content": [] }],
+  "columns": ["命令", "作用", "常用参数"],
+  "missingRefs": ["h:…"],
+  "aiAddedCount": 2
+}
+```
+
+- `nodes`：整理结果，一个 `table` 或一个 `bulletList` 节点（数组形式，便于直接替换）。表格最多 200 行（含表头）、列数等于 `columns` 个数。
+- `columns`：表格实际使用的列名（列表模式为空数组），可让用户修改后再请求一次。
+- `missingRefs`：`content` 里出现过、但结果里没有保留下来的引用。结果中只会出现 `content` 里出现过的引用。
+- `aiAddedCount`：结果中带 `aiAdded` 标记（AI 补充）的片段数。
+
+错误：参数不合规、`content` 含二级标题（「请在一个主题内选择」）、超长（「选中的内容太多，请分段整理」）返回 422 `VALIDATION_ERROR`；未配置 AI 400 `AI_NOT_CONFIGURED`；书或总结不存在 404；该书有生成 / 更新任务正在运行 409 `BUSINESS_CONFLICT`；AI 返回无法解析 422 `AI_BAD_OUTPUT`（「AI 返回的内容无法解析，请重试」）；其他 AI 错误 500。AI 调用通常需要十几秒，客户端请把超时设长一些。
+
 #### 学习偏好
 
 每个账号各自一份，所有书共用。
