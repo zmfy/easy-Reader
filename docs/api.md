@@ -639,6 +639,11 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 { "doc": { "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "内容" }] }] }, "revision": 3 }
 ```
 
+可选字段（采用 AI 整理结果时使用，见「AI 整理预览」）：
+
+- `source`：只能是 `"ai_tidy"`。传了就**总是新建一个版本**（来源「AI 整理」），不与 30 分钟内「我」的版本合并。不传时与原来完全相同（来源「我」）。
+- `description`：版本简述，1–50 字，例如「整理成表格（3 列 5 行）」；缺省为「AI 整理」。只能与 `source` 一起使用，单独传返回 422。
+
 成功返回 200 与最新 `summary`（`revision` 加 1）。
 
 **修订号与 409**：`revision` 必须等于服务器当前修订号，否则说明总结已在别处（另一个客户端、AI 任务）被改过，返回 409 `BUSINESS_CONFLICT`，`data` 为最新的 `summary`：
@@ -692,6 +697,7 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 | `ai_update` | AI 追加新笔记 |
 | `user` | 用户手动保存 |
 | `restore` | 恢复到某个旧版本 |
+| `ai_tidy` | 采用 AI 整理成列表 / 表格的结果（`PUT` 时带 `source: "ai_tidy"`） |
 
 **30 分钟内连续的手动保存会合并为一个版本**（滑动窗口：每次手动保存都会刷新该版本的 `updated_at`，只要距上一次手动保存不超过 30 分钟，就覆盖同一个 `user` 版本而不新增；上一个版本不是 `user`，或已超过 30 分钟，则新建）。因此版本的时间以 `updated_at` 为准。
 
@@ -713,9 +719,21 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 { "revision": 3 }
 ```
 
-把总结恢复为该版本的内容，并新增一个 `source` 为 `restore` 的版本（不会删除其他版本），版本描述为「恢复到『<被恢复版本的来源>』版本」，来源为「AI 生成」「AI 补充」「我」「恢复」之一（不含时间，时间看版本的 `updated_at`）。返回 200 与最新 `summary`。
+把总结恢复为该版本的内容，并新增一个 `source` 为 `restore` 的版本（不会删除其他版本），版本描述为「恢复到『<被恢复版本的来源>』版本」，来源为「AI 生成」「AI 补充」「我」「恢复」「AI 整理」之一（不含时间，时间看版本的 `updated_at`）。返回 200 与最新 `summary`。
 
 恢复只替换正文，**不改变「已整理的笔记」集合（`included_refs`）**：恢复点之后才被整理进总结的笔记仍算已整理，之后「更新」不会再把它们补充进来；如需重新整理，可手动编辑或删除总结后重新生成。`revision` 与 409 的规则同 `PUT`；总结或版本不存在 404。
+
+#### 学习偏好
+
+每个账号各自一份，所有书共用。
+
+`GET /api/v1/study/prefs` → `{ "allowAiAddition": false }`（没保存过时返回默认值）。
+
+`PUT /api/v1/study/prefs`，body `{ "allowAiAddition": true }` → 返回保存后的偏好；字段缺失、类型不对或有多余字段返回 422。
+
+| 字段 | 说明 |
+|---|---|
+| `allowAiAddition` | 「整理笔记时允许 AI 补充内容」，默认 `false`。只影响「AI 整理预览」：关闭时 AI 只重新组织选中的内容；打开时 AI 可补上笔记里没写的常识，补充的文字带 `aiAdded` 标记。不影响生成 / 更新任务 |
 
 #### GET /api/v1/study/books/:bookId/refs/:ref
 

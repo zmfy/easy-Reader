@@ -12,6 +12,7 @@ import {
   collectNotes, newNotes, resolveRef, findRefNote, StudySummary,
 } from '../services/study-summary';
 import { startSummaryJob, getCurrentJob } from '../services/summary-job';
+import { getStudyPrefs, setStudyPrefs } from '../services/study-prefs';
 import { isValidDoc, docToBlocks, docToMarkdown, extractRefs } from '../services/summary-doc';
 
 const router = Router();
@@ -64,6 +65,17 @@ function failSave(res: Response, userId: string, bookId: string, r: SaveFail): v
 }
 
 // GET /api/study/summaries?q= — 有笔记或有总结的书的总览
+// GET/PUT /api/study/prefs — 学习偏好（每个账号各自一份）
+router.get('/prefs', authMiddleware, (req: Request, res: Response) => {
+  successResponse(res, getStudyPrefs(getDb(), req.user!.userId));
+});
+
+router.put('/prefs', authMiddleware, (req: Request, res: Response) => {
+  const parsed = z.object({ allowAiAddition: z.boolean() }).strict().safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  successResponse(res, setStudyPrefs(getDb(), req.user!.userId, parsed.data));
+});
+
 router.get('/summaries', authMiddleware, (req: Request, res: Response) => {
   const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : undefined;
   successResponse(res, listSummaryOverview(getDb(), req.user!.userId, q));
@@ -120,13 +132,18 @@ router.get('/books/:bookId/summary', authMiddleware, async (req: Request, res: R
 const revisionSchema = z.number().int().min(1);
 
 // PUT /api/study/books/:bookId/summary — 手动保存（乐观并发：revision 须等于当前修订号）
+// 可选 source: 'ai_tidy'（采用 AI 整理结果，总是新建版本）与 description（仅随 source 使用）
 router.put('/books/:bookId/summary', authMiddleware, (req: Request, res: Response) => {
-  const parsed = z.object({ doc: z.unknown(), revision: revisionSchema }).safeParse(req.body ?? {});
+  const parsed = z.object({
+    doc: z.unknown(), revision: revisionSchema,
+    source: z.literal('ai_tidy').optional(),
+    description: z.string().trim().min(1).max(50).optional(),
+  }).refine(b => b.description === undefined || b.source !== undefined).safeParse(req.body ?? {});
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
-  const { doc, revision } = parsed.data;
+  const { doc, revision, source, description } = parsed.data;
   if (!isValidDoc(doc)) { errorResponse(res, 422, 'VALIDATION_ERROR', '文档格式不正确'); return; }
   if (JSON.stringify(doc).length > MAX_DOC_JSON) { errorResponse(res, 422, 'VALIDATION_ERROR', '文档太大'); return; }
-  const r = saveUserDoc(getDb(), req.user!.userId, req.params.bookId, doc, revision);
+  const r = saveUserDoc(getDb(), req.user!.userId, req.params.bookId, doc, revision, source ? { source, description } : undefined);
   if (!r.ok) { failSave(res, req.user!.userId, req.params.bookId, r); return; }
   successResponse(res, r.summary);
 });

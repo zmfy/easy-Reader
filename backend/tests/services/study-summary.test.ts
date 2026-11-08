@@ -234,3 +234,38 @@ describe('study-summary', () => {
     expect(restoreVersion(d, 'u2', 'b1', v.id, 1).ok).toBe(false);
   });
 });
+
+describe('study-summary ai_tidy saves', () => {
+  it('saveUserDoc with ai_tidy always creates a new version and never merges', () => {
+    const d = makeDb();
+    writeAiResult(d, 'u1', 'b1', doc('A'), [], 'ai_generate', '初版');
+    saveUserDoc(d, 'u1', 'b1', doc('B'), 1);
+    const r = saveUserDoc(d, 'u1', 'b1', doc('C'), 2, { source: 'ai_tidy', description: '整理成表格（3 列 5 行）' });
+    expect(r.ok).toBe(true);
+    let vs = listVersions(d, 'u1', 'b1');
+    expect(vs.map(v => v.source)).toEqual(['ai_tidy', 'user', 'ai_generate']);
+    expect(vs[0].description).toBe('整理成表格（3 列 5 行）');
+    saveUserDoc(d, 'u1', 'b1', doc('D'), 3);
+    vs = listVersions(d, 'u1', 'b1');
+    expect(vs.map(v => v.source)).toEqual(['user', 'ai_tidy', 'user', 'ai_generate']);
+    expect(getVersion(d, 'u1', 'b1', vs[1].id)!.doc).toEqual(JSON.parse(JSON.stringify(doc('C'))));
+  });
+
+  it('saveUserDoc ai_tidy defaults description to AI 整理 and still checks revision', () => {
+    const d = makeDb();
+    writeAiResult(d, 'u1', 'b1', doc('A'), [], 'ai_generate', '初版');
+    const stale = saveUserDoc(d, 'u1', 'b1', doc('B'), 0, { source: 'ai_tidy' });
+    expect(stale.ok === false && stale.reason).toBe('conflict');
+    saveUserDoc(d, 'u1', 'b1', doc('B'), 1, { source: 'ai_tidy' });
+    expect(listVersions(d, 'u1', 'b1')[0].description).toBe('AI 整理');
+  });
+
+  it('restore of an ai_tidy version describes it as AI 整理', () => {
+    const d = makeDb();
+    writeAiResult(d, 'u1', 'b1', doc('A'), [], 'ai_generate', '初版');
+    saveUserDoc(d, 'u1', 'b1', doc('B'), 1, { source: 'ai_tidy' });
+    const v = listVersions(d, 'u1', 'b1')[0];
+    restoreVersion(d, 'u1', 'b1', v.id, 2);
+    expect(listVersions(d, 'u1', 'b1')[0].description).toBe('恢复到『AI 整理』版本');
+  });
+});

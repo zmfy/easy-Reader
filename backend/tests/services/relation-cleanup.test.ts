@@ -31,7 +31,7 @@ function makeDb() {
     d.prepare("INSERT INTO ai_recaps VALUES (?, 0, 0, 'x')").run(b);
     d.prepare("INSERT INTO ai_expansions VALUES (?, 'c', 0, 'x')").run(b);
   }
-  d.prepare("INSERT INTO settings VALUES ('reader_prefs_u1', '{}'), ('reader_prefs_u2', '{}'), ('site_name', 'x')").run();
+  d.prepare("INSERT INTO settings VALUES ('reader_prefs_u1', '{}'), ('reader_prefs_u2', '{}'), ('study_prefs_u1', '{}'), ('study_prefs_u2', '{}'), ('site_name', 'x')").run();
   return d;
 }
 
@@ -79,6 +79,7 @@ describe('deleteUserData', () => {
       expect(count(d, t, "user_id = 'u2'")).toBe(2);
     }
     expect(count(d, 'settings', "key = 'reader_prefs_u1'")).toBe(0);
-    expect(count(d, 'settings', "key IN ('reader_prefs_u2', 'site_name')")).toBe(2);
+    expect(count(d, 'settings', "key = 'study_prefs_u1'")).toBe(0);
+    expect(count(d, 'settings', "key IN ('reader_prefs_u2', 'study_prefs_u2', 'site_name')")).toBe(3);
   });
 });

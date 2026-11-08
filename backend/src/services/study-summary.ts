@@ -136,8 +136,10 @@ function hasRunningJob(db: Database.Database, userId: string, bookId: string): b
   return !!db.prepare("SELECT 1 FROM study_summary_jobs WHERE user_id = ? AND book_id = ? AND status = 'running' LIMIT 1").get(userId, bookId);
 }
 
+export interface SaveOptions { source: 'ai_tidy'; description?: string }
+
 export function saveUserDoc(
-  db: Database.Database, userId: string, bookId: string, doc: DocNode, baseRevision: number
+  db: Database.Database, userId: string, bookId: string, doc: DocNode, baseRevision: number, opts?: SaveOptions
 ): SaveResult {
   return db.transaction((): SaveResult => {
     const cur = getSummary(db, userId, bookId);
@@ -147,6 +149,11 @@ export function saveUserDoc(
     const docJson = JSON.stringify(doc);
     db.prepare('UPDATE study_summaries SET doc = ?, revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(docJson, cur.id);
+    // AI 整理总是单独一个版本，不与「我」的版本合并
+    if (opts) {
+      insertVersion(db, cur.id, docJson, opts.source, opts.description || 'AI 整理');
+      return { ok: true, summary: getSummary(db, userId, bookId)! };
+    }
     const last = db.prepare(
       'SELECT id, source, updated_at > datetime(\'now\', ?) AS fresh FROM study_summary_versions WHERE summary_id = ? ORDER BY rowid DESC LIMIT 1'
     ).get(`-${MERGE_MINUTES} minutes`, cur.id) as { id: string; source: string; fresh: number } | undefined;
@@ -176,7 +183,7 @@ export function getVersion(db: Database.Database, userId: string, bookId: string
   return r ? { ...r, doc: JSON.parse(r.doc) as DocNode } : null;
 }
 
-const SOURCE_LABEL: Record<string, string> = { ai_generate: 'AI 生成', ai_update: 'AI 补充', user: '我', restore: '恢复' };
+const SOURCE_LABEL: Record<string, string> = { ai_generate: 'AI 生成', ai_update: 'AI 补充', user: '我', restore: '恢复', ai_tidy: 'AI 整理' };
 
 export function restoreVersion(
   db: Database.Database, userId: string, bookId: string, versionId: string, baseRevision: number
