@@ -109,3 +109,16 @@ export function writeCertFiles(dir: string, cert: string, key: string): void {
 export function deleteCertFiles(dir: string): void {
   for (const f of [CERT_FILE, KEY_FILE]) fs.rmSync(path.join(dir, f), { force: true });
 }
+
+/** 设置页上传：校验通过才写文件（不动原有证书）；过期 / 尚未生效照样接受并给出警告 */
+export function saveUploadedCert(
+  dir: string, cert: string, key: string, now: Date = new Date(),
+): { ok: true; info: CertInfo; warnings: string[] } | { ok: false; error: CertError } {
+  const checked = inspectCertificate(cert, key, now);
+  if (!checked.ok) return checked;
+  writeCertFiles(dir, cert.trim() + '\n', key.trim() + '\n');
+  const warnings: string[] = [];
+  if (checked.info.expired) warnings.push('证书已过期');
+  if (checked.info.notYetValid) warnings.push('证书尚未生效');
+  return { ok: true, info: checked.info, warnings };
+}

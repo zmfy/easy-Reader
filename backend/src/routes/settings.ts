@@ -12,6 +12,12 @@ import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
 import crypto from 'crypto';
 import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
+import path from 'path';
+import { certDir, certWarning, saveUploadedCert, deleteCertFiles } from '../services/https-cert';
+import { getHttpsState, recheckHttps, HttpsState } from '../services/https-server';
+
+const HTTPS_CERT_DIR = certDir(process.env.DATA_DIR || path.join(__dirname, '../../data'));
+const httpsView = (s: HttpsState) => ({ ...s, warning: s.cert ? certWarning(s.cert) : null });
 
 const router = Router();
 
@@ -107,6 +113,29 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
 router.get('/ai-plugins', authMiddleware, (_req: Request, res: Response) => {
   const plugins = aiPlugins.map(p => ({ name: p.name, label: p.label, fields: p.fields, placeholders: p.placeholders || {}, options: p.options || {} }));
   successResponse(res, plugins);
+});
+
+// ── HTTPS（使用自己的证书）：只返回证书元数据，从不返回私钥 ──────────────
+
+// GET /api/settings/https
+router.get('/https', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, httpsView(getHttpsState()));
+});
+
+// PUT /api/settings/https — 上传证书与私钥（PEM 文本），校验通过才写入并立即生效
+router.put('/https', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({ cert: z.string().min(1).max(65536), key: z.string().min(1).max(65536) }).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const r = saveUploadedCert(HTTPS_CERT_DIR, parsed.data.cert, parsed.data.key);
+  if (!r.ok) { errorResponse(res, 422, 'VALIDATION_ERROR', r.error); return; }
+  const state = await recheckHttps();
+  successResponse(res, { ...httpsView(state), warnings: r.warnings }, '证书已保存');
+});
+
+// DELETE /api/settings/https — 删除证书，关闭 HTTPS
+router.delete('/https', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+  deleteCertFiles(HTTPS_CERT_DIR);
+  successResponse(res, httpsView(await recheckHttps()), '证书已删除');
 });
 
 // GET /api/settings/ai-status — whether AI is usable (plugin selected + credential filled)

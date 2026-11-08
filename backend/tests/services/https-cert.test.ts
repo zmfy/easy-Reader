@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
-  inspectCertificate, certWarning, certDir, readCertFiles, writeCertFiles, deleteCertFiles, CertCheck,
+  inspectCertificate, certWarning, certDir, readCertFiles, writeCertFiles, deleteCertFiles, CertCheck, saveUploadedCert,
 } from '../../src/services/https-cert';
 
 const FIX = path.join(__dirname, '../fixtures/certs');
@@ -61,5 +61,31 @@ describe('https-cert', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['fullchain.pem', 'privkey.pem']);
     deleteCertFiles(dir);
     expect(readCertFiles(dir)).toEqual({ cert: null, key: null });
+  });
+
+  it('saveUploadedCert rejects bad pairs without touching existing files', () => {
+    const dir = certDir(fs.mkdtempSync(path.join(os.tmpdir(), 'https-up-')));
+    writeCertFiles(dir, CERT, KEY);
+    expect(saveUploadedCert(dir, CERT, OTHER_KEY)).toEqual({ ok: false, error: '证书与私钥不匹配' });
+    expect(saveUploadedCert(dir, 'garbage', KEY)).toEqual({ ok: false, error: '无法解析证书' });
+    expect(readCertFiles(dir)).toEqual({ cert: CERT, key: KEY });
+  });
+
+  it('saveUploadedCert accepts expired certificates with a warning', () => {
+    const dir = certDir(fs.mkdtempSync(path.join(os.tmpdir(), 'https-up-')));
+    const ok = inspectCertificate(CERT, KEY) as Extract<CertCheck, { ok: true }>;
+    const r = saveUploadedCert(dir, CERT, KEY, new Date(Date.parse(ok.info.notAfter) + 86400e3));
+    expect(r).toMatchObject({ ok: true, warnings: ['证书已过期'] });
+    expect(readCertFiles(dir)).toEqual({ cert: CERT, key: KEY });
+    const early = saveUploadedCert(dir, CERT, KEY, new Date(Date.parse(ok.info.notBefore) - 86400e3));
+    expect(early).toMatchObject({ ok: true, warnings: ['证书尚未生效'] });
+    expect(saveUploadedCert(dir, CERT, KEY)).toMatchObject({ ok: true, warnings: [] });
+  });
+
+  it('saveUploadedCert result never contains the private key', () => {
+    const dir = certDir(fs.mkdtempSync(path.join(os.tmpdir(), 'https-up-')));
+    const json = JSON.stringify(saveUploadedCert(dir, CERT, KEY));
+    expect(json).not.toContain('PRIVATE KEY');
+    for (const line of KEY.split('\n').filter(l => l.length > 20 && !l.startsWith('-----'))) expect(json).not.toContain(line);
   });
 });
