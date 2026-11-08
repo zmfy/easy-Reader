@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import {
   parseExpandResult, buildExpandPrompt, expandHighlight, AiBadOutputError,
-  locateHighlightParagraph, readingBoundary, buildExpandContext, expandContextRange, listMindNodesWithLater,
+  locateHighlightParagraph, findHighlightParagraph, pdfContextRange, readingBoundary, buildExpandContext, expandContextRange, listMindNodesWithLater,
 } from '../../src/services/mind-expand';
 import { HIGHLIGHTS_DDL, createHighlight } from '../../src/services/highlights';
 import { MIND_DDL, keepChain } from '../../src/services/mind-nodes';
@@ -344,5 +344,42 @@ describe('listMindNodesWithLater', () => {
     ]);
     const nodes = await listMindNodesWithLater(db, book, 'u1', h.id);
     expect(nodes.map(n => n.source_later)).toEqual([false, false, true]);
+  });
+});
+
+describe('pdf highlight context', () => {
+  const pdfBook = { ...book, file_format: 'pdf' } as unknown as Book;
+
+  it('findHighlightParagraph ignores whitespace differences', () => {
+    const paras = ['First line of text', 'The quick brown fox jumps over', '中文 段落 内容'];
+    expect(findHighlightParagraph(paras, 'quick  brown\nfox')).toBe(1);
+    expect(findHighlightParagraph(paras, '中文段落')).toBe(2);
+    expect(findHighlightParagraph(paras, '不存在')).toBe(-1);
+    expect(locateHighlightParagraph(paras, '不存在')).toBe(0);
+  });
+
+  it('pdf highlight not found uses the whole page', () => {
+    expect(pdfContextRange(7, -1)).toEqual({ from: 0, to: 6 });
+    expect(pdfContextRange(10, 5)).toEqual({ from: 2, to: 7 });
+    expect(pdfContextRange(3, 0)).toEqual({ from: 0, to: 2 });
+  });
+
+  it('expandHighlight on a pdf book does not cut context at the reading progress', async () => {
+    setProgress('u1', 2, 0);
+    const h = hl('u1', 2, '灰雾 之上');
+    chat.mockResolvedValue(aiJson([{ label: '灰雾', kind: 'concept', summary: 's' }]));
+    await expandHighlight(db, pdfBook, 'u1', { highlightId: h.id });
+    const prompt = chat.mock.calls[0][0] as string;
+    expect(prompt).toContain('甲段一：灰雾之上');
+    expect(prompt).toContain('甲段三');
+    expect(prompt).not.toContain('乙段');
+  });
+
+  it('expandHighlight on a pdf book uses the whole page when the text is not found', async () => {
+    const h = hl('u1', 3, '页里没有的句子');
+    chat.mockResolvedValue(aiJson([{ label: '塔罗', kind: 'concept', summary: 's' }]));
+    await expandHighlight(db, pdfBook, 'u1', { highlightId: h.id });
+    const prompt = chat.mock.calls[0][0] as string;
+    for (const p of ['乙段零', '乙段一', '乙段二：塔罗会', '乙段三']) expect(prompt).toContain(p);
   });
 });

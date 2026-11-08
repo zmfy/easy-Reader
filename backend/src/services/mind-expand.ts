@@ -94,8 +94,13 @@ export function buildExpandPrompt(input: {
   return parts.join('\n');
 }
 
-/** 划线所在段落：先找包含全文的段落，跨段时用前 20 字定位，取第一处；找不到取 0 */
-export function locateHighlightParagraph(paragraphs: string[], text: string): number {
+const noSpace = (s: string) => s.replace(/\s+/g, '');
+
+/**
+ * 划线所在段落：先找包含全文的段落，跨段时用前 20 字定位，取第一处；
+ * 再去掉所有空白各试一次（PDF 前端文字层与后端抽取的文字空白可能不同）；找不到 → -1
+ */
+export function findHighlightParagraph(paragraphs: string[], text: string): number {
   const full = text.trim();
   const anchor = takeChars(full.split('\n')[0].trim(), ANCHOR_MAX);
   for (const needle of [full, anchor]) {
@@ -103,7 +108,31 @@ export function locateHighlightParagraph(paragraphs: string[], text: string): nu
     const i = paragraphs.findIndex(p => p.includes(needle));
     if (i >= 0) return i;
   }
-  return 0;
+  const compact = paragraphs.map(noSpace);
+  for (const needle of [noSpace(full), takeChars(noSpace(full), ANCHOR_MAX)]) {
+    if (!needle) continue;
+    const i = compact.findIndex(p => p.includes(needle));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** 划线所在段落；找不到取 0 */
+export function locateHighlightParagraph(paragraphs: string[], text: string): number {
+  return Math.max(0, findHighlightParagraph(paragraphs, text));
+}
+
+/** PDF 上下文范围：整页视为已读，不按阅读边界截断；找不到划线时取整页 */
+export function pdfContextRange(paragraphCount: number, found: number): { from: number; to: number } {
+  if (found < 0) return { from: 0, to: paragraphCount - 1 };
+  return { from: Math.max(0, found - CONTEXT_BEFORE), to: Math.min(paragraphCount - 1, found + CONTEXT_AFTER) };
+}
+
+/** PDF 的划线位置与阅读边界：划线所在页整页视为已读 */
+function pdfPositions(chapterIndex: number, paragraphs: string[], text: string, progress: Position | null) {
+  const found = findHighlightParagraph(paragraphs, text);
+  const pageEnd: Position = { chapterIndex, paragraphIndex: Math.max(0, paragraphs.length - 1) };
+  return { found, boundary: readingBoundary(progress, pageEnd) };
 }
 
 /** 阅读边界 = 进度与划线位置中较晚者；无进度 = 划线位置 */
@@ -159,12 +188,21 @@ export async function expandHighlight(db: Database.Database, book: Book, userId:
   const exclude = new Set([center, ...path].map(s => s.trim()));
   const chapter = await getChapterText(book, hl.chapter_index);
   const paragraphs = chapter?.paragraphs ?? [];
-  const highlightPos: Position = {
-    chapterIndex: hl.chapter_index,
-    paragraphIndex: locateHighlightParagraph(paragraphs, hl.text),
-  };
-  const boundary = readingBoundary(readProgress(db, userId, book.id), highlightPos);
-  const range = expandContextRange(hl.chapter_index, paragraphs.length, highlightPos.paragraphIndex, boundary);
+  const progress = readProgress(db, userId, book.id);
+  let boundary: Position;
+  let range: { from: number; to: number };
+  if (book.file_format === 'pdf') {
+    const pos = pdfPositions(hl.chapter_index, paragraphs, hl.text, progress);
+    boundary = pos.boundary;
+    range = pdfContextRange(paragraphs.length, pos.found);
+  } else {
+    const highlightPos: Position = {
+      chapterIndex: hl.chapter_index,
+      paragraphIndex: locateHighlightParagraph(paragraphs, hl.text),
+    };
+    boundary = readingBoundary(progress, highlightPos);
+    range = expandContextRange(hl.chapter_index, paragraphs.length, highlightPos.paragraphIndex, boundary);
+  }
   const key = [book.id, center, hl.chapter_index, range.from, range.to] as const;
 
   const withLater = (stored: StoredCandidate[], cached: boolean) => ({
@@ -238,7 +276,9 @@ export async function listMindNodesWithLater(
       } catch (err) {
         console.error(`[mind-nodes] book=${book.id} chapter=${hl.chapter_index} 读取失败`, err);
       }
-      b = readingBoundary(progress, { chapterIndex: hl.chapter_index, paragraphIndex: locateHighlightParagraph(paragraphs, hl.text) });
+      b = book.file_format === 'pdf'
+        ? pdfPositions(hl.chapter_index, paragraphs, hl.text, progress).boundary
+        : readingBoundary(progress, { chapterIndex: hl.chapter_index, paragraphIndex: locateHighlightParagraph(paragraphs, hl.text) });
     }
     boundaries.set(hid, b);
     return b;
