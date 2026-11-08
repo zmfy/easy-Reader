@@ -134,4 +134,7 @@ onMounted(load)
 .hc-days { margin-left: 8px; font-size: 13px; color: var(--text-2); }
 .hc-days.is-bad { color: var(--danger); }
 .hc-file { margin-top: 6px; font-size: 13px; color: var(--text-2); }
+/* 与设置页其他卡片的表单标签一致（Settings.vue 的样式是 scoped，作用不到本组件） */
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field label { font-size: 13px; font-weight: 500; color: var(--text-1); }
 </style>

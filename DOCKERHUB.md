@@ -46,6 +46,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:3000"
+      - "8443:3443"   # HTTPS：使用自己的证书时生效（放进数据目录 certs/ 或在设置页上传）
     volumes:
       - /volume1/books:/app/books              # 书库目录（txt / epub / pdf / umd）
       - /volume1/docker/easy-reader:/app/data  # 数据库、封面、缓存

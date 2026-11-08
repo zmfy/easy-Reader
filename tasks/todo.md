@@ -419,3 +419,13 @@
 - [x] 文档：README（USAGE_STATS、隐私说明、支持架构）、DOCKERHUB.md、.env.example、docker-compose、CHANGELOG
 - [x] 验证：jest 52 suites / 492、vitest 123、前后端 tsc；本地官网后端联调（201 / 同日去重 / 非法参数 422 / 第 21 次 429 / 管理统计 / 无令牌 401）；开发后端启动 60s 后官网收到 id+main+1.1.1+x64；设置页关闭后 DB 为 false；Chrome 看菜单两项新标签打开
 - [ ] 合并到 study（工作流冲突保留 easy-learner 规则）
+
+# 使用自己的证书提供 HTTPS（11-08，main 上 feature/https）
+
+决定（用户）：只做软件供应商，不申请 / 续签证书；放文件与设置页上传两种都做；证书过期继续用、只提醒；PWA 分支与本分支一起合入 main
+
+- [x] 证书检查与存储、HTTPS 管理器（热更新、保留上一张可用证书、端口占用）
+- [x] 管理员接口 GET/PUT/DELETE /settings/https（不返回私钥）
+- [x] 设置页「HTTPS 证书」卡片、铃铛到期提醒
+- [x] docker-compose 8443:3443、README / DOCKERHUB / CHANGELOG
+- [ ] 与 feature/pwa 一起合入 main，再合并到 study
