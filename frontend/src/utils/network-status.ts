@@ -7,8 +7,11 @@ export const serverUnreachable = ref(false)
 export function reportNetworkError(): void { serverUnreachable.value = true }
 export function reportNetworkOk(): void { serverUnreachable.value = false }
 
-/** 请求没有拿到响应（断网、连不上、超时）；主动取消的不算 */
+/**
+ * 连不上服务器（axios 的 ERR_NETWORK）。超时、页面卸载时中止（ECONNABORTED / ETIMEDOUT）、主动取消都不算：
+ * 服务器可能是连得上的（例如 AI 生成很慢），不能因此一直挂着「没有网络连接」
+ */
 export function isNetworkFailure(err: unknown): boolean {
   const e = err as { isAxiosError?: boolean; response?: unknown; code?: string } | null
-  return !!e?.isAxiosError && !e.response && e.code !== 'ERR_CANCELED'
+  return !!e?.isAxiosError && !e.response && e.code === 'ERR_NETWORK'
 }

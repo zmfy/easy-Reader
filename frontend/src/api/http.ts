@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { isNetworkFailure, reportNetworkError, reportNetworkOk } from '@/utils/network-status'
+import { loginHrefFor } from '@/utils/safe-redirect'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
 const http: AxiosInstance = axios.create({
@@ -53,7 +54,9 @@ function redirectToLogin(): void {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('refreshToken')
   if (window.location.pathname !== '/login') {
-    window.location.href = '/login'
+    // 带上回跳：例如从桌面图标打开 /continue 时登录已过期，登录后仍进入上次读的书
+    const { pathname, search, hash } = window.location
+    window.location.href = loginHrefFor(pathname + search + hash)
   }
 }
 

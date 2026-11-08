@@ -11,3 +11,10 @@ export function loginRedirectFor(fullPath: string): { path: '/login'; query?: { 
   if (fullPath === '/' || fullPath === DEFAULT_AFTER_LOGIN) return { path: '/login' }
   return { path: '/login', query: { redirect: fullPath } }
 }
+
+/** 会话失效时整页跳转的登录地址（带回跳）；已在登录页则原样保留 */
+export function loginHrefFor(fullPath: string): string {
+  if (fullPath === '/login' || fullPath.startsWith('/login?') || fullPath.startsWith('/login#')) return fullPath
+  const target = loginRedirectFor(fullPath)
+  return target.query ? `/login?redirect=${encodeURIComponent(target.query.redirect)}` : '/login'
+}

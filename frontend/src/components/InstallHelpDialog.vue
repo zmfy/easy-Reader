@@ -11,6 +11,7 @@
       <a :href="SITE_URL" target="_blank" rel="noopener noreferrer">查看说明</a>
     </p>
     <p v-else-if="mode === 'ios'" class="install-text">点底部的分享按钮 → 选择『添加到主屏幕』</p>
+    <p v-else-if="mode === 'menu'" class="install-text">请在浏览器菜单中选择『安装应用』或『添加到主屏幕』</p>
     <p v-else class="install-text">当前浏览器不支持安装，请使用 Chrome、Edge 或 Safari</p>
     <template #footer>
       <el-button type="primary" @click="emit('update:modelValue', false)">知道了</el-button>
