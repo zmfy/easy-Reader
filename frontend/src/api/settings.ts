@@ -7,6 +7,8 @@ export const settingsApi = {
   uploadHttps: (cert: string, key: string) =>
     http.put<ApiResponse<import('@/types').HttpsStatus>>('/settings/https', { cert, key }),
   deleteHttps: () => http.delete<ApiResponse<import('@/types').HttpsStatus>>('/settings/https'),
+  setHttpsEnabled: (enabled: boolean) =>
+    http.put<ApiResponse<import('@/types').HttpsStatus>>('/settings/https/enabled', { enabled }),
 
   getPublic: () =>
     http.get<ApiResponse<{ site_name: string; site_subtitle: string; site_theme: string }>>('/settings/public'),

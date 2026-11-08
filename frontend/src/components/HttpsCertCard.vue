@@ -1,9 +1,20 @@
 <template>
   <section class="section-card">
     <h2 class="section-title">HTTPS 证书</h2>
-    <p class="section-desc">使用你自己的证书，直接以 HTTPS 访问（例如从外网通过 DDNS 访问、安装到桌面）。本程序不申请、不续签证书。</p>
+    <div class="hc-switch">
+      <el-switch
+        :model-value="!!state?.enabled"
+        :loading="toggling"
+        :disabled="!state"
+        aria-label="启用 HTTPS"
+        @change="toggle"
+      />
+      <span class="hc-switch-label">启用 HTTPS</span>
+    </div>
+    <p class="section-desc">需要在手机上安装到桌面（PWA）或从外网用 HTTPS 访问时再开启。使用你自己的证书，本程序不申请、不续签证书。</p>
 
-    <div v-if="state" class="hc-status">
+    <template v-if="state?.enabled">
+    <div class="hc-status">
       <div class="hc-row">
         <span class="hc-badge" :class="state.listening ? 'is-on' : 'is-off'">
           {{ state.listening ? 'HTTPS 已开启' : 'HTTPS 未开启' }}
@@ -41,6 +52,7 @@
       </div>
       <p class="form-hint">也可以把 fullchain.pem 与 privkey.pem 放进数据目录的 certs 文件夹，替换后自动生效</p>
     </div>
+    </template>
   </section>
 </template>
 
@@ -48,9 +60,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { settingsApi } from '@/api/settings'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { HttpsStatus } from '@/types'
 
+const noticeStore = useSystemNoticeStore()
 const state = ref<HttpsStatus | null>(null)
+const toggling = ref(false)
 const certText = ref('')
 const keyText = ref('')
 const uploading = ref(false)
@@ -81,6 +96,23 @@ async function load() {
   }
 }
 
+// 开关 / 上传 / 删除后，铃铛里的到期提醒随之更新
+function refreshNotices() {
+  noticeStore.load().catch(() => {})
+}
+
+async function toggle(v: string | number | boolean) {
+  toggling.value = true
+  try {
+    state.value = (await settingsApi.setHttpsEnabled(!!v)).data.data ?? null
+    refreshNotices()
+  } catch (err) {
+    ElMessage.error(errorText(err, '切换失败'))
+  } finally {
+    toggling.value = false
+  }
+}
+
 function readFile(e: Event, which: 'cert' | 'key') {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -96,6 +128,7 @@ async function upload() {
     keyText.value = ''
     if (next.warnings?.length) next.warnings.forEach(w => ElMessage.warning(w))
     else ElMessage.success('证书已保存')
+    refreshNotices()
   } catch (err) {
     ElMessage.error(errorText(err, '证书保存失败'))
   } finally {
@@ -112,6 +145,7 @@ async function remove() {
   try {
     state.value = (await settingsApi.deleteHttps()).data.data ?? null
     ElMessage.success('证书已删除')
+    refreshNotices()
   } catch (err) {
     ElMessage.error(errorText(err, '删除失败'))
   }
@@ -121,6 +155,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+.hc-switch { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; }
+.hc-switch-label { font-size: 14px; color: var(--text-0); }
 .hc-status { margin-bottom: 14px; }
 .hc-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .hc-badge { padding: 3px 10px; border-radius: 999px; font-size: 13px; }

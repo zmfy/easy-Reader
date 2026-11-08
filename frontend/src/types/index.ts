@@ -370,6 +370,8 @@ export interface HttpsCertInfo {
 }
 
 export interface HttpsStatus {
+  /** 设置页「启用 HTTPS」开关；关闭时不提供 HTTPS */
+  enabled: boolean
   listening: boolean
   port: number
   cert: HttpsCertInfo | null

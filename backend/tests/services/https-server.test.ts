@@ -131,4 +131,23 @@ describe('https manager', () => {
     expect(m.state()).toMatchObject({ listening: true, lastError: '证书无法用于 HTTPS' });
     expect(await handshake(port, CERT, 'book.example.com')).toBe(fingerprint(CERT));
   });
+
+  it('serves HTTPS only while the switch is on, keeping the files', async () => {
+    const port = await freePort();
+    let enabled = false;
+    const m = createHttpsManager(handler as never, { dir, port, isEnabled: () => enabled });
+    managers.push(m);
+    writeCertFiles(dir, CERT, KEY);
+    await m.check();
+    expect(m.state()).toMatchObject({ enabled: false, listening: false, cert: null, lastError: null });
+    enabled = true;
+    await m.check();
+    expect(m.state()).toMatchObject({ enabled: true, listening: true });
+    expect(await handshake(port, CERT, 'book.example.com')).toBe(fingerprint(CERT));
+    enabled = false;
+    await m.check();
+    expect(m.state()).toMatchObject({ enabled: false, listening: false, cert: null });
+    await expect(handshake(port, CERT, 'book.example.com')).rejects.toBeTruthy();
+    expect(fs.existsSync(path.join(dir, 'privkey.pem'))).toBe(true);
+  });
 });

@@ -203,6 +203,7 @@
 
 ```json
 {
+  "enabled": true,
   "listening": true, "port": 3443,
   "cert": { "domains": ["book.example.com"], "issuer": "C=US, O=Let's Encrypt, CN=R11",
             "notBefore": "2026-11-01T00:00:00.000Z", "notAfter": "2027-01-30T00:00:00.000Z",
@@ -212,6 +213,7 @@
 }
 ```
 
+- `enabled`：设置页「启用 HTTPS」开关（默认关闭）。关闭时不提供 HTTPS（即使 `certs/` 里有证书），也没有到期提醒。
 - `listening`：HTTPS 是否在 `port`（环境变量 `HTTPS_PORT`，默认 3443）上提供服务；`cert` 为当前生效的证书，未开启时为 `null`。
 - `lastError`：最近一次加载证书的问题（「缺少证书文件」「无法解析证书」「无法解析私钥」「证书与私钥不匹配」「证书无法用于 HTTPS」（如密钥太短）「HTTPS 端口 N 被占用」）。新证书有问题时会继续使用上一张可用证书，此时 `listening` 仍为 `true`。
 - `warning`：到期提醒，证书剩余 14 天内为「HTTPS 证书将在 N 天后到期（域名）」，过期后为「HTTPS 证书已过期（域名）」，否则 `null`。过期证书仍会继续使用。
@@ -229,6 +231,10 @@
 ```
 
 校验通过后写入 `certs/` 并立即生效，返回状态对象并附 `warnings`（如 `["证书已过期"]`、`["证书尚未生效"]`，此类证书仍会被接受）。无法解析、证书与私钥不匹配或证书无法用于 HTTPS 时返回 422 `VALIDATION_ERROR`，`message` 为具体原因，原有证书保持不变；数据目录不可写等写入失败返回 500。
+
+#### PUT /api/v1/settings/https/enabled
+
+打开或关闭「启用 HTTPS」开关：`{ "enabled": true }`，返回状态对象。关闭时证书文件保留，下次打开直接生效。
 
 #### DELETE /api/v1/settings/https
 

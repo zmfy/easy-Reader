@@ -3,11 +3,25 @@
 import fs from 'fs';
 import https from 'https';
 import type { RequestListener } from 'http';
+import type Database from 'better-sqlite3';
 import { inspectCertificate, readCertFiles, CertInfo } from './https-cert';
 
-export interface HttpsState { listening: boolean; port: number; cert: CertInfo | null; lastError: string | null }
+export interface HttpsState { enabled: boolean; listening: boolean; port: number; cert: CertInfo | null; lastError: string | null }
 
-interface ManagerOpts { dir: string; port: number; pollMs?: number }
+/** isEnabled：设置页「启用 HTTPS」开关；关闭时不提供 HTTPS（证书文件保留）。缺省视为开启（测试用） */
+interface ManagerOpts { dir: string; port: number; pollMs?: number; isEnabled?: () => boolean }
+
+const ENABLED_KEY = 'https_enabled';
+
+/** 「启用 HTTPS」开关，默认关闭 */
+export function isHttpsEnabled(db: Database.Database): boolean {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(ENABLED_KEY) as { value: string } | undefined;
+  return row?.value === 'true';
+}
+
+export function setHttpsEnabled(db: Database.Database, enabled: boolean): void {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(ENABLED_KEY, enabled ? 'true' : 'false');
+}
 
 export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) {
   let server: https.Server | null = null;
@@ -15,6 +29,7 @@ export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) 
   let info: CertInfo | null = null;
   let lastError: string | null = null;
   let running: Promise<void> | null = null;
+  const enabledNow = () => (opts.isEnabled ? opts.isEnabled() : true);
 
   function closeServer(): Promise<void> {
     const s = server;
@@ -54,6 +69,13 @@ export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) 
   }
 
   async function doCheck(): Promise<void> {
+    // 开关关闭：不提供 HTTPS，也不报告证书问题
+    if (!enabledNow()) {
+      await closeServer();
+      info = null;
+      lastError = null;
+      return;
+    }
     const files = readCertFiles(opts.dir);
     // 两个文件都没有：未配置 HTTPS
     if (!files.cert && !files.key) {
@@ -98,7 +120,7 @@ export function createHttpsManager(handler: RequestListener, opts: ManagerOpts) 
       return running;
     },
     state(): HttpsState {
-      return { listening: !!server, port: opts.port, cert: server ? info : null, lastError };
+      return { enabled: enabledNow(), listening: !!server, port: opts.port, cert: server ? info : null, lastError };
     },
     close: closeServer,
   };
@@ -124,7 +146,7 @@ export function startHttpsManager(handler: RequestListener, opts: ManagerOpts): 
 }
 
 export function getHttpsState(): HttpsState {
-  return manager ? manager.state() : { listening: false, port: 0, cert: null, lastError: null };
+  return manager ? manager.state() : { enabled: false, listening: false, port: 0, cert: null, lastError: null };
 }
 
 export async function recheckHttps(): Promise<HttpsState> {

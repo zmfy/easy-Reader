@@ -19,7 +19,7 @@ import { parseTrustProxy } from './utils/trust-proxy';
 import { startUpdateChecker } from './services/update-check';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
 import { certDir } from './services/https-cert';
-import { startHttpsManager } from './services/https-server';
+import { startHttpsManager, isHttpsEnabled } from './services/https-server';
 
 const app = express();
 // 经反向代理（Nginx、群晖反代等）访问时，按 X-Forwarded-For 识别真实客户端 IP（限流按 IP 计数）
@@ -123,7 +123,7 @@ app.listen(PORT, () => {
   if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
     startUpdateChecker();
     // 使用自己的证书：DATA_DIR/certs 里有 fullchain.pem + privkey.pem 时在 HTTPS_PORT 上提供 HTTPS
-    startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443 });
+    startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443, isEnabled: () => isHttpsEnabled(getDb()) });
   }
 });
 

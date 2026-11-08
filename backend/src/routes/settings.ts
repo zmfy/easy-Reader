@@ -14,10 +14,14 @@ import crypto from 'crypto';
 import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
 import path from 'path';
 import { certDir, certWarning, saveUploadedCert, deleteCertFiles } from '../services/https-cert';
-import { getHttpsState, recheckHttps, HttpsState } from '../services/https-server';
+import { getHttpsState, recheckHttps, HttpsState, isHttpsEnabled, setHttpsEnabled } from '../services/https-server';
 
 const HTTPS_CERT_DIR = certDir(process.env.DATA_DIR || path.join(__dirname, '../../data'));
-const httpsView = (s: HttpsState) => ({ ...s, warning: s.cert ? certWarning(s.cert) : null });
+// enabled 以数据库开关为准（管理器未启动时，如测试环境，也能反映开关）；到期提醒只在开启且有证书时给出
+const httpsView = (s: HttpsState) => {
+  const enabled = isHttpsEnabled(getDb());
+  return { ...s, enabled, warning: enabled && s.cert ? certWarning(s.cert) : null };
+};
 
 const router = Router();
 
@@ -136,6 +140,14 @@ router.put('/https', authMiddleware, adminMiddleware, async (req: Request, res: 
     console.error('[https] 保存证书失败', err instanceof Error ? err.message : err);
     errorResponse(res, 500, 'INTERNAL_ERROR', `证书保存失败：${(err as NodeJS.ErrnoException)?.code || '写入错误'}`);
   }
+});
+
+// PUT /api/settings/https/enabled — 「启用 HTTPS」开关（关闭时不提供 HTTPS，证书文件保留）
+router.put('/https/enabled', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  setHttpsEnabled(getDb(), parsed.data.enabled);
+  successResponse(res, httpsView(await recheckHttps()), parsed.data.enabled ? 'HTTPS 已启用' : 'HTTPS 已关闭');
 });
 
 // DELETE /api/settings/https — 删除证书，关闭 HTTPS

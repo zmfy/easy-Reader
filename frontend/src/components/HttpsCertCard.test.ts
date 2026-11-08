@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
-vi.mock('@/api/settings', () => ({ settingsApi: { getHttps: vi.fn(), uploadHttps: vi.fn(), deleteHttps: vi.fn() } }))
+vi.mock('@/api/settings', () => ({ settingsApi: { getHttps: vi.fn(), uploadHttps: vi.fn(), deleteHttps: vi.fn(), setHttpsEnabled: vi.fn() } }))
+const loadNotices = vi.fn()
+vi.mock('@/stores/system-notice', () => ({ useSystemNoticeStore: () => ({ load: loadNotices }) }))
 vi.mock('element-plus', async (orig) => {
   const mod = await orig<typeof import('element-plus')>()
   return { ...mod, ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn() }, ElMessageBox: { confirm: vi.fn() } }
@@ -11,14 +13,15 @@ import { settingsApi } from '@/api/settings'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import HttpsCertCard from './HttpsCertCard.vue'
 
-const api = settingsApi as unknown as Record<'getHttps' | 'uploadHttps' | 'deleteHttps', ReturnType<typeof vi.fn>>
+const api = settingsApi as unknown as Record<'getHttps' | 'uploadHttps' | 'deleteHttps' | 'setHttpsEnabled', ReturnType<typeof vi.fn>>
 const resp = (data: unknown) => Promise.resolve({ data: { success: true, data } })
 const cert = { domains: ['book.example.com'], issuer: 'CN=R11', notBefore: '2026-11-01T00:00:00.000Z', notAfter: '2026-12-18T00:00:00.000Z', expired: false, notYetValid: false, daysLeft: 40 }
-const on = { listening: true, port: 3443, cert, lastError: null, warning: null }
-const off = { listening: false, port: 3443, cert: null, lastError: null, warning: null }
+const on = { enabled: true, listening: true, port: 3443, cert, lastError: null, warning: null }
+const off = { enabled: true, listening: false, port: 3443, cert: null, lastError: null, warning: null }
+const disabled = { enabled: false, listening: false, port: 3443, cert: null, lastError: null, warning: null }
 
 describe('HttpsCertCard', () => {
-  beforeEach(() => { Object.values(api).forEach(f => f.mockReset()); vi.mocked(ElMessage.warning).mockReset(); vi.mocked(ElMessageBox.confirm).mockReset() })
+  beforeEach(() => { loadNotices.mockReset(); Object.values(api).forEach(f => f.mockReset()); vi.mocked(ElMessage.warning).mockReset(); vi.mocked(ElMessageBox.confirm).mockReset() })
 
   it('shows status, domains and days left', async () => {
     api.getHttps.mockReturnValue(resp(on))
@@ -82,4 +85,27 @@ describe('HttpsCertCard', () => {
     expect(api.deleteHttps).toHaveBeenCalled()
     expect(w.text()).toContain('HTTPS 未开启')
   })
-})
+  it('shows only the switch and a hint while HTTPS is disabled', async () => {
+    api.getHttps.mockReturnValue(resp(disabled))
+    const w = mount(HttpsCertCard)
+    await flushPromises()
+    expect(w.text()).toContain('启用 HTTPS')
+    expect(w.text()).toContain('需要在手机上安装到桌面（PWA）或从外网用 HTTPS 访问时再开启')
+    expect(w.findAll('textarea')).toHaveLength(0)
+    expect(w.text()).not.toContain('HTTPS 未开启')
+    expect(w.text()).not.toContain('上传并启用')
+  })
+
+  it('turning the switch on reveals the upload area and refreshes the bell', async () => {
+    api.getHttps.mockReturnValue(resp(disabled))
+    api.setHttpsEnabled.mockReturnValue(resp(off))
+    const w = mount(HttpsCertCard)
+    await flushPromises()
+    await w.find('.el-switch').trigger('click')
+    await flushPromises()
+    expect(api.setHttpsEnabled).toHaveBeenCalledWith(true)
+    expect(w.findAll('textarea')).toHaveLength(2)
+    expect(w.text()).toContain('HTTPS 未开启')
+    expect(loadNotices).toHaveBeenCalled()
+  })
+});

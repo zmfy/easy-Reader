@@ -90,4 +90,18 @@ describe('/api/settings/https', () => {
       fs.rmSync(path.join(DATA, 'certs'), { force: true });
     }
   });
+
+  it('toggles the HTTPS switch (admin only) and reports it in the status', async () => {
+    const put = (role: string | undefined, body: unknown) => fetch(`${base}/enabled`, {
+      method: 'PUT', headers: { 'content-type': 'application/json', ...(role ? { 'x-test-role': role } : {}) }, body: JSON.stringify(body),
+    });
+    expect((await put('user', { enabled: true })).status).toBe(403);
+    expect((await put('admin', { enabled: 'yes' })).status).toBe(422);
+    const on = await put('admin', { enabled: true });
+    expect(on.status).toBe(200);
+    expect((await on.json()).data.enabled).toBe(true);
+    expect((await (await call('GET', 'admin')).json()).data.enabled).toBe(true);
+    const off = await put('admin', { enabled: false });
+    expect((await off.json()).data.enabled).toBe(false);
+  });
 });
