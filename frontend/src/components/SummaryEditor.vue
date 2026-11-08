@@ -48,8 +48,10 @@
       @click="onClick"
       @mouseover="onHover"
     />
+    <!-- 不能用 v-if：BubbleMenu 挂载后会把自身元素移交给 tippy（脱离原 DOM），
+         v-if 切换时 Vue 在它前面插入注释节点会报 insertBefore of null。
+         只读时编辑器 isEditable=false，BubbleMenu 默认的 shouldShow 已不会显示 -->
     <bubble-menu
-      v-if="!isReadonly && editor"
       :editor="editor"
       :tippy-options="{ duration: 100, placement: 'top' }"
       class="se-bubble"

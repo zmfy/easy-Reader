@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import { mount, config } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick, onMounted, ref } from 'vue'
 import { ElDropdown } from 'element-plus'
 import { CellSelection } from '@tiptap/pm/tables'
 import SummaryEditor from './SummaryEditor.vue'
@@ -29,6 +29,30 @@ describe('SummaryEditor', () => {
     expect(w.find('.se-toolbar').exists()).toBe(false)
     expect(w.find('.ProseMirror').attributes('contenteditable')).toBe('false')
     w.unmount()
+  })
+
+  it('toggles readonly without crashing when BubbleMenu has detached its element', async () => {
+    // 真实的 BubbleMenu 挂载后会把自身元素交给 tippy、从原位置移走（parentNode 为 null）。
+    // 若用 v-if 切换它，Vue 会在该元素前插入注释节点而报 insertBefore of null（离开页面进入只读时触发）
+    const DetachingBubble = defineComponent({
+      setup(_, { slots }) {
+        const el = ref<HTMLElement>()
+        onMounted(() => el.value?.remove())
+        return () => h('div', { ref: el }, slots.default?.())
+      },
+    })
+    const errors: unknown[] = []
+    const w = mount(SummaryEditor, {
+      props: { modelValue: mk('a'), readonly: false },
+      attachTo: document.body,
+      global: { stubs: { BubbleMenu: DetachingBubble }, config: { errorHandler: e => { errors.push(e) } } },
+    })
+    await nextTick()
+    await w.setProps({ readonly: true })
+    await w.setProps({ readonly: false })
+    expect(errors).toEqual([])
+    w.unmount()
+    expect(errors).toEqual([])
   })
 
   it('clears undo history on external load but keeps later edits undoable', async () => {
