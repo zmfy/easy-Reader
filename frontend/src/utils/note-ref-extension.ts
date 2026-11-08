@@ -3,6 +3,11 @@ import { Plugin } from '@tiptap/pm/state'
 import { Fragment, Slice, type Node as PmNode } from '@tiptap/pm/model'
 import StarterKit from '@tiptap/starter-kit'
 import ListItem from '@tiptap/extension-list-item'
+import Table from '@tiptap/extension-table'
+import TableRow from '@tiptap/extension-table-row'
+import TableHeader from '@tiptap/extension-table-header'
+import TableCell from '@tiptap/extension-table-cell'
+import { AiAdded } from './ai-added-mark'
 
 // 递归丢弃 slice 中不在允许集合里的 noteRef（与 HTML 写法无关）
 function stripNoteRefs(fragment: Fragment, allowed: Set<string>): Fragment {
@@ -90,6 +95,10 @@ const SummaryListItem = ListItem.extend({
   content: 'paragraph (paragraph | bulletList | orderedList | codeBlock)*',
 })
 
+// 格子里只能是段落（与后端内容模型一致；默认是 block+）
+const SummaryTableHeader = TableHeader.extend({ content: 'paragraph+' })
+const SummaryTableCell = TableCell.extend({ content: 'paragraph+' })
+
 // 只产出后端 isValidDoc 白名单与内容模型内的节点与标记
 export function summaryExtensions(opts: Partial<NoteRefOptions> = {}) {
   return [
@@ -102,5 +111,10 @@ export function summaryExtensions(opts: Partial<NoteRefOptions> = {}) {
     }),
     SummaryListItem,
     opts.allowedRefs ? NoteRef.configure({ allowedRefs: opts.allowedRefs }) : NoteRef,
+    Table.configure({ resizable: false }),
+    TableRow,
+    SummaryTableHeader,
+    SummaryTableCell,
+    AiAdded,
   ]
 }
