@@ -8,6 +8,7 @@ import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
 import { AiAdded } from './ai-added-mark'
+import { TableLimits } from './table-limits'
 
 // 递归丢弃 slice 中不在允许集合里的 noteRef（与 HTML 写法无关）
 function stripNoteRefs(fragment: Fragment, allowed: Set<string>): Fragment {
@@ -115,6 +116,7 @@ export function summaryExtensions(opts: Partial<NoteRefOptions> = {}) {
     TableRow,
     SummaryTableHeader,
     SummaryTableCell,
+    TableLimits,
     AiAdded,
   ]
 }

@@ -70,7 +70,12 @@ describe('noteRef allowed set', () => {
   }
   const refsOf = (e: Editor) => (JSON.stringify(e.getJSON()).match(/"ref":"[^"]+"/g) || [])
   // 与 prosemirror-view handleDrop / 粘贴一致：经 transformPasted 处理后插入
-  const transform = (e: Editor, slice: Slice) => e.view.someProp('transformPasted', f => f(slice, e.view, false)) || slice
+  // （prosemirror-view 依次调用所有插件的 transformPasted）
+  const transform = (e: Editor, slice: Slice) => {
+    let out = slice
+    e.view.someProp('transformPasted', f => { out = f(out, e.view, false) })
+    return out
+  }
 
   it('dragging a paragraph inside the editor keeps its refs', () => {
     const editor = new Editor({ extensions: summaryExtensions(), content: two })

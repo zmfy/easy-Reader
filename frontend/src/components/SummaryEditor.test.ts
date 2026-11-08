@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { mount, config } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { ElDropdown } from 'element-plus'
+import { CellSelection } from '@tiptap/pm/tables'
 import SummaryEditor from './SummaryEditor.vue'
 import type { DocNode } from '../types/study'
 
@@ -158,6 +159,29 @@ describe('SummaryEditor tables, AI marks and tidy', () => {
     await w.setProps({ tidyEnabled: false, tidyDisabledHint: '请先在 AI 插件设置中配置' })
     expect(w.findComponent(ElDropdown).props('disabled')).toBe(true)
     expect(w.find('.se-tidy').attributes('title')).toBe('请先在 AI 插件设置中配置')
+    w.unmount()
+  })
+
+  it('after tidying from a cell selection the cursor lands in a text position', async () => {
+    const { w, editor } = await mountEd(docOf(tp('前'), tableNode), { tidyEnabled: true })
+    const tStart = editor.state.doc.child(0).nodeSize
+    const a = tStart + 2
+    const b = a + editor.state.doc.resolve(a).nodeAfter.nodeSize
+    editor.view.dispatch(editor.state.tr.setSelection(CellSelection.create(editor.state.doc, a, b)))
+    await frame()
+    w.findComponent(ElDropdown).vm.$emit('command', 'table')
+    expect(w.emitted('tidy')![0][1]).toMatchObject({ from: tStart })
+    const sel = editor.state.selection
+    expect(sel.empty).toBe(true)
+    expect(sel.$from.parent.inlineContent).toBe(true)
+    w.unmount()
+  })
+
+  it('replaceBlocks keeps aiAdded marks of the tidy result', async () => {
+    const { w } = await mountEd(docOf(tp('甲')))
+    const marked: DocNode = { type: 'paragraph', content: [{ type: 'text', text: '补', marks: [{ type: 'aiAdded' }] }] }
+    const next = (w.vm as any).replaceBlocks(0, 3, [marked])
+    expect(next.content[0]).toEqual(marked)
     w.unmount()
   })
 

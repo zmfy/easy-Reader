@@ -37,7 +37,7 @@
     </div>
     <div v-if="!isReadonly && editor && editor.isActive('table')" class="se-table-tools">
       <el-tooltip v-for="b in tableButtons" :key="b.tip" :content="b.tip" placement="top" :show-after="300">
-        <button type="button" class="se-tbtn" :aria-label="b.tip" @click="b.run">
+        <button type="button" class="se-tbtn" :aria-label="b.tip" :disabled="b.disabled?.()" @click="b.run">
           <component :is="b.icon" :size="18" />
         </button>
       </el-tooltip>
@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Editor, EditorContent, BubbleMenu, createDocument } from '@tiptap/vue-3'
-import { EditorState } from '@tiptap/pm/state'
+import { EditorState, TextSelection } from '@tiptap/pm/state'
 import {
   IconBold, IconItalic, IconH2, IconH3, IconList, IconListNumbers,
   IconCode, IconSourceCode, IconArrowBackUp, IconArrowForwardUp,
@@ -87,6 +87,7 @@ import {
 } from '@tabler/icons-vue'
 import { summaryExtensions } from '../utils/note-ref-extension'
 import { selectionBlocks, tidyDisabledReason, type SelectionBlocks } from '../utils/summary-tidy'
+import { TABLE_MAX_COLS, TABLE_MAX_ROWS } from '../utils/table-limits'
 import type { DocNode } from '../types/study'
 
 const props = defineProps<{
@@ -158,8 +159,10 @@ const tidyHint = computed(() => {
 function onTidy(mode: 'list' | 'table') {
   const sel = selectionBlocks(editor.state)
   if (!props.tidyEnabled || tidyDisabledReason(sel)) return
-  // 收起选区：浮动工具栏随之隐藏（否则会浮在整理弹框上方）；整理按 sel 记下的块位置进行
-  editor.commands.setTextSelection(editor.state.selection.to)
+  // 收起选区：浮动工具栏随之隐藏（否则会浮在整理弹框上方）；整理按 sel 记下的块位置进行。
+  // 格子选区的 to 落在格子边界上，用 near 找最近的可输入位置
+  const { state } = editor
+  editor.view.dispatch(state.tr.setSelection(TextSelection.near(state.doc.resolve(state.selection.to), -1)))
   emit('tidy', mode, sel!)
 }
 
@@ -178,14 +181,26 @@ function removeAiMark() {
 
 const TABLE_SIZE = { rows: 2, cols: 3, withHeaderRow: true }
 
+// 当前表格已到行 / 列上限（与后端一致）时禁用加行 / 加列
+function currentTableFull(): { rows: boolean; cols: boolean } {
+  const { $from } = editor.state.selection
+  for (let d = $from.depth; d > 0; d--) {
+    const n = $from.node(d)
+    if (n.type.name === 'table') return { rows: n.childCount >= TABLE_MAX_ROWS, cols: n.child(0).childCount >= TABLE_MAX_COLS }
+  }
+  return { rows: false, cols: false }
+}
+
 const tableButtons = computed(() => {
   const c = () => editor.chain().focus()
+  const rowsFull = () => currentTableFull().rows
+  const colsFull = () => currentTableFull().cols
   return [
-    { tip: '上方加行', icon: IconRowInsertTop, run: () => c().addRowBefore().run() },
-    { tip: '下方加行', icon: IconRowInsertBottom, run: () => c().addRowAfter().run() },
+    { tip: '上方加行', icon: IconRowInsertTop, run: () => c().addRowBefore().run(), disabled: rowsFull },
+    { tip: '下方加行', icon: IconRowInsertBottom, run: () => c().addRowAfter().run(), disabled: rowsFull },
     { tip: '删除行', icon: IconRowRemove, run: () => c().deleteRow().run() },
-    { tip: '左侧加列', icon: IconColumnInsertLeft, run: () => c().addColumnBefore().run() },
-    { tip: '右侧加列', icon: IconColumnInsertRight, run: () => c().addColumnAfter().run() },
+    { tip: '左侧加列', icon: IconColumnInsertLeft, run: () => c().addColumnBefore().run(), disabled: colsFull },
+    { tip: '右侧加列', icon: IconColumnInsertRight, run: () => c().addColumnAfter().run(), disabled: colsFull },
     { tip: '删除列', icon: IconColumnRemove, run: () => c().deleteColumn().run() },
     { tip: '删除表格', icon: IconTableOff, run: () => c().deleteTable().run() },
   ]
@@ -194,7 +209,7 @@ const tableButtons = computed(() => {
 // 用一次事务把 [from, to) 的顶层块换成 nodes（可撤销，会触发 update:modelValue），返回新文档
 function replaceBlocks(from: number, to: number, nodes: DocNode[]): DocNode {
   const content = nodes.map(n => editor.schema.nodeFromJSON(n))
-  editor.view.dispatch(editor.state.tr.replaceWith(from, to, content).scrollIntoView())
+  editor.view.dispatch(editor.state.tr.replaceWith(from, to, content).setMeta('keepAiAdded', true).scrollIntoView())
   return editor.getJSON() as DocNode
 }
 
@@ -270,7 +285,8 @@ const buttons = computed(() => {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 30px; height: 30px; border: 0; border-radius: 8px; cursor: pointer; background: transparent; color: var(--text-1);
 }
-.se-tbtn:hover { background: var(--bg-2); color: var(--text-0); }
+.se-tbtn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+.se-tbtn:disabled { opacity: .35; cursor: not-allowed; }
 /* 浮动工具栏 */
 .se-bubble {
   display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px;

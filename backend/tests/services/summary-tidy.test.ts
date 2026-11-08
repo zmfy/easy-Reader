@@ -85,7 +85,7 @@ describe('summary-tidy validation and prompt', () => {
 });
 
 describe('parseTidyOutput', () => {
-  const opts = { validRefs: new Set(['h:1', 'h:2']), allowAddition: false };
+  const opts = { validRefs: new Set(['h:1', 'h:2']) };
 
   it('builds a table with header row, code and bold marks', () => {
     const raw = '```json\n{"columns":["命令","作用"],"rows":[["`ls`","列出目录 **常用** [[h:1]]"]]}\n```';
@@ -127,24 +127,25 @@ describe('parseTidyOutput', () => {
     expect(all(r.nodes[0], 'noteRef')).toEqual([ref('h:1')]);
   });
 
-  it('parseTidyOutput marks {{+…}} as aiAdded only when allowed and counts them', () => {
+  it('parseTidyOutput marks {{+…}} as aiAdded and counts them, even when additions are off', () => {
     const raw = '{"items":["ls 列目录{{+，-a 显示隐藏文件}} [[h:1]]"]}';
-    const on = parseTidyOutput(raw, 'list', { ...opts, allowAddition: true });
+    const on = parseTidyOutput(raw, 'list', opts);
     expect(on.aiAddedCount).toBe(1);
     expect(all(on.nodes[0], 'text')).toEqual([t('ls 列目录'), t('，-a 显示隐藏文件', 'aiAdded'), t(' ')]);
+    // 开关关闭时 AI 仍写了补充：保留标记（不能让补充混进笔记里看不出来）
     const off = parseTidyOutput(raw, 'list', opts);
-    expect(off.aiAddedCount).toBe(0);
-    expect(all(off.nodes[0], 'text')).toEqual([t('ls 列目录，-a 显示隐藏文件 ')]);
-    const broken = parseTidyOutput('{"items":["{{+没闭合"]}', 'list', { ...opts, allowAddition: true });
+    expect(off.aiAddedCount).toBe(1);
+    expect(all(off.nodes[0], 'text')).toEqual(all(on.nodes[0], 'text'));
+    const broken = parseTidyOutput('{"items":["{{+没闭合"]}', 'list', opts);
     expect(all(broken.nodes[0], 'text')).toEqual([t('没闭合')]);
-    const codeAi = parseTidyOutput('{"items":["{{+`ls -a`}}"]}', 'list', { ...opts, allowAddition: true });
+    const codeAi = parseTidyOutput('{"items":["{{+`ls -a`}}"]}', 'list', opts);
     expect(all(codeAi.nodes[0], 'text')).toEqual([t('ls -a', 'code', 'aiAdded')]);
   });
 
-  it('keeps markers that were already in the selection even when additions are off', () => {
-    const r = parseTidyOutput('{"items":["ls{{+，-a 显示隐藏文件}}{{+新编的}}"]}', 'list', { ...opts, existingAiText: '，-a 显示隐藏文件' });
-    expect(all(r.nodes[0], 'text')).toEqual([t('ls'), t('，-a 显示隐藏文件', 'aiAdded'), t('新编的')]);
-    expect(r.aiAddedCount).toBe(1);
+  it('drops empty {{+}} markers without counting them', () => {
+    const r = parseTidyOutput('{"items":["ls{{+  }}"]}', 'list', opts);
+    expect(all(r.nodes[0], 'text')).toEqual([t('ls  ')]);
+    expect(r.aiAddedCount).toBe(0);
   });
 
   it('parseTidyOutput builds a bullet list for list mode and throws on garbage', () => {

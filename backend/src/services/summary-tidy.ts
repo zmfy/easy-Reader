@@ -63,13 +63,8 @@ function blockToLines(n: DocNode, depth = 0): string[] {
   return [];
 }
 
-function aiTextOf(n: DocNode): string {
-  if (n.type === 'text') return hasMark(n, 'aiAdded') ? (n.text || '') + '\n' : '';
-  return (n.content || []).map(aiTextOf).join('');
-}
-
 export function validateTidyContent(content: unknown):
-  { ok: true; nodes: DocNode[]; text: string; refs: string[]; aiText: string } | { ok: false; message: string } {
+  { ok: true; nodes: DocNode[]; text: string; refs: string[] } | { ok: false; message: string } {
   if (!Array.isArray(content) || content.length === 0) return { ok: false, message: '请先选择要整理的内容' };
   const root = { type: 'doc', content };
   if (!isValidDoc(root)) return { ok: false, message: '内容格式不正确' };
@@ -81,7 +76,6 @@ export function validateTidyContent(content: unknown):
     nodes,
     text: nodes.flatMap(n => blockToLines(n)).join('\n'),
     refs: extractRefs(root),
-    aiText: nodes.map(aiTextOf).join(''),
   };
 }
 
@@ -137,7 +131,9 @@ ${text}
 
 // ---- AI 输出 → 节点 ----
 
-interface ParseOpts { validRefs: Set<string>; allowAddition: boolean; columns?: string[]; existingAiText?: string }
+// 「允许 AI 补充」只影响提示词；解析时 {{+…}} 一律标为 aiAdded：开关关闭时 AI 仍写了补充，
+// 去掉记号会让补充混进笔记里看不出来（设计的反目标），保留标记用户一眼可见、可自行去掉
+interface ParseOpts { validRefs: Set<string>; columns?: string[] }
 
 const AI_RE = /\{\{\+([\s\S]*?)\}\}/g;
 const REF_RE = /\[\[([^\[\]]+)\]\]/g;
@@ -195,8 +191,7 @@ function parseInline(raw: string, ctx: { opts: ParseOpts; usedRefs: Set<string>;
   for (const m of s.matchAll(AI_RE)) {
     plain(s.slice(last, m.index));
     const inner = m[1].replace(/\{\{\+/g, '');
-    const existing = ctx.opts.existingAiText || '';
-    const keep = inner.trim() !== '' && (ctx.opts.allowAddition || existing.includes(inner));
+    const keep = inner.trim() !== '';
     if (keep) ctx.aiCount++;
     pushRefs(inner, keep, ctx, out);
     last = (m.index as number) + m[0].length;
@@ -276,6 +271,6 @@ export async function tidySelection(db: Database.Database, userId: string, bookI
   });
   const raw = await aiManager.chat(prompt, db);
   return parseTidyOutput(raw, req.mode, {
-    validRefs: new Set(v.refs), allowAddition: allowAiAddition, columns, existingAiText: v.aiText,
+    validRefs: new Set(v.refs), columns,
   });
 }
