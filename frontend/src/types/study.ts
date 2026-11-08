@@ -6,7 +6,21 @@ export interface DocNode {
   marks?: Array<{ type: string }>
 }
 
-export type SummarySource = 'ai_generate' | 'ai_update' | 'user' | 'restore'
+export type SummarySource = 'ai_generate' | 'ai_update' | 'user' | 'restore' | 'ai_tidy'
+
+export type TidyMode = 'list' | 'table'
+
+/** POST /study/books/:bookId/summary/tidy 的返回（预览，不写库） */
+export interface TidyResult {
+  nodes: DocNode[]
+  columns: string[]
+  missingRefs: string[]
+  aiAddedCount: number
+}
+
+export interface StudyPrefs {
+  allowAiAddition: boolean
+}
 
 export interface SummaryJob {
   id: string

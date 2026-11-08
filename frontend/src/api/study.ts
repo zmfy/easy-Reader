@@ -2,7 +2,7 @@ import http from './http'
 import type { ApiResponse } from '@/types'
 import type {
   DocNode, StudySummary, SummaryDetail, SummaryMarkdownDetail, SummaryJob, SummaryOverview,
-  SummaryVersion, SummaryVersionDetail, ResolvedRef,
+  SummaryVersion, SummaryVersionDetail, ResolvedRef, TidyMode, TidyResult, StudyPrefs,
 } from '@/types/study'
 
 export const studyApi = {
@@ -16,8 +16,16 @@ export const studyApi = {
     http.get<ApiResponse<SummaryMarkdownDetail>>(`/study/books/${bookId}/summary`, { params: { format: 'markdown' } }),
 
   // 409 时 error.response.data.data 为最新 summary
-  saveSummary: (bookId: string, doc: DocNode, revision: number) =>
-    http.put<ApiResponse<StudySummary>>(`/study/books/${bookId}/summary`, { doc, revision }),
+  // opts：采用 AI 整理结果时带上，后端总是新建「AI 整理」版本
+  saveSummary: (bookId: string, doc: DocNode, revision: number, opts?: { source: 'ai_tidy'; description: string }) =>
+    http.put<ApiResponse<StudySummary>>(`/study/books/${bookId}/summary`, { doc, revision, ...opts }),
+
+  tidy: (bookId: string, body: { mode: TidyMode; content: DocNode[]; columns?: string[] }) =>
+    http.post<ApiResponse<TidyResult>>(`/study/books/${bookId}/summary/tidy`, body, { timeout: 180000 }),
+
+  getPrefs: () => http.get<ApiResponse<StudyPrefs>>('/study/prefs'),
+
+  savePrefs: (prefs: StudyPrefs) => http.put<ApiResponse<StudyPrefs>>('/study/prefs', prefs),
 
   deleteSummary: (bookId: string) =>
     http.delete<ApiResponse<{ deleted: boolean }>>(`/study/books/${bookId}/summary`),

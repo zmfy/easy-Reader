@@ -5,6 +5,7 @@ export const SOURCE_LABEL: Record<SummarySource, string> = {
   ai_update: 'AI 补充',
   user: '我',
   restore: '恢复',
+  ai_tidy: 'AI 整理',
 }
 
 /** 主题数 = 顶层 2 级标题数 */
