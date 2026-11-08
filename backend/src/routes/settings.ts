@@ -146,8 +146,14 @@ router.put('/https', authMiddleware, adminMiddleware, async (req: Request, res: 
 router.put('/https/enabled', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body ?? {});
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
-  setHttpsEnabled(getDb(), parsed.data.enabled);
-  successResponse(res, httpsView(await recheckHttps()), parsed.data.enabled ? 'HTTPS 已启用' : 'HTTPS 已关闭');
+  try {
+    setHttpsEnabled(getDb(), parsed.data.enabled);
+    successResponse(res, httpsView(await recheckHttps()), parsed.data.enabled ? 'HTTPS 已启用' : 'HTTPS 已关闭');
+  } catch (err) {
+    // 数据库只读 / 繁忙等：返回错误，不能让异常冒出去拖垮进程
+    console.error('[https] 切换开关失败', err instanceof Error ? err.message : err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', `切换失败：${(err as NodeJS.ErrnoException)?.code || '保存错误'}`);
+  }
 });
 
 // DELETE /api/settings/https — 删除证书，关闭 HTTPS

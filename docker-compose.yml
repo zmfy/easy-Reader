@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     ports:
       - "8080:3000"
-      # HTTPS（使用自己的证书时生效：把 fullchain.pem、privkey.pem 放进 ./data/certs/ 或在设置页上传，见 README）
+      # HTTPS（使用自己的证书：先在「设置 → 系统 → HTTPS 证书」打开「启用 HTTPS」，再把 fullchain.pem、privkey.pem 放进 ./data/certs/ 或在设置页上传，见 README）
       - "8443:3443"
     volumes:
       - ./books:/app/books

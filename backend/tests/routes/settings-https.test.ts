@@ -104,4 +104,19 @@ describe('/api/settings/https', () => {
     const off = await put('admin', { enabled: false });
     expect((await off.json()).data.enabled).toBe(false);
   });
+
+  it('answers 500 instead of crashing when the switch cannot be saved', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('../../src/services/https-server');
+    const spy = jest.spyOn(mod, 'setHttpsEnabled').mockImplementation(() => { throw Object.assign(new Error('readonly'), { code: 'SQLITE_READONLY' }); });
+    try {
+      const r = await fetch(`${base}/enabled`, {
+        method: 'PUT', headers: { 'content-type': 'application/json', 'x-test-role': 'admin' }, body: JSON.stringify({ enabled: true }),
+      });
+      expect(r.status).toBe(500);
+      expect((await r.json()).message).toContain('切换失败');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

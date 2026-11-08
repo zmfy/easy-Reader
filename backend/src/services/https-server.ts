@@ -1,4 +1,4 @@
-// HTTPS 服务：按 DATA_DIR/certs 里的证书启停与热更新（不重启进程）
+// HTTPS 服务：按「启用 HTTPS」开关与 DATA_DIR/certs 里的证书启停、热更新（不重启进程）
 // 新证书不可用时保留上一张可用证书；证书过期照常使用（只在状态里标出）
 import fs from 'fs';
 import https from 'https';

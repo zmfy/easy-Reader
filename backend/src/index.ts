@@ -122,7 +122,7 @@ app.listen(PORT, () => {
   console.log(`Novel Reader Backend running on port ${PORT}`);
   if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
     startUpdateChecker();
-    // 使用自己的证书：DATA_DIR/certs 里有 fullchain.pem + privkey.pem 时在 HTTPS_PORT 上提供 HTTPS
+    // 使用自己的证书：设置页「启用 HTTPS」打开且 DATA_DIR/certs 里有可用的 fullchain.pem + privkey.pem 时，在 HTTPS_PORT 上提供 HTTPS
     startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443, isEnabled: () => isHttpsEnabled(getDb()) });
   }
 });
