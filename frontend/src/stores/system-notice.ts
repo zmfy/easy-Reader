@@ -8,6 +8,8 @@ import type { Release, UpdateStatus } from '@/types'
 export const useSystemNoticeStore = defineStore('systemNotice', () => {
   const status = ref<UpdateStatus | null>(null)
   const configWarning = ref<string | null>(null)
+  // HTTPS 证书到期提醒（剩余 14 天内 / 已过期）
+  const certWarning = ref<string | null>(null)
   // markSeen 写的是 localStorage，不是响应式数据；用计数器触发红点重算
   const seenTick = ref(0)
 
@@ -29,7 +31,7 @@ export const useSystemNoticeStore = defineStore('systemNotice', () => {
   const count = computed(() => {
     void seenTick.value
     const input = {
-      configWarnings: configWarning.value ? 1 : 0,
+      configWarnings: (configWarning.value ? 1 : 0) + (certWarning.value ? 1 : 0),
       latestVersion: latest.value?.version ?? null,
       actionRequired: actionRequired.value,
     }
@@ -39,11 +41,13 @@ export const useSystemNoticeStore = defineStore('systemNotice', () => {
   })
 
   async function load(): Promise<void> {
-    // 两个接口互不影响，失败一律静默
-    const [updResp, aiResp] = await Promise.allSettled([
+    // 几个接口互不影响，失败一律静默
+    const [updResp, aiResp, httpsResp] = await Promise.allSettled([
       settingsApi.getUpdateStatus(),
       settingsApi.getAiStatus(),
+      settingsApi.getHttps(),
     ])
+    certWarning.value = httpsResp.status === 'fulfilled' ? httpsResp.value.data.data?.warning ?? null : null
     if (updResp.status === 'fulfilled') status.value = updResp.value.data.data ?? null
     if (aiResp.status === 'fulfilled') configWarning.value = aiResp.value.data.data?.config_warning ?? null
   }
@@ -59,5 +63,5 @@ export const useSystemNoticeStore = defineStore('systemNotice', () => {
     seenTick.value++
   }
 
-  return { status, configWarning, enabled, latest, actionRequired, count, load, setStatus, markOpened }
+  return { status, configWarning, certWarning, enabled, latest, actionRequired, count, load, setStatus, markOpened }
 })

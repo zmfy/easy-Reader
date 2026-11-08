@@ -46,6 +46,7 @@ declare module 'vue' {
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    HttpsCertCard: typeof import('./components/HttpsCertCard.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']
     PageHeader: typeof import('./components/PageHeader.vue')['default']
     PdfPage: typeof import('./components/PdfPage.vue')['default']
