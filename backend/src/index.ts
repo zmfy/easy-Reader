@@ -18,6 +18,8 @@ import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
 import { startUpdateChecker } from './services/update-check';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
+import { certDir } from './services/https-cert';
+import { startHttpsManager } from './services/https-server';
 
 const app = express();
 // 经反向代理（Nginx、群晖反代等）访问时，按 X-Forwarded-For 识别真实客户端 IP（限流按 IP 计数）
@@ -46,7 +48,8 @@ app.use('/covers', (req: express.Request, res: express.Response, next: express.N
 }, express.static(coversDir));
 
 // Security middleware
-app.use(helmet({ contentSecurityPolicy: false }));
+// 不发 HSTS：它按主机名生效、不分端口，用户用 https://域名:8443 访问过后，http://域名:8080 会被浏览器强制改成 HTTPS 而打不开
+app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
 // 网页版（FRONTEND_URL）与网页类第三方客户端（CORS_ORIGINS，逗号分隔）；原生 App 不受跨域限制
 const corsOrigins = parseCorsOrigins(process.env.FRONTEND_URL, process.env.CORS_ORIGINS);
 if (corsOrigins.length) {
@@ -117,7 +120,11 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 app.listen(PORT, () => {
   console.log(`Novel Reader Backend running on port ${PORT}`);
-  if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) startUpdateChecker();
+  if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
+    startUpdateChecker();
+    // 使用自己的证书：DATA_DIR/certs 里有 fullchain.pem + privkey.pem 时在 HTTPS_PORT 上提供 HTTPS
+    startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443 });
+  }
 });
 
 export default app;
