@@ -53,6 +53,11 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // PWA 清单由后端按网站名称动态生成
+      '/manifest.webmanifest': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
       // 封面图片由后端提供（生产环境同源，无需代理）
       '/covers': {
         target: 'http://localhost:3000',
