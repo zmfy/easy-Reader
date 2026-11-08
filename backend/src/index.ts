@@ -18,6 +18,7 @@ import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
 import { startUpdateChecker } from './services/update-check';
 import { readApiDocs, renderApiDocsPage } from './utils/api-docs';
+import { buildManifest } from './services/pwa';
 
 const app = express();
 // 经反向代理（Nginx、群晖反代等）访问时，按 X-Forwarded-For 识别真实客户端 IP（限流按 IP 计数）
@@ -52,6 +53,13 @@ const corsOrigins = parseCorsOrigins(process.env.FRONTEND_URL, process.env.CORS_
 if (corsOrigins.length) {
   app.use(cors({ origin: corsOrigins, credentials: true }));
 }
+
+// PWA 清单：名称跟随网站名称，动态生成（不缓存，改名后浏览器可取到新名称）
+app.get('/manifest.webmanifest', (_req: express.Request, res: express.Response) => {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = 'site_name'").get() as { value: string } | undefined;
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/manifest+json').send(JSON.stringify(buildManifest(row?.value || '')));
+});
 
 // Serve frontend static files (when built into the same container)
 const publicDir = path.join(__dirname, '../public');

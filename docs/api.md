@@ -356,6 +356,12 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 进度按用户、按书保存，网页版与各客户端共用，读到哪里在所有设备上同步。
 
+### GET /api/v1/reader/last-read
+
+最近读的书：当前用户最近一次更新阅读进度、且书仍在书库中的那本书（不判断是否读完）。返回 `{ "bookId": "…" }`；没有读过任何书时 `data` 为 `null`。网页版「安装到桌面」后从桌面图标打开时用它进入上次读的书。
+
+> 网页清单：`GET /manifest.webmanifest`（无需登录，不在 `/api` 下）返回 PWA 清单，`name` 取网站名称（未设置时为「简单书房」）。
+
 ### GET /api/v1/reader/:bookId/progress
 
 ```json

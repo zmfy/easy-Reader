@@ -13,10 +13,18 @@ import { getTtsConfig, getSpeech, TTS_MAX_TEXT } from '../services/tts';
 import { resolveRealPathInsideRoot } from '../utils/path-safe';
 import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
 import { htmlToBlocks } from '../utils/content-blocks';
+import { getLastReadBookId } from '../services/pwa';
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 
 const router = Router();
+
+// GET /api/reader/last-read — 最近读的书（PWA 从桌面图标打开时进入）；没有 → null
+// 须注册在 /:bookId 路由之前
+router.get('/last-read', authMiddleware, (req: Request, res: Response) => {
+  const bookId = getLastReadBookId(getDb(), req.user!.userId);
+  successResponse(res, bookId ? { bookId } : null);
+});
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
 // 读取书籍文件前，校验其真实路径（解析符号链接后）位于书库目录内，
