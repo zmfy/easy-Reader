@@ -419,3 +419,14 @@
 - [x] 文档：README（USAGE_STATS、隐私说明、支持架构）、DOCKERHUB.md、.env.example、docker-compose、CHANGELOG
 - [x] 验证：jest 52 suites / 492、vitest 123、前后端 tsc；本地官网后端联调（201 / 同日去重 / 非法参数 422 / 第 21 次 429 / 管理统计 / 无令牌 401）；开发后端启动 60s 后官网收到 id+main+1.1.1+x64；设置页关闭后 DB 为 false；Chrome 看菜单两项新标签打开
 - [ ] 合并到 study（工作流冲突保留 easy-learner 规则）
+
+# PWA 第一期（11-08，main 上 feature/pwa）
+
+决定（用户）：分两期，第一期不做离线阅读；桌面名称跟随网站名称；启动进入上次读的书；新版本 / 没网提示对所有 HTTPS 访问者生效；图标由 Claude 设计
+
+- [x] 后端：/manifest.webmanifest 动态清单、GET /reader/last-read
+- [x] 图标：scripts/gen-icons.py 生成 favicon.svg 与各尺寸 PNG
+- [x] Service Worker（vite-plugin-pwa）、新版本提示、没网提示（含服务器连不上）
+- [x] /continue 启动路由、登录回跳（只允许站内路径）
+- [x] 用户菜单「安装到桌面」：系统安装框 / iOS 步骤 / 非 HTTPS 提示 / 不支持提示
+- [ ] 合入 main，合并到 study；官网教程「装到手机桌面」「从外网访问：DDNS / 证书 / Tailscale」

@@ -52,6 +52,10 @@
                 <span>保持连接</span>
                 <el-switch :model-value="keepAlive" size="small" tabindex="-1" aria-hidden="true" class="menu-switch" />
               </div>
+              <div v-if="installMode !== 'installed'" class="menu-row" role="button" tabindex="0" @click="closeMenu(); installApp()" @keydown.enter.prevent="closeMenu(); installApp()" @keydown.space.prevent="closeMenu(); installApp()">
+                <IconDeviceMobileDown class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>安装到桌面</span>
+              </div>
               <router-link to="/change-password" class="menu-row" @click="closeMenu(); sidebarOpen = false">
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
@@ -90,6 +94,11 @@
         <NotificationBell v-if="showBell" @navigate="sidebarOpen = false" />
       </div>
       <ScanProgressBar />
+      <InstallHelpDialog
+        v-if="installMode !== 'installed' && installMode !== 'prompt'"
+        v-model="installHelpVisible"
+        :mode="installMode"
+      />
       <slot />
     </main>
   </div>
@@ -101,11 +110,13 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconDots, IconKey, IconLogout, IconMessageCircle, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconDeviceMobileDown, IconDots, IconKey, IconLogout, IconMessageCircle, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { FEEDBACK_URL, ISSUE_URL } from '@/utils/links'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'
 import ScanProgressBar from '@/components/ScanProgressBar.vue'
+import InstallHelpDialog from '@/components/InstallHelpDialog.vue'
+import { usePwaInstall } from '@/composables/usePwaInstall'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useSystemNoticeStore } from '@/stores/system-notice'
 
@@ -122,6 +133,9 @@ const moreRef = ref<{ hide: () => void } | null>(null)
 const moreBtnRef = ref<HTMLButtonElement | null>(null)
 const menuRef = ref<HTMLElement | null>(null)
 function closeMenu() { moreRef.value?.hide() }
+
+// 安装到桌面：支持安装提示的浏览器直接弹系统安装框，其余情况显示说明
+const { mode: installMode, helpVisible: installHelpVisible, install: installApp } = usePwaInstall()
 function focusFirstItem() { nextTick(() => menuRef.value?.querySelector<HTMLElement>('.menu-row')?.focus()) }
 const keepAlive = ref(localStorage.getItem('keepAlive') === 'true')
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null

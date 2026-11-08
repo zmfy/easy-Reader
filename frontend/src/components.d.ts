@@ -46,6 +46,7 @@ declare module 'vue' {
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
+    InstallHelpDialog: typeof import('./components/InstallHelpDialog.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']
     OfflineNotice: typeof import('./components/OfflineNotice.vue')['default']
     PageHeader: typeof import('./components/PageHeader.vue')['default']
