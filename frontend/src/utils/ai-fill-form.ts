@@ -15,6 +15,9 @@ export interface AiFillForm {
   cover: 'current' | 'default' | number
 }
 
+/** 豆瓣不提供单集片长，「短剧」是按集数、年份和片名推断的 */
+export const SHORT_DRAMA_HINT = '短剧由集数、年份推断，点击链接可核对'
+
 export const ADAPTATION_SOURCE_LABELS: Record<BookAdaptation['source'], string> = {
   douban: '豆瓣',
   missevan: '猫耳FM',

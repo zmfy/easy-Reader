@@ -33,6 +33,7 @@ describe('parseAiFillApplyBody', () => {
     const r = parseAiFillApplyBody({ ...base, adaptations: [{ ...ok, url: 'https://evil.com/mdrama/1' }] });
     expect(r).toEqual({ ok: false, message: expect.stringContaining('改编作品') });
     expect(parseAiFillApplyBody({ ...base, adaptations: [{ ...ok, type: '舞台剧' }] }).ok).toBe(false);
+    expect(parseAiFillApplyBody({ ...base, adaptations: [{ type: '短剧', title: '好一个乖乖女', year: '2025', source: 'douban', url: 'https://movie.douban.com/subject/2/' }] }).ok).toBe(true);
   });
 
   it('names the tags field for too many tags', () => {

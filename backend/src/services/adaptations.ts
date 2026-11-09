@@ -10,7 +10,7 @@ import { extractJsonObject } from '../ai/json-extract';
  * AI 只能从候选里选（按编号引用），不能自己添加，避免编造不存在的改编。
  */
 
-export const ADAPTATION_TYPES = ['电影', '电视剧', '动画', '广播剧', '其他'] as const;
+export const ADAPTATION_TYPES = ['电影', '电视剧', '短剧', '动画', '广播剧', '其他'] as const;
 export type AdaptationType = typeof ADAPTATION_TYPES[number];
 
 export interface Adaptation {
@@ -29,6 +29,19 @@ export interface AdaptationBookInfo {
   summary?: string;
 }
 
+/**
+ * 微短剧的特征：几十上百集、每集几分钟、近几年上线。豆瓣搜索接口不给单集片长，只能按集数和年份初筛，
+ * 在提示里标出「可能是短剧」，由 AI 结合片名、年代排除长篇电视剧（如 1994 年 84 集的《三国演义》）。
+ */
+const SHORT_DRAMA_MIN_EPISODES = 50;
+const SHORT_DRAMA_SINCE_YEAR = 2019;
+
+export function looksLikeShortDrama(c: AdaptationCandidate): boolean {
+  return c.source === 'douban'
+    && Number(c.episodes) >= SHORT_DRAMA_MIN_EPISODES
+    && Number(c.year) >= SHORT_DRAMA_SINCE_YEAR;
+}
+
 const SOURCE_LABELS: Record<AdaptationSource, string> = { douban: '豆瓣影视', missevan: '猫耳FM广播剧' };
 
 export function buildAdaptationPrompt(book: AdaptationBookInfo, candidates: AdaptationCandidate[]): string {
@@ -37,6 +50,7 @@ export function buildAdaptationPrompt(book: AdaptationBookInfo, candidates: Adap
       SOURCE_LABELS[c.source],
       c.year && `${c.year}年`,
       c.episodes && `${c.episodes}集`,
+      looksLikeShortDrama(c) && '集数多且年份新，可能是短剧',
       c.author && `原著作者：${c.author}`,
       c.abstract && `简介：${c.abstract}`,
     ].filter(Boolean).join(' | ');
@@ -54,6 +68,7 @@ ${lines}
 - 只能从候选中选，用编号 index 引用；确认是改编自这本书（含续作、分季、系列中的单部）才选，不确定就不选。
 - 同名但题材、年代、原著作者对不上的不选；纪录片、综艺、解说、配音片段、同人二创不选。
 - type 取 ${ADAPTATION_TYPES.join(' / ')}；猫耳FM 的一律为广播剧。
+- 短剧（微短剧）指每集几分钟、几十上百集、近几年在短剧平台上线的竖屏剧，type 选「短剧」；集数多但每集是正常时长的长篇电视剧（多为较早年代或知名剧集）仍选「电视剧」。拿不准时选「电视剧」。
 - 没有改编就返回 {"adaptations":[]}。`;
 }
 
