@@ -119,7 +119,7 @@ export interface PaginatedResponse<T> {
   }
 }
 
-export type ReaderTheme = 'indigo' | 'white' | 'eye-care' | 'night' | 'dark' | 'light-green' | 'light-blue' | 'light-gray' | 'light-yellow' | 'light-brown'
+export type ReaderTheme = 'indigo' | 'white' | 'eye-care' | 'night' | 'dark' | 'light-green' | 'light-blue' | 'light-gray' | 'light-yellow' | 'light-brown' | 'eink'
 
 export interface ReaderSettings {
   fontFamily: string

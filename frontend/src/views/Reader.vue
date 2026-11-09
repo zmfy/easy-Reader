@@ -1,5 +1,5 @@
 <template>
-  <div class="reader-page" :style="readerStyle">
+  <div class="reader-page" :class="{ 'reader--eink': eink }" :style="readerStyle">
 
     <!-- ── PDF 原生渲染模式 ── -->
     <template v-if="isPdf">
@@ -28,7 +28,7 @@
     <div
       class="reader-content"
       ref="contentRef"
-      @click="toggleToolbar"
+      @click="onContentClick"
       @scroll="handleScroll"
     >
       <header class="reader-nav" :class="{ hidden: !toolbarVisible }" @click.stop>
@@ -205,6 +205,7 @@
               @click="readerStore.applyTheme(key as ReaderTheme)"
             >{{ val.label }}</button>
           </div>
+          <div v-if="eink" class="eink-hint">点屏幕左侧 / 右侧翻页，点中间呼出菜单；设备的翻页键同样可用</div>
         </div>
 
         <!-- 字号 -->
@@ -441,8 +442,8 @@ import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor } from '@/types'
-import { readerKeyAction, pageScrollDistance, alignedPageDistance } from '@/utils/reader-keys'
-import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
+import { readerKeyAction, pageScrollDistance, alignedPageDistance, tapZoneAction } from '@/utils/reader-keys'
+import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, isEinkTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
 import { useShelfToggle } from '@/composables/useShelfToggle'
@@ -469,6 +470,10 @@ const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
 const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
+// 墨水屏：纯黑白、关闭动画，点屏幕两侧瞬间翻页。设置 / 目录抽屉 teleport 到 body，所以也给 <html> 加 class
+const eink = computed(() => isEinkTheme(readerStore.settings.theme))
+watch(eink, (on) => { document.documentElement.classList.toggle('eink', on) }, { immediate: true })
+onBeforeUnmount(() => document.documentElement.classList.remove('eink'))
 const settingsPanelVisible = ref(false)
 
 // ── 目录面板 ─────────────────────────────────────────────────
@@ -667,12 +672,29 @@ function toggleToolbar() {
   toolbarVisible.value = !toolbarVisible.value
 }
 
+// 点在这些元素上是在操作它们，不翻页
+const INTERACTIVE_SELECTOR = 'a, button, input, textarea, select, label, img, video, audio, mark, [role="button"], [data-no-page-turn]'
+
+/** 正文点击：墨水屏按点的位置翻页（左侧上翻、右侧下翻、中间呼出菜单），其他主题切换顶栏 */
+function onContentClick(e: MouseEvent) {
+  if (!eink.value) { toggleToolbar(); return }
+  if (window.getSelection()?.toString()) return  // 正在选字（划线）
+  if ((e.target as Element | null)?.closest?.(INTERACTIVE_SELECTOR)) return
+  const el = contentRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const action = tapZoneAction(e.clientX - rect.left, rect.width)
+  if (action === 'toggle') toggleToolbar()
+  else pageBy(action)
+}
+
 let lastScrollTop = 0
 let keyPagingUntil = 0  // 方向键翻屏期间不弹出导航，避免盖住衔接的行
 function updateToolbarOnScroll(scrollTop: number) {
   const delta = scrollTop - lastScrollTop
   lastScrollTop = scrollTop
   if (Date.now() < keyPagingUntil) return
+  if (eink.value) return  // 墨水屏不随滚动自动显隐（每次显隐都会刷新屏幕），由点屏幕中间切换
   if (scrollTop < 64) toolbarVisible.value = true
   else if (delta > 6) toolbarVisible.value = false
   else if (delta < -6) toolbarVisible.value = true
@@ -1251,6 +1273,35 @@ function lineTopAtPoint(x: number, y: number, container: Element): number | null
 }
 
 // 下翻：把距屏幕底部约两行的那一行对齐到顶部；找不到文字（如 PDF 页面图）时按固定距离
+/**
+ * 翻一屏（键盘与墨水屏点按共用）：保留两行正文衔接。墨水屏瞬间跳转（平滑滚动在墨水屏上会一路残影），
+ * 并在章节翻页模式下，到底再下翻进入下一章、到顶再上翻回到上一章。
+ */
+function pageBy(action: 'pageUp' | 'pageDown') {
+  const el = contentRef.value
+  if (!el) return
+  if (eink.value && readerStore.settings.pageMode === 'scroll') {
+    const current = reader.currentChapterIndex.value
+    if (action === 'pageDown' && el.scrollTop + el.clientHeight >= el.scrollHeight - 4) {
+      if (current < reader.chapters.value.length - 1) void goToNextChapter()
+      return
+    }
+    if (action === 'pageUp' && el.scrollTop <= 4) {
+      if (current > 0) void goToPrevChapter()
+      return
+    }
+  }
+  // 顶部导航会盖住正文：翻屏时收起，且平滑滚动期间不因上滑重新弹出，保证衔接的行可见
+  toolbarVisible.value = false
+  keyPagingUntil = Date.now() + 800
+  // 按屏翻页并保留两行正文作为衔接（行高随当前字号 / 行距变化）
+  const lineHeightPx = readerStore.settings.fontSize * readerStore.settings.lineHeight
+  const distance = action === 'pageDown'
+    ? textAlignedPageDistance(el, lineHeightPx)
+    : pageScrollDistance(el.clientHeight, lineHeightPx)
+  el.scrollBy({ top: action === 'pageDown' ? distance : -distance, behavior: eink.value ? 'auto' : 'smooth' })
+}
+
 function textAlignedPageDistance(el: HTMLElement, lineHeightPx: number): number {
   const fallback = pageScrollDistance(el.clientHeight, lineHeightPx)
   const box = el.getBoundingClientRect()
@@ -1294,20 +1345,9 @@ function handleKeydown(e: KeyboardEvent) {
       if (current < last) waterfall ? jumpToChapter(current + 1) : goToNextChapter()
       break
     case 'pageDown':
-    case 'pageUp': {
-      const el = contentRef.value
-      if (!el) break
-      // 顶部导航会盖住正文：翻屏时收起，且平滑滚动期间不因上滑重新弹出，保证衔接的行可见
-      toolbarVisible.value = false
-      keyPagingUntil = Date.now() + 800
-      // 按屏翻页并保留两行正文作为衔接（行高随当前字号 / 行距变化）
-      const lineHeightPx = readerStore.settings.fontSize * readerStore.settings.lineHeight
-      const distance = action === 'pageDown'
-        ? textAlignedPageDistance(el, lineHeightPx)
-        : pageScrollDistance(el.clientHeight, lineHeightPx)
-      el.scrollBy({ top: action === 'pageDown' ? distance : -distance, behavior: 'smooth' })
+    case 'pageUp':
+      pageBy(action)
       break
-    }
     case 'bookmark':
       if (!e.repeat) handleAddBookmark()  // 按住不放不重复添加
       break
@@ -2246,5 +2286,28 @@ onUnmounted(() => {
   margin-top: 16px;
   font-size: 12px;
   color: var(--text-2);
+}
+
+/* ── 墨水屏：纯黑白、无阴影 / 毛玻璃 / 圆角（动画在 main.css 的 html.eink 里统一关闭） ── */
+.reader--eink .reader-nav {
+  background: #ffffff;
+  backdrop-filter: none;
+  border-bottom: 1px solid #000000;
+}
+.reader--eink .paper {
+  border: 1px solid #000000;
+  border-radius: 0;
+  box-shadow: none;
+}
+.reader--eink .side-tools {
+  border: 1px solid #000000;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.eink-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--reader-text-secondary);
 }
 </style>

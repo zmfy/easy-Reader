@@ -32,6 +32,8 @@ export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: s
   'light-gray':  { backgroundColor: '#f5f5f5',  fontColor: '#333333', label: '浅灰' },
   'light-yellow':{ backgroundColor: '#fdf8e0',  fontColor: '#4a3a1a', label: '浅黄' },
   'light-brown': { backgroundColor: '#f5ebe0',  fontColor: '#4a2e1a', label: '浅棕' },
+  // 墨水屏：纯黑白、无动画阴影，点屏幕两侧瞬间翻页（见 utils/reader-style.ts、Reader.vue）
+  'eink':        { backgroundColor: '#ffffff',  fontColor: '#000000', label: '墨水屏' },
 }
 
 export const fontOptions = [
