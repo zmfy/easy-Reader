@@ -71,6 +71,15 @@ export function isAllowedDoubanImageUrl(url: string): boolean {
   return !!u && u.protocol === 'https:' && !u.username && !u.password && !u.port && isDoubanImageHost(u.hostname);
 }
 
+const isMaoerImageHost = (h: string) => h === 'static.maoercdn.com';
+const isCoverImageHost = (h: string) => isDoubanImageHost(h) || isMaoerImageHost(h);
+
+/** 可作封面的图片：豆瓣图片（书封 / 影视海报）或猫耳 FM 广播剧封面 */
+export function isAllowedCoverImageUrl(url: string): boolean {
+  const u = parseUrl(url);
+  return !!u && u.protocol === 'https:' && !u.username && !u.password && !u.port && isCoverImageHost(u.hostname);
+}
+
 /** 豆瓣书目页：https://book.douban.com/subject/<数字>/… */
 export function isAllowedDoubanSubjectUrl(url: string): boolean {
   const u = parseUrl(url);
@@ -85,6 +94,8 @@ export interface DoubanCandidate {
   year?: string;
   pic: string;
   subjectUrl?: string;
+  /** 改编作品的封面（海报 / 广播剧封面）：电视剧、电影、广播剧等；豆瓣书封不带 */
+  kind?: string;
 }
 
 interface DoubanSuggest {
@@ -147,22 +158,35 @@ const IMAGE_HEADERS = {
   'Referer': 'https://book.douban.com/',
 };
 
+/** 图片请求头：猫耳图床拒绝带豆瓣 Referer 的请求，按域名分别设置 */
+function imageHeadersFor(url: string): Record<string, string> {
+  return isMaoerImageHost(parseUrl(url)?.hostname ?? '')
+    ? { ...IMAGE_HEADERS, Referer: 'https://www.missevan.com/' }
+    : IMAGE_HEADERS;
+}
+
 function withSize(pic: string, size: 'm' | 'l'): string {
+  // 猫耳封面原图是 640px PNG（约 700KB），用图床的缩放参数转成 jpg（缩略图约 40KB）
+  if (isMaoerImageHost(parseUrl(pic)?.hostname ?? '')) {
+    return `${pic.split('?')[0]}?x-oss-process=image/${size === 'm' ? 'resize,w_300/' : ''}format,jpg`;
+  }
   return pic
     .replace('/spic/', size === 'l' ? '/lpic/' : '/mpic/')
+    .replace(/\/photo\/s_ratio_poster\//, `/photo/${size}_ratio_poster/`)
     .replace(/\/view\/subject\/[sml]\//, `/view/subject/${size}/`);
 }
 
 function imageExt(url: string): string {
+  if (url.includes('format,jpg')) return 'jpg';
   return (url.match(/\.(jpg|jpeg|png|webp)(\?|$)/i)?.[1] ?? 'jpg').toLowerCase();
 }
 
 /** 下载候选封面的中图，返回 data URI（预览用，不落盘）；不在白名单或失败时返回 undefined。 */
 export async function fetchCoverThumbnailDataUri(pic: string): Promise<string | undefined> {
-  if (!isAllowedDoubanImageUrl(pic)) return undefined;
+  if (!isAllowedCoverImageUrl(pic)) return undefined;
   try {
     const url = withSize(pic, 'm');
-    const buf = await request(url, IMAGE_HEADERS, 4, isDoubanImageHost);
+    const buf = await request(url, imageHeadersFor(url), 4, isCoverImageHost);
     if (buf.length < 1024) return undefined;
     const ext = imageExt(url);
     return `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${buf.toString('base64')}`;
@@ -186,12 +210,12 @@ export function saveCoverFile(bookId: string, data: Buffer | string, ext: string
   return `/covers/${filename}`;
 }
 
-/** 下载豆瓣封面大图并保存；pic 不在白名单或下载失败时返回 undefined。 */
+/** 下载封面大图并保存（豆瓣书封 / 影视海报、猫耳封面）；pic 不在白名单或下载失败时返回 undefined。 */
 export async function downloadCoverFromPic(pic: string, bookId: string): Promise<string | undefined> {
-  if (!isAllowedDoubanImageUrl(pic) || pic.includes('book-default')) return undefined;
+  if (!isAllowedCoverImageUrl(pic) || pic.includes('book-default')) return undefined;
   try {
     const url = withSize(pic, 'l');
-    const buf = await request(url, IMAGE_HEADERS, 4, isDoubanImageHost);
+    const buf = await request(url, imageHeadersFor(url), 4, isCoverImageHost);
     if (buf.length < 1024) return undefined;
     return saveCoverFile(bookId, buf, imageExt(url));
   } catch {

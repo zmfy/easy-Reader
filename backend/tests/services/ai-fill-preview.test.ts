@@ -65,6 +65,19 @@ beforeEach(() => {
 });
 
 describe('buildAiFillPreview', () => {
+  it('appends adaptation posters after book covers, tagged with their kind, and strips pic from the list', async () => {
+    (findAdaptations as jest.Mock).mockResolvedValueOnce([
+      { type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg' },
+      { type: '广播剧', title: '三国演义', source: 'missevan', url: 'https://www.missevan.com/mdrama/9' },
+    ]);
+    const p = await buildAiFillPreview('b1');
+    const last = p.coverCandidates[p.coverCandidates.length - 1];
+    expect(last).toMatchObject({ title: '三国演义', year: '1994', kind: '电视剧', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg' });
+    expect(last.subjectUrl).toBeUndefined();
+    expect(p.coverCandidates.filter(c => c.kind)).toHaveLength(1);
+    expect(p.suggested.adaptations.every(a => !('pic' in a))).toBe(true);
+  });
+
   it('returns current and suggested adaptations, looked up with the AI title and author', async () => {
     const found = [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }];
     (findAdaptations as jest.Mock).mockResolvedValueOnce(found);

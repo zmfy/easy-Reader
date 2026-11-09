@@ -95,6 +95,16 @@ describe('initialForm', () => {
 })
 
 describe('buildApplyPayload', () => {
+  it('takes the rating from a book cover when an adaptation poster is chosen', () => {
+    const p = preview()
+    p.coverCandidates.push({ title: '三国演义', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg', kind: '电视剧', thumbnail: 'data:p' })
+    const f = initialForm(p)
+    f.cover = 2
+    const body = buildApplyPayload(f, p)
+    expect(body.cover).toEqual({ type: 'douban', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg' })
+    expect(body.ratingSubjectUrl).toBe('https://book.douban.com/subject/1/')
+  })
+
   it('maps a douban candidate to its pic and rating subject', () => {
     const p = preview()
     const f = initialForm(p)

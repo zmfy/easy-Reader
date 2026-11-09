@@ -8,6 +8,7 @@ import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { parseEditedFields } from './ai-batch-fill';
 import { cleanBookTitle } from '../utils/book-title';
 import { Adaptation, findAdaptations } from './adaptations';
+import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
 export { cleanBookTitle };
 
@@ -48,6 +49,8 @@ export class BookNotFoundError extends Error {
 
 const LOCKABLE: LockableField[] = ['author', 'summary', 'category'];
 
+const ADAPTATION_COVER_LIMIT = 6;
+
 const FINISHED_KEYWORDS = /完本|完结|全集|全本|完整版|精校版|完稿/;
 
 function str(v: unknown): string | undefined {
@@ -62,6 +65,8 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const cleanedTitle = cleanBookTitle(book.title);
   const evidence = await buildBookEvidence(book);
   const info = await aiManager.fillBookInfo(evidence.text, db) as Record<string, unknown>;
+  // 分类只接受分类树中的路径（末级名可唯一对应时自动补全），否则不给建议
+  info.category = resolveCategoryPath(getCategoryTree(db), str(info.category));
 
   // 完结：AI 优先，未给出时按文件名推断
   const isFinished = info.is_finished !== undefined ? !!info.is_finished : FINISHED_KEYWORDS.test(book.title);
@@ -87,8 +92,14 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
     doubanSuggestList(lookupTitle),
     findAdaptations({ title: lookupTitle, author: str(info.author) ?? book.author ?? undefined, summary }, db),
   ]);
-  const thumbnails = await Promise.all(candidates.map(c => fetchCoverThumbnailDataUri(c.pic)));
-  const coverCandidates = candidates.flatMap((c, i) => (thumbnails[i] ? [{ ...c, thumbnail: thumbnails[i]! }] : []));
+  // 改编作品的海报 / 广播剧封面排在书封之后，带类型角标；没有 subjectUrl（评分只取书封的豆瓣条目）
+  const adaptationCovers: DoubanCandidate[] = adaptations
+    .filter(a => a.pic)
+    .slice(0, ADAPTATION_COVER_LIMIT)
+    .map(a => ({ title: a.title, ...(a.year ? { year: a.year } : {}), pic: a.pic!, kind: a.type }));
+  const allCovers = [...candidates, ...adaptationCovers];
+  const thumbnails = await Promise.all(allCovers.map(c => fetchCoverThumbnailDataUri(c.pic)));
+  const coverCandidates = allCovers.flatMap((c, i) => (thumbnails[i] ? [{ ...c, thumbnail: thumbnails[i]! }] : []));
 
   const edited = new Set(parseEditedFields(book.manually_edited_fields));
 
@@ -121,7 +132,7 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
       is_finished: isFinished,
       recommended_tags: meta.tags,
       similar_works: meta.similar,
-      adaptations,
+      adaptations: adaptations.map(({ pic: _pic, ...a }) => a),
       confidence,
       evidence: evidenceNotes,
     },

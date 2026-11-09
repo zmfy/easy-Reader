@@ -1,4 +1,4 @@
-import { request } from './cover';
+import { isAllowedCoverImageUrl, request } from './cover';
 
 /**
  * 改编作品候选来源：豆瓣电影（电影 / 剧集 / 动画）、猫耳 FM（广播剧）。
@@ -18,6 +18,8 @@ export interface AdaptationCandidate {
   author?: string;
   /** 猫耳：简介开头（常写明「某某原著」） */
   abstract?: string;
+  /** 海报 / 封面图（可作书籍封面候选） */
+  pic?: string;
   url: string;
 }
 
@@ -48,6 +50,7 @@ export function parseDoubanMovieSuggest(json: string): AdaptationCandidate[] {
       title: s.title as string,
       ...(typeof s.year === 'string' && s.year ? { year: s.year } : {}),
       ...(typeof s.episode === 'string' && s.episode ? { episodes: s.episode } : {}),
+      ...(typeof s.img === 'string' && isAllowedCoverImageUrl(s.img) ? { pic: s.img } : {}),
       url: `https://movie.douban.com/subject/${s.id}/`,
     }));
 }
@@ -66,6 +69,7 @@ export function parseMissevanSearch(json: string): AdaptationCandidate[] {
       ...(typeof d.author === 'string' && d.author.trim() ? { author: d.author.trim() } : {}),
       ...(typeof d.abstract === 'string' && d.abstract.trim()
         ? { abstract: d.abstract.replace(/\s+/g, ' ').trim().slice(0, 80) } : {}),
+      ...(typeof d.cover === 'string' && isAllowedCoverImageUrl(d.cover) ? { pic: d.cover } : {}),
       url: `https://www.missevan.com/mdrama/${d.id}`,
     }));
 }

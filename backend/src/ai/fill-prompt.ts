@@ -5,7 +5,7 @@ export type FillConfidence = 'high' | 'medium' | 'low';
 /**
  * 构造 fillBookInfo 的 prompt（各插件共用，避免分叉）。
  * evidence：文件名 + 文件内置书目信息 + 正文节选（见 services/book-evidence.ts）。
- * config.categories：书库已有分类，逗号分隔（由 aiManager 注入）。
+ * config.categories：分类树的全部路径，逗号分隔（由 aiManager 注入）。
  */
 export function buildFillPrompt(
   evidence: string,
@@ -21,8 +21,8 @@ export function buildFillPrompt(
     : '';
   const categories = (config.categories ?? '').split(',').map(c => c.trim()).filter(Boolean);
   const categoryRule = categories.length
-    ? `分类优先从书库已有分类中选择：${categories.join('、')}；都不合适时再给出一个简短的新分类。`
-    : '分类给出一个简短的中文分类（如 玄幻、历史、外国文学、心理学）。';
+    ? `category 必须从下面的分类路径中原样选一个（尽量选到最细一级；拿不准时选上一级；都不合适选「其他」）：\n${categories.join('\n')}`
+    : 'category 给出一个简短的中文分类。';
 
   return `你是个人书库的图书管理员，负责整理书目信息。这本书可能是网络小说，也可能是出版小说、文集、非虚构、漫画等任何出版物，不要预设类型。
 判断依据的优先级：① 正文节选（版权页、目录、作者署名最可靠）② 文件内置书目信息 ③ 文件名 ④ 你自己的知识。
@@ -32,7 +32,7 @@ ${evidence}
 
 ${categoryRule}
 只返回如下 JSON，不含其他任何文字：
-{"title":"规范书名（去掉营销语、册数说明等）","author":"作者（译著只写原作者，可保留国籍如[英]）","book_type":"网络小说/出版小说/非虚构/漫画/其他","summary":"${summaryLen}字左右的内容简介","category":"分类","is_finished":true,"recommended_tags":["标签1","标签2","标签3"],"similar_works":[{"title":"类似书","author":"作者","reason":"相似原因"}],"confidence":{"author":"high","summary":"medium","category":"high"},"evidence":{"author":"依据（如：版权页署名）","summary":"依据","category":"依据"}}
+{"title":"规范书名（去掉营销语、册数说明等）","author":"作者（译著只写原作者，可保留国籍如[英]）","book_type":"网络小说/出版小说/非虚构/漫画/其他","summary":"${summaryLen}字左右的内容简介","category":"分类路径（如 小说/中国古典小说）","is_finished":true,"recommended_tags":["标签1","标签2","标签3"],"similar_works":[{"title":"类似书","author":"作者","reason":"相似原因"}],"confidence":{"author":"high","summary":"medium","category":"high"},"evidence":{"author":"依据（如：版权页署名）","summary":"依据","category":"依据"}}
 规则：
 - 文件名或内置书名表明是套装/合集/全集/丛书时，title 用整套的名字，不要用正文开头某一册的书名；summary 介绍整套内容；各册作者不同时 author 留空（有主编则写主编）。
 - confidence 取 high / medium / low：依据中直接写明为 high；由正文内容推断为 medium；只凭书名和你的知识为 low。

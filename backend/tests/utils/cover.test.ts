@@ -1,7 +1,7 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import {
-  parseDoubanRating, parseDoubanSuggestList, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, request,
+  parseDoubanRating, parseDoubanSuggestList, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
 } from '../../src/utils/cover';
 
 describe('parseDoubanRating', () => {
@@ -46,6 +46,18 @@ describe('parseDoubanSuggestList', () => {
   it('returns [] for invalid or non-array JSON', () => {
     expect(parseDoubanSuggestList('not json')).toEqual([]);
     expect(parseDoubanSuggestList('{"a":1}')).toEqual([]);
+  });
+});
+
+describe('isAllowedCoverImageUrl', () => {
+  it.each([
+    ['https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg', true],
+    ['https://static.maoercdn.com/dramacovers/201906/13/a.png', true],
+    ['http://static.maoercdn.com/a.png', false],
+    ['https://static.maoercdn.com.evil.com/a.png', false],
+    ['https://maoercdn.com/a.png', false],
+  ])('%s → %s', (url, ok) => {
+    expect(isAllowedCoverImageUrl(url)).toBe(ok);
   });
 });
 

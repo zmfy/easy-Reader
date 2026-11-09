@@ -15,6 +15,7 @@ import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateChecke
 import path from 'path';
 import { certDir, certWarning, saveUploadedCert, deleteCertFiles } from '../services/https-cert';
 import { getHttpsState, recheckHttps, HttpsState, isHttpsEnabled, setHttpsEnabled } from '../services/https-server';
+import { CategoryNode, getCategoryTree, renameCategoryPath, saveCategoryTree, validateCategoryTree, isValidCategoryPath } from '../utils/category-tree';
 
 const HTTPS_CERT_DIR = certDir(process.env.DATA_DIR || path.join(__dirname, '../../data'));
 // enabled 以数据库开关为准（管理器未启动时，如测试环境，也能反映开关）；到期提醒只在开启且有证书时给出
@@ -77,8 +78,9 @@ router.get('/changelog', authMiddleware, adminMiddleware, (_req: Request, res: R
 // GET /api/settings
 router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  // reader_prefs_* / study_prefs_* 是各用户的个人设置，update_check_* / update_checked_at 是更新检查的内部缓存，都不属于系统设置
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'study\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'update\\_check\\_%' ESCAPE '\\' AND key <> 'update_checked_at'").all() as Array<{ key: string; value: string }>;
+  // reader_prefs_* / study_prefs_* 是各用户的个人设置，update_check_* / update_checked_at 是更新检查的内部缓存，都不属于系统设置；
+  // category_tree / category_review_ids 走专门的接口（分类树、待整理），放在这里会被设置页整体回存时超长
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT LIKE 'reader\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'study\\_prefs\\_%' ESCAPE '\\' AND key NOT LIKE 'update\\_check\\_%' ESCAPE '\\' AND key NOT IN ('update_checked_at', 'category_tree', 'category_review_ids')").all() as Array<{ key: string; value: string }>;
   const settings: Record<string, string> = {};
   for (const row of rows) {
     if (row.key === 'smtp_pass') {
@@ -111,6 +113,31 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
   // 「系统提醒」开关变化时启停后台更新检查
   if ('system_notice_enabled' in parsed.data) applyUpdateCheckerSetting(db);
   successResponse(res, null, '设置已更新');
+});
+
+const categoryTreeSchema = z.object({
+  tree: z.unknown(),
+  /** 设置页里的改名操作：书的分类按前缀从 from 改为 to（按顺序执行） */
+  renames: z.array(z.object({ from: z.string().min(1).max(200), to: z.string().min(1).max(200) })).max(300).default([]),
+});
+
+// PUT /api/settings/category-tree — 保存分类树，并把改名同步到书的分类
+router.put('/category-tree', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = categoryTreeSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const err = validateCategoryTree(parsed.data.tree);
+  if (err) { errorResponse(res, 422, 'VALIDATION_ERROR', err); return; }
+  const tree = parsed.data.tree as CategoryNode[];
+  const badRename = parsed.data.renames.find(r => !isValidCategoryPath(tree, r.to));
+  if (badRename) { errorResponse(res, 422, 'VALIDATION_ERROR', `改名后的分类「${badRename.to}」不在分类表中`); return; }
+
+  const db = getDb();
+  let renamed = 0;
+  db.transaction(() => {
+    for (const r of parsed.data.renames) renamed += renameCategoryPath(db, r.from, r.to);
+    saveCategoryTree(db, tree);
+  })();
+  successResponse(res, { tree: getCategoryTree(db), renamed }, '分类表已保存');
 });
 
 // GET /api/settings/ai-plugins

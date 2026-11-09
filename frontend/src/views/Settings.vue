@@ -51,6 +51,8 @@
           </div>
         </section>
 
+        <CategoryTreeCard />
+
         <section class="section-card">
           <h2 class="section-title">外观主题</h2>
           <p class="section-desc">网站整体配色，保存后生效</p>
@@ -505,6 +507,7 @@ import { useRoute } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import HttpsCertCard from '@/components/HttpsCertCard.vue'
+import CategoryTreeCard from '@/components/CategoryTreeCard.vue'
 import { settingsApi } from '@/api/settings'
 import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload } from '@/utils/ai-settings'

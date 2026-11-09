@@ -31,6 +31,7 @@ function setupDb(overrides: Record<string, unknown> = {}): void {
       is_finished INTEGER DEFAULT 0, manually_edited_fields TEXT,
       ai_fill_version INTEGER, ai_fill_status TEXT
     );
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE book_ai_metadata (
       book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT, adaptations TEXT,
       generated_by TEXT, generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -158,7 +159,7 @@ describe('applyAiFill covers', () => {
   });
 
   it('generates and saves the default cover from the final title / author / category', async () => {
-    await applyAiFill('b1', input({ author: '罗贯中', category: '古典小说', cover: { type: 'default' } }));
+    await applyAiFill('b1', input({ author: '罗贯中', category: '小说/中国古典小说', cover: { type: 'default' } }));
     const url = row().cover_url as string;
     expect(url).toMatch(/^\/covers\/b1-[0-9a-z]+\.svg$/);
     const svg = fs.readFileSync(path.join(COVERS(), url.replace('/covers/', '')), 'utf-8');
@@ -174,10 +175,15 @@ describe('applyAiFill covers', () => {
 
   it('falls back to the cleaned book title when no cover title is submitted', async () => {
     setupDb({ title: '《三国演义》（精校版全本）作者：罗贯中' });
-    await applyAiFill('b1', input({ category: '综合', cover: { type: 'default' } }));
+    await applyAiFill('b1', input({ category: '其他', cover: { type: 'default' } }));
     const svg = fs.readFileSync(path.join(COVERS(), (row().cover_url as string).replace('/covers/', '')), 'utf-8');
     expect(svg).toContain('>三国演义<');           // modern 风格横排整行
     expect(svg).not.toContain('精校版');
+  });
+
+  it('rejects a changed category that is not in the category tree, but keeps an unchanged legacy one', async () => {
+    await expect(applyAiFill('b1', input({ category: '古典小说' }))).rejects.toThrow('分类不在分类表中');
+    await expect(applyAiFill('b1', input({ category: '历史' }))).resolves.toBeTruthy();
   });
 
   it('keeps the current cover untouched', async () => {

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { AiPlugin, Book } from '../types';
+import { categoryPaths, getCategoryTree } from '../utils/category-tree';
 import deepseekPlugin from './deepseek';
 import minmaxPlugin from './minmax';
 import ollamaPlugin from './ollama';
@@ -95,13 +96,9 @@ function readSummaryLength(db: Database.Database): string {
   return String(n);
 }
 
-/** 书库已有分类（按使用次数），供 AI 填充优先选用，避免分类各说各话 */
-function readLibraryCategories(db: Database.Database): string {
-  const rows = db.prepare(
-    `SELECT category FROM books WHERE category IS NOT NULL AND TRIM(category) != ''
-     GROUP BY category ORDER BY COUNT(*) DESC LIMIT 40`
-  ).all() as Array<{ category: string }>;
-  return rows.map(r => r.category.replace(/[,，]/g, ' ').trim()).join(',');
+/** 分类树的全部路径，AI 填充只能从中选择（多级分类见 utils/category-tree.ts） */
+function readCategoryPaths(db: Database.Database): string {
+  return categoryPaths(getCategoryTree(db)).join(',');
 }
 
 export const aiManager = {
@@ -111,7 +108,7 @@ export const aiManager = {
     return active.plugin.fillBookInfo(rawText, {
       ...active.config,
       summary_length: readSummaryLength(db),
-      categories: readLibraryCategories(db),
+      categories: readCategoryPaths(db),
     }, hint);
   },
 

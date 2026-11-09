@@ -65,11 +65,12 @@ export function initialForm(p: AiFillPreview): AiFillForm {
 
 export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApplyInput {
   const chosen = typeof form.cover === 'number' ? p.coverCandidates[form.cover] : undefined
-  const ratingSubjectUrl = chosen ? chosen.subjectUrl : p.coverCandidates[0]?.subjectUrl
+  // 评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
+  const ratingSubjectUrl = chosen?.subjectUrl ?? p.coverCandidates.find(c => c.subjectUrl)?.subjectUrl
   return {
     author: form.author,
     summary: form.summary,
-    category: form.category,
+    category: form.category || '',  // 分类选择器清空时为 null
     ...(form.is_finished === null ? {} : { is_finished: form.is_finished }),
     recommended_tags: [...form.tags],
     similar_works: form.similar.map(s => ({ ...s })),

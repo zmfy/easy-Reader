@@ -16,6 +16,10 @@ export const settingsApi = {
   get: () =>
     http.get<ApiResponse<Record<string, string>>>('/settings'),
 
+  // 保存分类树；renames 把书的分类按前缀改名
+  saveCategoryTree: (tree: import('@/types').CategoryNode[], renames: Array<{ from: string; to: string }>) =>
+    http.put<ApiResponse<{ tree: import('@/types').CategoryNode[]; renamed: number }>>('/settings/category-tree', { tree, renames }),
+
   update: (settings: Record<string, string>) =>
     http.put<ApiResponse<null>>('/settings', settings),
 
