@@ -1,5 +1,6 @@
 import { AiPlugin, Book } from '../types';
 import { buildFillPrompt } from './fill-prompt';
+import { parseFillResponse } from './json-extract';
 
 const claudePlugin: AiPlugin = {
   name: 'claude',
@@ -30,12 +31,7 @@ const claudePlugin: AiPlugin = {
     const data = await resp.json() as Record<string, unknown>;
     const content = (data.content as Array<{ text: string }>)[0]?.text || '{}';
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      return {};
-    }
+    return parseFillResponse(content, 'claude') as Partial<Book>;
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {

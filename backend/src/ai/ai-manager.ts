@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { AiPlugin, Book } from '../types';
 import { categoryPaths, getCategoryTree } from '../utils/category-tree';
+import { extractJsonObject } from './json-extract';
 import deepseekPlugin from './deepseek';
 import minmaxPlugin from './minmax';
 import ollamaPlugin from './ollama';
@@ -168,9 +169,8 @@ ${numbered}
 - 不要丢失原标题中的关键描述文字`;
     try {
       const raw = await this.chat(prompt, db);
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) return titles;
-      const parsed = JSON.parse(m[0]) as { normalized?: string[] };
+      const parsed = extractJsonObject(raw) as { normalized?: string[] } | undefined;
+      if (!parsed) return titles;
       if (!Array.isArray(parsed.normalized) || parsed.normalized.length !== titles.length) {
         return titles;
       }
@@ -198,9 +198,8 @@ ${sample.slice(0, 512)}
 {"is_garbled": false}`;
     try {
       const raw = await this.chat(prompt, db);
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) return { is_garbled: true, reason: 'AI response unparseable' };
-      const parsed = JSON.parse(m[0]) as { is_garbled?: boolean; reason?: string };
+      const parsed = extractJsonObject(raw) as { is_garbled?: boolean; reason?: string } | undefined;
+      if (!parsed) return { is_garbled: true, reason: 'AI response unparseable' };
       return { is_garbled: parsed.is_garbled !== false, reason: parsed.reason };
     } catch (err) {
       return { is_garbled: true, reason: (err as Error).message };
@@ -229,9 +228,8 @@ ${blocks}
 
 function parseDedupResponse(raw: string, total: number): AiDedupResult {
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { groups: [] };
-    const parsed = JSON.parse(jsonMatch[0]) as AiDedupResult;
+    const parsed = extractJsonObject(raw) as AiDedupResult | undefined;
+    if (!parsed) return { groups: [] };
     // sanity check indices
     const valid = (parsed.groups ?? []).filter(g =>
       g.canonical_index >= 0 && g.canonical_index < total &&
@@ -264,9 +262,8 @@ ${blocks}
 
 function parseSeriesResponse(raw: string, total: number): AiSeriesResult {
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { is_series: false };
-    const parsed = JSON.parse(jsonMatch[0]) as AiSeriesResult;
+    const parsed = extractJsonObject(raw) as AiSeriesResult | undefined;
+    if (!parsed) return { is_series: false };
     if (!parsed.is_series) return { is_series: false };
     const members = (parsed.members ?? []).filter(m =>
       m.index >= 0 && m.index < total && m.sequence > 0

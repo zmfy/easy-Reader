@@ -1,5 +1,6 @@
 import { AiPlugin, Book } from '../types';
 import { buildFillPrompt } from './fill-prompt';
+import { parseFillResponse } from './json-extract';
 
 // 通义千问（阿里云百炼）- 兼容 OpenAI 格式
 const qwenPlugin: AiPlugin = {
@@ -35,12 +36,7 @@ const qwenPlugin: AiPlugin = {
     const data = await resp.json() as Record<string, unknown>;
     const content = ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content || '{}';
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      return {};
-    }
+    return parseFillResponse(content, 'qwen') as Partial<Book>;
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {

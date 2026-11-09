@@ -3,6 +3,7 @@ import { aiManager } from '../ai/ai-manager';
 import {
   CategoryNode, categoryPaths, getCategoryTree, isValidCategoryPath, resolveCategoryPath,
 } from '../utils/category-tree';
+import { extractJsonObject } from '../ai/json-extract';
 
 /**
  * 旧分类整理：分类不在分类树里的书（旧版单级分类、分类树删改后遗留的），给出新路径建议，
@@ -93,13 +94,7 @@ ${lines}
 
 export function parseCategorizeResponse(raw: string, tree: CategoryNode[], total: number): Map<number, string> {
   const out = new Map<number, string>();
-  let items: unknown;
-  try {
-    const m = raw.match(/\{[\s\S]*\}/);
-    items = m ? (JSON.parse(m[0]) as { items?: unknown }).items : undefined;
-  } catch {
-    return out;
-  }
+  const items: unknown = extractJsonObject(raw)?.items;
   if (!Array.isArray(items)) return out;
   for (const item of items) {
     const { index, category } = (item ?? {}) as { index?: unknown; category?: unknown };

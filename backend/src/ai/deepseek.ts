@@ -1,5 +1,6 @@
 import { AiPlugin, Book } from '../types';
 import { buildFillPrompt } from './fill-prompt';
+import { parseFillResponse } from './json-extract';
 
 // 模型：deepseek-flash / deepseek-v4-pro（https://api-docs.deepseek.com/zh-cn/quick_start/pricing）
 // 两者默认开启思考模式；默认关闭以保持速度与费用，用户可在设置中开启并选择强度
@@ -60,12 +61,7 @@ const deepseekPlugin: AiPlugin = {
     const data = await resp.json() as Record<string, unknown>;
     const content = ((data.choices as Array<{ message: { content: string } }> | null | undefined))?.[0]?.message?.content || '{}';
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      return {};
-    }
+    return parseFillResponse(content, 'deepseek') as Partial<Book>;
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {

@@ -1,5 +1,6 @@
 import { AiPlugin, Book } from '../types';
 import { buildFillPrompt } from './fill-prompt';
+import { parseFillResponse } from './json-extract';
 
 // Ollama 本地模型 - 无需 API Key
 // Docker 部署时容器内的 localhost 指向容器自身，需填宿主机地址
@@ -68,12 +69,7 @@ const ollamaPlugin: AiPlugin = {
   async fillBookInfo(rawText: string, config: Record<string, string>, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {
     const content = await ollamaChat(buildFillPrompt(rawText, config, hint), config, 0.3);
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      return {};
-    }
+    return parseFillResponse(content, 'ollama') as Partial<Book>;
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {

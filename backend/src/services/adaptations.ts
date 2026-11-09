@@ -3,6 +3,7 @@ import { aiManager } from '../ai/ai-manager';
 import {
   AdaptationCandidate, AdaptationSource, searchDoubanMovies, searchMissevanDramas,
 } from '../utils/adaptation-sources';
+import { extractJsonObject } from '../ai/json-extract';
 
 /**
  * 改编作品：先从豆瓣电影、猫耳 FM 按书名搜出候选，再由 AI 结合书目信息挑出真正改编自这本书的。
@@ -57,13 +58,7 @@ ${lines}
 }
 
 export function parseAdaptationResponse(raw: string, candidates: AdaptationCandidate[]): Adaptation[] {
-  let items: unknown;
-  try {
-    const m = raw.match(/\{[\s\S]*\}/);
-    items = m ? (JSON.parse(m[0]) as { adaptations?: unknown }).adaptations : undefined;
-  } catch {
-    return [];
-  }
+  const items: unknown = extractJsonObject(raw)?.adaptations;
   if (!Array.isArray(items)) return [];
   const seen = new Set<number>();
   const out: Adaptation[] = [];
