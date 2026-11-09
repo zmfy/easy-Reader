@@ -65,6 +65,17 @@ export function readTxtPreview(filePath: string, maxChars: number): string {
   }
 }
 
+/**
+ * 以「第X章 / 回…」开头、但其实是正文句子的行（如《社戏》「第一回是民国元年我初到北京的时候，当时一个朋友对我说，北京戏」）。
+ * 标题里可能有问号、感叹号（「第二十七章 赌运气？」）、结尾句号（「第一千一百三十九章神念附灵。」）、
+ * 甚至两个逗号（「第二百一十四章 一个恩赐，或者，一个诅咒」），所以只认更像正文的两种：
+ * 句号后面还有字，或两个以上逗号且整行较长。
+ */
+export function looksLikeSentence(line: string): boolean {
+  const text = line.trim();
+  return /。\s*\S/.test(text) || ((text.match(/，/g)?.length ?? 0) >= 2 && text.length > 25);
+}
+
 const SEPARATOR_LINE_RE = /^[=＝\-－_*＊~～#＃─━·]{5,}$/;
 const URL_RE = /https?:\/\/|www\.|[a-z0-9-]+\.(com|cn|net|org|me|cc|top|xyz|info|vip|la|co)\b/i;
 const PROMO_RE = /尽在.{0,15}下载|免费.{0,6}(txt|小说)|txt小说|小说下载|资源库|喜欢的就?去看看/i;
@@ -177,7 +188,7 @@ export class TxtParser implements ReaderPlugin {
           segmentStarts.push(absoluteStart);
         }
         const lineText = iconv.decode(lineBuffer, encoding).trim();
-        if (chapterPattern.test(lineText) && lineText.length < 60) {
+        if (chapterPattern.test(lineText) && lineText.length < 60 && !looksLikeSentence(lineText)) {
           const prev = chapters[chapters.length - 1];
           if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
             // 上一个标题之后没有正文，又是同一编号的标题（网页抓取的书常把每回标题写两遍：
@@ -199,7 +210,7 @@ export class TxtParser implements ReaderPlugin {
             ...(pendingPart ? { partTitle: pendingPart } : {}),
           });
           pendingPart = null;
-        } else if (partPattern.test(lineText) && lineText.length < 30) {
+        } else if (partPattern.test(lineText) && lineText.length < 30 && !looksLikeSentence(lineText)) {
           // 「第一部 小丑」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
           pendingPart = lineText;
         } else if (lineText) {

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TxtParser } from '../../src/plugins/parser-txt';
+import { TxtParser, looksLikeSentence } from '../../src/plugins/parser-txt';
 
 async function chaptersOf(text: string) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
@@ -23,6 +23,35 @@ describe('TxtParser chapter detection', () => {
 
   it('does not treat prose that merely starts with 第 as a heading', async () => {
     expect(await chaptersOf('第一章 开端\n第二天一早，他就出发了。\n')).toEqual(['第一章 开端']);
+  });
+
+  it('正文句子以「第一回」开头时不算标题（《社戏》）', async () => {
+    const titles = await chaptersOf(
+      '第一章 社戏\n我在倒数上去的二十年中，只看过两回中国戏。\n'
+      + '第一回是民国元年我初到北京的时候，当时一个朋友对我说，北京戏\n最好，你不去见见世面么？\n'
+      + '第二回忘记了那一年，总之是募集湖北水灾捐而谭叫天还没有死。捐法是两\n正文\n'
+      + '第二章 风波\n临河的土场上\n',
+    );
+    expect(titles).toEqual(['第一章 社戏', '第二章 风波']);
+  });
+
+  it('标题里有一个逗号仍算标题', async () => {
+    expect(await chaptersOf('第十章 风起，云涌\n正文\n第十一章 落幕\n正文\n')).toEqual(['第十章 风起，云涌', '第十一章 落幕']);
+  });
+});
+
+describe('looksLikeSentence', () => {
+  it.each([
+    ['第一回是民国元年我初到北京的时候，当时一个朋友对我说，北京戏', true],
+    ['第二回忘记了那一年，总之是募集湖北水灾捐而谭叫天还没有死。捐法是两', true],
+    ['第二十七章 赌运气？', false],
+    ['第一千九十八章冲阶化神!', false],
+    ['第一千一百三十九章神念附灵。', false],
+    ['第二百一十四章 一个恩赐，或者，一个诅咒', false],
+    ['第十章 风起，云涌', false],
+    ['第一回 灵根育孕源流出　心性修持大道生', false],
+  ])('%s → %s', (line, expected) => {
+    expect(looksLikeSentence(line)).toBe(expected);
   });
 });
 
