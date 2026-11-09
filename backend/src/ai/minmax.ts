@@ -1,5 +1,6 @@
 import { AiPlugin, Book } from '../types';
 import { buildFillPrompt } from './fill-prompt';
+import { parseFillResponse } from './json-extract';
 
 // MiniMax - OpenAI 兼容接口（https://platform.minimax.cn/docs/api-reference/text-openai-api）
 // 当前可用模型：MiniMax-M3.1-Flash、MiniMax-M3（MiniMax-M2 系列已下线，返回 2069）
@@ -99,12 +100,7 @@ const minmaxPlugin: AiPlugin = {
     const choices = data.choices as Array<{ message: { content: string } }> | null | undefined;
     const content = choices?.[0]?.message?.content || '{}';
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      return {};
-    }
+    return parseFillResponse(content, 'minmax') as Partial<Book>;
   },
 
   async classifyBook(bookInfo: Partial<Book>, config: Record<string, string>): Promise<string> {

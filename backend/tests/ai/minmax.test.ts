@@ -18,6 +18,11 @@ function mockFetch(content: string): FetchArgs[] {
 afterEach(() => { jest.restoreAllMocks(); });
 
 describe('minmax plugin', () => {
+  it('still parses fill info when the model repeats the JSON object twice', async () => {
+    mockFetch('{"author":"忘语","category":"小说/网络小说/仙侠修真"}{"author":"忘语","category":"小说/网络小说/仙侠修真"}');
+    expect(await minmaxPlugin.fillBookInfo('text', { apiKey: 'k' })).toEqual({ author: '忘语', category: '小说/网络小说/仙侠修真' });
+  });
+
   it('uses the current OpenAI-compatible endpoint and a still-available default model', async () => {
     const calls = mockFetch('好');
     const out = await minmaxPlugin.chat('hi', { apiKey: 'k' });
