@@ -736,3 +736,23 @@ html[data-theme="cool"] {
 @media (max-width: 480px) {
   .auth-card { padding: 24px 18px; }
 }
+
+/* ── 阅读器墨水屏主题：<html> 上的 eink class 由 Reader.vue 在墨水屏主题时添加 ──
+   墨水屏每次刷新都会残影 / 闪烁：关掉所有过渡与动画、平滑滚动、毛玻璃和阴影，
+   抽屉、弹窗、提示改为细黑边（它们 teleport 到 body，不在阅读器内） */
+html.eink *,
+html.eink *::before,
+html.eink *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+  backdrop-filter: none !important;
+}
+html.eink .el-drawer,
+html.eink .el-dialog,
+html.eink .el-message-box,
+html.eink .el-popper,
+html.eink .el-message {
+  box-shadow: none !important;
+  border: 1px solid #000;
+}

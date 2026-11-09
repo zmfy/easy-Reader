@@ -36,3 +36,14 @@ export function alignedPageDistance(targetLineTop: number, viewportTop: number, 
   const distance = targetLineTop - viewportTop - 8
   return Math.min(Math.max(distance, viewportHeight / 2), viewportHeight)
 }
+
+export type TapZoneAction = 'pageUp' | 'pageDown' | 'toggle'
+
+/** 墨水屏点按翻页：点屏幕左侧 30% 上翻一屏、右侧 30% 下翻一屏，中间呼出 / 收起菜单 */
+export function tapZoneAction(x: number, width: number): TapZoneAction {
+  if (width <= 0) return 'toggle'
+  const ratio = x / width
+  if (ratio < 0.3) return 'pageUp'
+  if (ratio >= 0.7) return 'pageDown'
+  return 'toggle'
+}

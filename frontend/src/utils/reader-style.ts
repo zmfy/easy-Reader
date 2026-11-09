@@ -7,6 +7,11 @@ export function isDarkReaderTheme(theme: ReaderTheme): boolean {
   return DARK_READER_THEMES.includes(theme)
 }
 
+/** 墨水屏主题：纯黑白配色、关闭动画、点屏幕两侧瞬间翻页 */
+export function isEinkTheme(theme: ReaderTheme): boolean {
+  return theme === 'eink'
+}
+
 /** 工具栏「夜间」按钮：浅色主题切到夜间，深色主题切回默认的靛青 */
 export function nightToggleTheme(theme: ReaderTheme): ReaderTheme {
   return isDarkReaderTheme(theme) ? 'indigo' : 'night'
@@ -82,6 +87,24 @@ export function readerPalette(theme: ReaderTheme, paperBg: string, text: string,
       '--reader-hover-bg': 'rgba(26,36,64,.04)',
       '--reader-active-bg': 'rgba(26,36,64,.07)',
       '--reader-text-2': '#4a5568',
+    }
+  }
+  if (theme === 'eink') {
+    // 墨水屏：只用纯色（墨水屏设备的浏览器可能较老，不支持 color-mix），不要阴影和半透明
+    return {
+      '--reader-page-bg': '#ffffff',
+      '--reader-paper-bg': '#ffffff',
+      '--reader-text': '#000000',
+      '--reader-text-secondary': '#333333',
+      '--reader-divider': '#000000',
+      '--reader-panel-bg': '#ffffff',
+      '--reader-panel-shadow': 'none',
+      '--reader-accent': '#000000',
+      '--reader-on-accent': '#ffffff',
+      '--reader-accent-weak': '#e6e6e6',
+      '--reader-hover-bg': '#eeeeee',
+      '--reader-active-bg': '#dddddd',
+      '--reader-text-2': '#222222',
     }
   }
   const dark = isDarkReaderTheme(theme)
