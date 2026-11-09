@@ -1,5 +1,5 @@
 import path from 'path';
-import { ReaderPlugin } from '../types';
+import { BookFileMetadata, ReaderPlugin } from '../types';
 
 /** Extract <body> inner HTML from a full XHTML/HTML document string */
 function extractBodyContent(html: string): string {
@@ -255,4 +255,29 @@ export class EpubParser implements ReaderPlugin {
   async getProgress(): Promise<number> {
     return 0;
   }
+
+  /** OPF 书目信息（epub2 解析的 metadata；subject 可能是字符串或数组，description 可能带 HTML） */
+  async getMetadata(): Promise<BookFileMetadata> {
+    return epubMetadata(this.epub?.metadata);
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function epubMetadata(m: any): BookFileMetadata {
+  if (!m || typeof m !== 'object') return {};
+  const text = (v: unknown): string | undefined => {
+    if (typeof v !== 'string') return undefined;
+    const t = v.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return t || undefined;
+  };
+  const meta: BookFileMetadata = {};
+  const title = text(m.title); if (title) meta.title = title;
+  const author = text(m.creator); if (author) meta.author = author;
+  const publisher = text(m.publisher); if (publisher) meta.publisher = publisher;
+  const date = text(m.date); if (date) meta.date = date.slice(0, 10);
+  const description = text(m.description); if (description) meta.description = description.slice(0, 500);
+  const isbn = text(m.ISBN); if (isbn) meta.isbn = isbn;
+  const subjects = (Array.isArray(m.subject) ? m.subject : [m.subject]).map(text).filter((s: string | undefined): s is string => !!s);
+  if (subjects.length) meta.subjects = subjects.slice(0, 10);
+  return meta;
 }

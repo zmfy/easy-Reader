@@ -62,6 +62,11 @@
       <section v-for="f in textFields" :key="f.key" class="block" :class="`area-${f.key}`">
         <div class="block-title">
           {{ f.label }}
+          <el-tag
+            v-if="preview.suggested[f.key] && preview.suggested.confidence?.[f.key]"
+            size="small"
+            :type="preview.suggested.confidence[f.key] === 'low' ? 'warning' : 'info'"
+          >{{ CONFIDENCE_LABELS[preview.suggested.confidence[f.key]!] }}</el-tag>
           <template v-if="isLocked(f.key)">
             <el-tag size="small" type="info">已锁定</el-tag>
             <el-switch
@@ -82,6 +87,17 @@
         />
         <div v-if="isLocked(f.key) && preview.suggested[f.key]" class="hint other-value">
           {{ form.useAi[f.key] ? '原内容' : 'AI 建议' }}：{{ clip(form.useAi[f.key] ? preview.current[f.key] : preview.suggested[f.key]) }}
+        </div>
+        <!-- 低置信建议不预填：显示出来，由用户决定是否采用 -->
+        <div
+          v-if="!isLocked(f.key) && preview.suggested[f.key] && isLowConfidence(preview, f.key) && form[f.key] !== preview.suggested[f.key]"
+          class="hint other-value"
+        >
+          AI 猜测（未采用）：{{ clip(preview.suggested[f.key]) }}
+          <el-button link type="primary" size="small" @click="adoptSuggestion(f.key)">采用</el-button>
+        </div>
+        <div v-if="preview.suggested[f.key] && preview.suggested.evidence?.[f.key]" class="hint other-value">
+          依据：{{ preview.suggested.evidence[f.key] }}
         </div>
       </section>
 
@@ -145,8 +161,8 @@ import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
-import { initialForm, buildApplyPayload, type AiFillForm } from '@/utils/ai-fill-form'
-import type { AiFillPreview, AiFillLockableField, Book } from '@/types'
+import { initialForm, buildApplyPayload, isLowConfidence, type AiFillForm } from '@/utils/ai-fill-form'
+import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book } from '@/types'
 
 const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; applied: [book: Book] }>()
@@ -180,6 +196,16 @@ watch(() => props.preview, (p) => {
   newSimilar.title = ''
   newSimilar.author = ''
 }, { immediate: true })
+
+const CONFIDENCE_LABELS: Record<AiFillConfidence, string> = {
+  high: '依据明确',
+  medium: '依据推断',
+  low: '低置信',
+}
+
+function adoptSuggestion(field: AiFillLockableField) {
+  if (form.value && props.preview) form.value[field] = props.preview.suggested[field] || ''
+}
 
 function isLocked(field: AiFillLockableField): boolean {
   return !!props.preview?.lockedFields.includes(field)

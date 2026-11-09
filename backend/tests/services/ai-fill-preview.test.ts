@@ -63,6 +63,18 @@ beforeEach(() => {
 });
 
 describe('buildAiFillPreview', () => {
+  it('returns per-field confidence and evidence notes', async () => {
+    fill.mockResolvedValueOnce({
+      author: '罗贯中', summary: '东汉末年', category: '历史',
+      confidence: { author: 'high', summary: 'low' },
+      evidence: { author: '版权页署名' },
+    });
+    const p = await buildAiFillPreview('b1');
+    expect(p.suggested.confidence).toEqual({ author: 'high', summary: 'low', category: 'medium' });
+    expect(p.suggested.evidence).toEqual({ author: '版权页署名' });
+    expect(fill.mock.calls[0][0]).toContain('【文件名】sg.epub');
+  });
+
   it('returns current values, AI suggestions and locked fields', async () => {
     const p = await buildAiFillPreview('b1');
     expect(p.current).toMatchObject({

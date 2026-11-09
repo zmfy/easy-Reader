@@ -95,6 +95,15 @@ function readSummaryLength(db: Database.Database): string {
   return String(n);
 }
 
+/** 书库已有分类（按使用次数），供 AI 填充优先选用，避免分类各说各话 */
+function readLibraryCategories(db: Database.Database): string {
+  const rows = db.prepare(
+    `SELECT category FROM books WHERE category IS NOT NULL AND TRIM(category) != ''
+     GROUP BY category ORDER BY COUNT(*) DESC LIMIT 40`
+  ).all() as Array<{ category: string }>;
+  return rows.map(r => r.category.replace(/[,，]/g, ' ').trim()).join(',');
+}
+
 export const aiManager = {
   async fillBookInfo(rawText: string, db: Database.Database, hint?: { title?: string; author?: string }): Promise<Partial<Book>> {
     const active = getActivePlugin(db);
@@ -102,6 +111,7 @@ export const aiManager = {
     return active.plugin.fillBookInfo(rawText, {
       ...active.config,
       summary_length: readSummaryLength(db),
+      categories: readLibraryCategories(db),
     }, hint);
   },
 

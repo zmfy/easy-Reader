@@ -11,7 +11,8 @@ import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
-import { readTxtPreview } from '../plugins/parser-txt';
+import { buildBookEvidence } from './book-evidence';
+import { fieldConfidence } from '../ai/fill-prompt';
 
 const DEFAULT_CONCURRENCY = 2;
 const RETRIES = 3;
@@ -100,7 +101,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
     if (input.taskId && isCancelled(input.taskId)) return;
     let transientFail = false;
     try {
-      const rawText = readPreview(b.file_path, b.file_format);
+      const rawText = (await buildBookEvidence(b)).text;
       const knownTitle = lookupKey(b.title) || b.title;
       const knownAuthor = ((b.author ?? '').trim()) || (extractAuthorFromName(path.basename(b.file_path)) ?? '');
 
@@ -145,6 +146,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       function maybeSet(field: 'title' | 'author' | 'summary' | 'category', newVal: string | undefined): void {
         if (!newVal) return;
         if (edited.has(field)) return;
+        // 只凭书名和模型知识得出的（低置信）不自动写入，留给单本 AI 填充预览由人确认
+        if (fieldConfidence(info as Record<string, unknown>, field) === 'low') return;
         const cur = current![field];
         if (cur && cur.trim().length > 0) return;
         updates.push(`${field} = ?`);
@@ -236,11 +239,6 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
   })));
 
   return result;
-}
-
-function readPreview(filePath: string, format: string): string {
-  if (format !== 'txt') return '';
-  return readTxtPreview(filePath, 2000);
 }
 
 export function parseEditedFields(raw?: string): string[] {

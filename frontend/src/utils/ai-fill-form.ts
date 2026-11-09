@@ -16,10 +16,16 @@ export interface AiFillForm {
 
 const FIELDS: AiFillLockableField[] = ['author', 'summary', 'category']
 
+/** AI 只凭书名和自身知识给出的建议（低置信）：默认不采用，由用户点「采用」 */
+export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boolean {
+  return p.suggested.confidence?.[f] === 'low'
+}
+
 /**
  * 初始化表单：
  * - 非锁定字段用 AI 建议，AI 没给时保留当前值；
  * - 锁定字段默认保留当前值，当前值为空时用 AI 建议；
+ * - 低置信建议一律不预填（保留当前值，可能为空），弹窗里单独提示可采用；
  * - 标签、类似作品用 AI 结果，AI 为空时保留当前内容（避免直接应用就清空）；
  * - 封面优先当前封面，其次第一个豆瓣候选，最后默认封面。
  */
@@ -29,7 +35,7 @@ export function initialForm(p: AiFillPreview): AiFillForm {
   const values = { author: '', summary: '', category: '' }
   for (const f of FIELDS) {
     const current = p.current[f] || ''
-    const suggestion = p.suggested[f] || ''
+    const suggestion = isLowConfidence(p, f) ? '' : p.suggested[f] || ''
     if (locked.has(f)) {
       useAi[f] = !current && !!suggestion
       values[f] = useAi[f] ? suggestion : current

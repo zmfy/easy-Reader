@@ -267,6 +267,21 @@ describe('batchFill two-pass', () => {
       | undefined;
     expect(row?.summary).toBe('简介内容');
   });
+
+  it('does not auto-write low-confidence fields (only guessed from title)', async () => {
+    insBook(_testDb!, { id: 'lc', title: '克莱因文集', file_path: '/nonexistent/lc.epub', file_format: 'epub' });
+    fillSpy.mockResolvedValueOnce({
+      author: '误道者', summary: '编造的简介', category: '心理学',
+      confidence: { author: 'low', summary: 'low', category: 'high' },
+    });
+
+    await batchFill({ books: [{ id: 'lc', file_path: '/nonexistent/lc.epub', file_format: 'epub', title: '克莱因文集' }] });
+
+    const row = _testDb!.prepare('SELECT author, summary, category FROM books WHERE id = ?').get('lc');
+    expect(row).toEqual({ author: null, summary: null, category: '心理学' });
+    // 证据里带文件名（文件不存在也不报错）
+    expect(fillSpy.mock.calls[0][0]).toContain('【文件名】lc.epub');
+  });
 });
 
 // ── isRateLimitError unit tests ─────────────────────────────────────────────

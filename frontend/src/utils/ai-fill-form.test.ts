@@ -23,6 +23,18 @@ function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
 }
 
 describe('initialForm', () => {
+  it('does not prefill low-confidence suggestions', () => {
+    const p = preview({ lockedFields: ['summary'] })
+    p.current.author = ''
+    p.current.summary = ''
+    p.suggested.confidence = { author: 'low', summary: 'low', category: 'high' }
+    const f = initialForm(p)
+    expect(f.author).toBe('')
+    expect(f.summary).toBe('')
+    expect(f.useAi.summary).toBe(false)
+    expect(f.category).toBe('古典小说')
+  })
+
   it('uses AI suggestions for unlocked fields', () => {
     const f = initialForm(preview())
     expect(f).toMatchObject({ author: '罗贯中（明）', summary: 'AI 简介', category: '古典小说', is_finished: true })

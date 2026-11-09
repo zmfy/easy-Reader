@@ -278,6 +278,8 @@ export interface AiFillCoverCandidate {
   thumbnail: string
 }
 
+export type AiFillConfidence = 'high' | 'medium' | 'low'
+
 export interface AiFillPreview {
   current: {
     title: string; author: string | null; summary: string | null; category: string | null
@@ -287,6 +289,10 @@ export interface AiFillPreview {
   suggested: {
     author?: string; summary?: string; category?: string; is_finished?: boolean
     recommended_tags: string[]; similar_works: SimilarWork[]
+    /** 各字段置信度：low = 只凭书名和模型知识，默认不采用 */
+    confidence?: Partial<Record<AiFillLockableField, AiFillConfidence>>
+    /** 各字段依据 */
+    evidence?: Partial<Record<AiFillLockableField, string>>
   }
   lockedFields: AiFillLockableField[]
   coverTitle: string

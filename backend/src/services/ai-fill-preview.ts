@@ -1,7 +1,8 @@
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
-import { readTxtPreview } from '../plugins/parser-txt';
+import { buildBookEvidence } from './book-evidence';
+import { FillConfidence, fieldConfidence } from '../ai/fill-prompt';
 import { DoubanCandidate, doubanSuggestList, fetchCoverThumbnailDataUri } from '../utils/cover';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { parseEditedFields } from './ai-batch-fill';
@@ -26,6 +27,10 @@ export interface AiFillPreview {
   suggested: {
     author?: string; summary?: string; category?: string; is_finished?: boolean;
     recommended_tags: string[]; similar_works: SimilarWork[];
+    /** 各字段置信度：low 表示只凭书名和模型知识，前端默认不采用 */
+    confidence: Partial<Record<LockableField, FillConfidence>>;
+    /** 各字段依据（AI 说明的来源） */
+    evidence: Partial<Record<LockableField, string>>;
   };
   lockedFields: LockableField[];
   /** 默认封面上印的书名：AI 给出的书名，否则为清洗后的文件名书名（预览与保存一致） */
@@ -51,10 +56,8 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   if (!book) throw new BookNotFoundError();
 
   const cleanedTitle = cleanBookTitle(book.title);
-  const contentHint = book.file_format === 'txt' ? readTxtPreview(book.file_path, 600) : '';
-  const lookupRequest = `书名：${cleanedTitle}\n原文件名（仅参考）：${book.title}\n文本节选（仅作辅助参考）：\n${contentHint}`;
-
-  const info = await aiManager.fillBookInfo(lookupRequest, db) as Record<string, unknown>;
+  const evidence = await buildBookEvidence(book);
+  const info = await aiManager.fillBookInfo(evidence.text, db) as Record<string, unknown>;
 
   // 完结：AI 优先，未给出时按文件名推断
   const isFinished = info.is_finished !== undefined ? !!info.is_finished : FINISHED_KEYWORDS.test(book.title);
@@ -81,6 +84,16 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
 
   const edited = new Set(parseEditedFields(book.manually_edited_fields));
 
+  const confidence: Partial<Record<LockableField, FillConfidence>> = {};
+  const evidenceNotes: Partial<Record<LockableField, string>> = {};
+  const rawEvidence = info.evidence && typeof info.evidence === 'object' ? info.evidence as Record<string, unknown> : {};
+  for (const f of LOCKABLE) {
+    if (!str(info[f])) continue;
+    confidence[f] = fieldConfidence(info, f);
+    const note = str(rawEvidence[f]);
+    if (note) evidenceNotes[f] = note.slice(0, 200);
+  }
+
   return {
     current: {
       title: book.title,
@@ -99,6 +112,8 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
       is_finished: isFinished,
       recommended_tags: meta.tags,
       similar_works: meta.similar,
+      confidence,
+      evidence: evidenceNotes,
     },
     lockedFields: LOCKABLE.filter(f => edited.has(f)),
     coverTitle: str(info.title) || cleanedTitle,

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ReaderPlugin } from '../types';
+import { BookFileMetadata, ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
 
 /** Text item as returned by pdf.js getTextContent(). transform = [a, b, c, d, x, y]. */
@@ -95,6 +95,7 @@ export function buildPageText(items: PdfTextItem[]): string {
 interface PdfDocument {
   numPages: number;
   getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItem[] }> }>;
+  getMetadata(): Promise<{ info?: Record<string, unknown> }>;
   destroy(): void;
 }
 
@@ -160,10 +161,31 @@ export class PdfParser implements ReaderPlugin {
     return 0;
   }
 
+  /** PDF 文档属性：制作软件常随意填写（如 Word 文档名），调用方只能当参考 */
+  async getMetadata(): Promise<BookFileMetadata> {
+    if (!this.doc) return {};
+    try {
+      return pdfInfoMetadata((await this.doc.getMetadata()).info);
+    } catch {
+      return {};
+    }
+  }
+
   /** 插件缓存淘汰时释放文档（含整本文件的内存） */
   dispose(): void {
     this.doc?.destroy();
     this.doc = null;
     this.pageTexts.clear();
   }
+}
+
+export function pdfInfoMetadata(info: Record<string, unknown> | undefined): BookFileMetadata {
+  const text = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const meta: BookFileMetadata = {};
+  const title = text(info?.Title);
+  // 「Microsoft Word - xxx.doc」「untitled」这类是制作软件填的，不是书名
+  if (title && !/^(untitled|无标题|microsoft word)/i.test(title)) meta.title = title.replace(/\.(docx?|wps|txt)$/i, '');
+  const author = text(info?.Author); if (author) meta.author = author;
+  const subject = text(info?.Subject); if (subject) meta.subjects = [subject];
+  return meta;
 }
