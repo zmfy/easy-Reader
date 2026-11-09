@@ -34,6 +34,12 @@ jest.mock('../../src/services/scan-task', () => ({
 }));
 
 // No-op audit writes – avoids needing audit_log table.
+// 后台查改编作品会访问外网，测试里替换掉
+jest.mock('../../src/services/adaptations', () => ({
+  ...jest.requireActual('../../src/services/adaptations'),
+  findAdaptations: jest.fn().mockResolvedValue([]),
+}));
+
 jest.mock('../../src/services/audit-log', () => ({
   writeAudit: jest.fn(),
 }));
@@ -69,9 +75,11 @@ function makeIntegrationDb(): Database.Database {
       duplicate_of TEXT,
       ai_fill_version INTEGER,
       ai_fill_status TEXT,
-      manually_edited_fields TEXT
+      manually_edited_fields TEXT,
+      content_mismatch TEXT
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE book_ai_metadata (
       book_id TEXT PRIMARY KEY,
       recommended_tags TEXT,
@@ -436,5 +444,76 @@ describe('resetAllFills', () => {
     expect(a.v).toBeNull();
     expect(a.s).toBeNull();
     expect(n).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('batchFill suggestions and content mismatch', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { findAdaptations } = require('../../src/services/adaptations');
+  let fillSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+    (findAdaptations as jest.Mock).mockReset().mockResolvedValue([]);
+  });
+  afterEach(() => { fillSpy.mockRestore(); _testDb?.close(); _testDb = null; });
+
+  const book = (o: Record<string, unknown> = {}) =>
+    insBook(_testDb!, { id: 'b1', title: '西游记', file_path: '/nonexistent/b1.txt', ...o });
+  const run = () => batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游记' }] });
+  const row = () => _testDb!.prepare('SELECT author, summary, category, content_mismatch FROM books WHERE id = ?').get('b1') as Record<string, string | null>;
+  const suggestion = () => {
+    const r = _testDb!.prepare('SELECT data FROM ai_suggestions WHERE book_id = ?').get('b1') as { data: string } | undefined;
+    return r ? JSON.parse(r.data) : undefined;
+  };
+
+  it('auto-fills empty confident fields and queues the rest (changes, low confidence, locked, tags, adaptations)', async () => {
+    book({ summary: '旧简介', category: '玄幻', manually_edited_fields: '["category"]' });
+    (findAdaptations as jest.Mock).mockResolvedValueOnce([
+      { type: '电视剧', title: '西游记', year: '1986', source: 'douban', url: 'https://movie.douban.com/subject/1/', pic: 'https://img1.doubanio.com/p.jpg' },
+    ]);
+    fillSpy.mockResolvedValueOnce({
+      author: '吴承恩', summary: '唐僧师徒取经', category: '小说/中国古典小说',
+      recommended_tags: ['神魔'], similar_works: [{ title: '封神演义' }],
+      confidence: { author: 'high', summary: 'medium', category: 'high' },
+      evidence: { summary: '正文开篇' },
+    });
+    await run();
+
+    expect(row()).toMatchObject({ author: '吴承恩', summary: '旧简介', category: '玄幻', content_mismatch: null });
+    const s = suggestion();
+    expect(s.fields.author).toBeUndefined();                     // 已自动写入
+    expect(s.fields.summary).toMatchObject({ value: '唐僧师徒取经', current: '旧简介', confidence: 'medium', evidence: '正文开篇' });
+    expect(s.fields.category).toMatchObject({ value: '小说/中国古典小说', current: '玄幻', locked: true });
+    expect(s.recommended_tags).toEqual(['神魔']);
+    expect(s.similar_works).toEqual([{ title: '封神演义' }]);
+    expect(s.adaptations).toEqual([{ type: '电视剧', title: '西游记', year: '1986', source: 'douban', url: 'https://movie.douban.com/subject/1/' }]);
+    // 标签不再直接写库
+    expect(_testDb!.prepare('SELECT COUNT(*) AS n FROM book_ai_metadata').get()).toEqual({ n: 0 });
+    // 后台查改编作品走限速
+    expect((findAdaptations as jest.Mock).mock.calls[0][2]).toEqual({ throttle: true });
+  });
+
+  it('writes nothing automatically when the content is a different book, and records the mismatch', async () => {
+    book({ author: null });
+    fillSpy.mockResolvedValueOnce({
+      title: '西游记', author: '爱潜水的乌贼', category: '小说/网络小说/玄幻',
+      filename_matches: false, content_title: '诡秘之主', mismatch_reason: '正文是诡秘之主',
+      confidence: { title: 'high', author: 'high', category: 'high' },
+    });
+    await run();
+    expect(row().author).toBeNull();
+    expect(JSON.parse(row().content_mismatch!)).toEqual({ title: '诡秘之主', author: '爱潜水的乌贼', reason: '正文是诡秘之主' });
+    expect(suggestion().fields.author).toMatchObject({ value: '爱潜水的乌贼', current: null });
+    // 按正文实际的书名查改编作品
+    expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '诡秘之主', author: '爱潜水的乌贼' });
+  });
+
+  it('stores no suggestion when everything already matches', async () => {
+    book({ author: '吴承恩', summary: '简介', category: '小说/中国古典小说' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', summary: '简介', category: '小说/中国古典小说' });
+    await run();
+    expect(suggestion()).toBeUndefined();
   });
 });

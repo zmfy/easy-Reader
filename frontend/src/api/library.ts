@@ -76,6 +76,19 @@ export const libraryApi = {
   applyCategories: (items: Array<{ book_id: string; category: string }>) =>
     http.post<ApiResponse<{ updated: number }>>('/library/categories/legacy/apply', { items }),
 
+  // 后台 AI 丰富的待确认建议
+  aiSuggestions: () =>
+    http.get<ApiResponse<import('@/types').AiSuggestion[]>>('/library/ai-suggestions'),
+  aiSuggestionCount: () =>
+    http.get<ApiResponse<{ count: number }>>('/library/ai-suggestions/count'),
+  applyAiSuggestions: (items: import('@/types').AiSuggestionSelection[]) =>
+    http.post<ApiResponse<{ applied: string[]; failed: Array<{ book_id: string; error: string }> }>>(
+      '/library/ai-suggestions/apply', { items }, { timeout: 120000 }),
+  dismissAiSuggestions: (bookIds: string[]) =>
+    http.post<ApiResponse<{ dismissed: number }>>('/library/ai-suggestions/dismiss', { book_ids: bookIds }),
+  dismissContentMismatch: (id: string) =>
+    http.post<ApiResponse<null>>(`/library/${id}/content-mismatch/dismiss`, {}),
+
   getAiMetadata: (id: string) =>
     http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
 
@@ -102,6 +115,8 @@ export const libraryApi = {
     include_dirty?: boolean; series_grouped?: boolean;
     sortBy?: string; sortOrder?: 'asc' | 'desc';
     ai_fill?: 'all' | 'filled' | 'failed' | 'none';
+    /** '1'：只看 AI 判定文件名与正文不符的书 */
+    mismatch?: '1';
     status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all';
   } = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),

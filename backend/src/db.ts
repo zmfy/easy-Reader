@@ -264,6 +264,17 @@ function initSchema(): void {
   // 改编作品（影视 / 广播剧）：JSON array of {type, title, year?, source, url}
   try { database.exec('ALTER TABLE book_ai_metadata ADD COLUMN adaptations TEXT'); } catch { /* column exists */ }
 
+  // 后台 AI 丰富的待确认建议：每本书一条（最新的覆盖旧的），采纳或忽略后删除（见 services/ai-suggestions.ts）
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ai_suggestions (
+      book_id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,          -- JSON: { fields, recommended_tags?, similar_works?, adaptations? }
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  // AI 判定正文与文件名不是同一本书：JSON { title, author?, reason?, dismissed? }
+  try { database.exec('ALTER TABLE books ADD COLUMN content_mismatch TEXT'); } catch { /* column exists */ }
+
   // 多级分类上线前的单级旧分类一律进「待整理」（如旧的「历史」恰好与新的一级分类同名，但常是误判的古典小说）。
   // 只在第一次运行时记录一次；确认或改过分类后移出（见 services/category-migrate.ts）
   if (!database.prepare("SELECT 1 FROM settings WHERE key = 'category_review_ids'").get()) {

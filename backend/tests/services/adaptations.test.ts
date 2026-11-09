@@ -1,5 +1,5 @@
 import { parseDoubanMovieSuggest, parseMissevanSearch, isAllowedAdaptationUrl, searchDoubanMovies, searchMissevanDramas } from '../../src/utils/adaptation-sources';
-import { buildAdaptationPrompt, parseAdaptationResponse, findAdaptations, looksLikeShortDrama } from '../../src/services/adaptations';
+import { buildAdaptationPrompt, parseAdaptationResponse, findAdaptations, looksLikeShortDrama, _resetAdaptationThrottle, ADAPTATION_SEARCH_INTERVAL_MS } from '../../src/services/adaptations';
 import { aiManager } from '../../src/ai/ai-manager';
 
 jest.mock('../../src/utils/adaptation-sources', () => ({
@@ -61,6 +61,8 @@ describe('adaptation judgement', () => {
     expect(looksLikeShortDrama(short)).toBe(true);
     expect(looksLikeShortDrama(oldSeries)).toBe(false);
     expect(looksLikeShortDrama({ ...short, episodes: '36' })).toBe(false);
+    // 2019 年 62 集的《封神演义》是正剧
+    expect(looksLikeShortDrama({ ...short, title: '封神演义', year: '2019', episodes: '62' })).toBe(false);
     expect(looksLikeShortDrama({ ...short, source: 'missevan' as const })).toBe(false);
     const p = buildAdaptationPrompt({ title: '我在八零年代当后妈' }, [short, oldSeries]);
     expect(p).toContain('[#0] 我在八零年代当后妈 | 豆瓣影视 | 2024年 | 82集 | 集数多且年份新，可能是短剧');
@@ -100,5 +102,33 @@ describe('adaptation judgement', () => {
 
     chat.mockRejectedValueOnce(new Error('boom'));
     expect(await findAdaptations({ title: '鬼吹灯' }, db)).toEqual([]);
+  });
+});
+
+describe('throttled adaptation search', () => {
+  afterEach(() => { jest.useRealTimers(); _resetAdaptationThrottle(); });
+
+  it('serializes external searches with a minimum interval; AI judging is not throttled', async () => {
+    jest.useFakeTimers();
+    _resetAdaptationThrottle();
+    douban.mockReset().mockResolvedValue([]);
+    missevan.mockReset().mockResolvedValue([]);
+    const db = {} as never;
+    const a = findAdaptations({ title: 'A' }, db, { throttle: true });
+    const b = findAdaptations({ title: 'B' }, db, { throttle: true });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(douban.mock.calls.map(c => c[0])).toEqual(['A']);
+    await jest.advanceTimersByTimeAsync(ADAPTATION_SEARCH_INTERVAL_MS - 1);
+    expect(douban).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(douban.mock.calls.map(c => c[0])).toEqual(['A', 'B']);
+    await expect(Promise.all([a, b])).resolves.toEqual([[], []]);
+  });
+
+  it('a failed search does not block the queue', async () => {
+    _resetAdaptationThrottle();
+    douban.mockReset().mockRejectedValueOnce(new Error('boom')).mockResolvedValue([]);
+    missevan.mockReset().mockResolvedValue([]);
+    await expect(findAdaptations({ title: 'A' }, {} as never, { throttle: true })).resolves.toEqual([]);
   });
 });

@@ -106,6 +106,12 @@
               </div>
             </div>
 
+            <p v-if="authStore.isAdmin && contentMismatch" class="note note--warning mismatch-note">
+              AI 读到的正文是《{{ contentMismatch.title }}》<template v-if="contentMismatch.author">（{{ contentMismatch.author }}）</template>，与文件名不符，文件可能标错了。
+              <template v-if="contentMismatch.reason">{{ contentMismatch.reason }}</template>
+              <el-button link type="primary" size="small" @click="dismissMismatch">不是错标</el-button>
+            </p>
+
             <div class="info-tags">
               <router-link
                 v-if="book.category"
@@ -211,6 +217,7 @@ import { readButtonLabel } from '@/utils/reading-label'
 import { resolveBack } from '@/utils/page-back'
 import { ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT } from '@/utils/ai-fill-form'
 import { categoryLabel, toCategoryOptions, type CategoryOption } from '@/utils/category'
+import { parseContentMismatch } from '@/utils/ai-suggestions'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
@@ -222,6 +229,17 @@ const authStore = useAuthStore()
 const book = ref<Book | null>(null)
 const aiMeta = ref<BookAiMetadata | null>(null)
 const categoryOptions = ref<CategoryOption[]>([])
+const contentMismatch = computed(() => parseContentMismatch(book.value?.content_mismatch))
+
+async function dismissMismatch() {
+  if (!book.value) return
+  try {
+    await libraryApi.dismissContentMismatch(book.value.id)
+    book.value = { ...book.value, content_mismatch: JSON.stringify({ ...contentMismatch.value, dismissed: true }) }
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
 // Map: similar-work title → in-library book id (if found)
 const similarLinks = ref<Map<string, string>>(new Map())
 const loading = ref(false)
@@ -759,5 +777,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
 .similar-link:hover { text-decoration: underline; }
 .adapt-link { margin-left: 6px; }
 .category-link { text-decoration: none; }
+.mismatch-note { margin: 10px 0; }
 .in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>

@@ -35,6 +35,7 @@
               <el-button size="small" :disabled="!aiConfigured" @click="onResetFailed">重置「填充失败」记录</el-button>
               <el-button size="small" type="warning" plain :disabled="!aiConfigured" @click="onResetAll">重置全部填充记录</el-button>
             </div>
+            <div class="reset-hint">空字段且依据明确的结果直接写入；其余结果（改已有内容、低置信、标签、改编作品）和「文件名与正文不符」提示进书库的「AI 建议待确认」</div>
             <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍</div>
           </div>
         </el-form-item>

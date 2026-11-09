@@ -6,13 +6,15 @@ import { aiManager } from '../ai/ai-manager';
 import { setScanProgress, isCancelled } from './scan-task';
 import { writeAudit } from './audit-log';
 import { doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
-import { saveMetadata, extractMetadataFromAiResponse } from './book-ai-metadata';
+import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
 import { buildBookEvidence } from './book-evidence';
-import { fieldConfidence } from '../ai/fill-prompt';
+import { detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
+import { findAdaptations } from './adaptations';
+import { recordContentMismatch, saveSuggestion, SuggestionData, SUGGEST_FIELDS } from './ai-suggestions';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
 const DEFAULT_CONCURRENCY = 2;
@@ -144,13 +146,17 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
       const edited = new Set<string>(parseEditedFields(current.manually_edited_fields));
 
+      // 正文与文件名不是同一本书时（错标），一个字段都不自动写，全部进待确认
+      const mismatch = detectContentMismatch(info as Record<string, unknown>);
+      recordContentMismatch(db, b.id, mismatch);
+
       const updates: string[] = [];
       const values: unknown[] = [];
       const filledFields: Record<string, string> = {};
       function maybeSet(field: 'title' | 'author' | 'summary' | 'category', newVal: string | undefined): void {
-        if (!newVal) return;
+        if (!newVal || mismatch) return;
         if (edited.has(field)) return;
-        // 只凭书名和模型知识得出的（低置信）不自动写入，留给单本 AI 填充预览由人确认
+        // 只凭书名和模型知识得出的（低置信）不自动写入，进待确认由人决定
         if (fieldConfidence(info as Record<string, unknown>, field) === 'low') return;
         const cur = current![field];
         if (cur && cur.trim().length > 0) return;
@@ -175,17 +181,37 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         });
       }
 
-      // Save metadata (recommended_tags, similar_works) if AI returned any.
-      const meta = extractMetadataFromAiResponse(info as Record<string, unknown>);
-      if (meta.tags.length > 0 || meta.similar.length > 0) {
-        const pluginName = (db.prepare("SELECT value FROM settings WHERE key = 'ai_plugin'").get() as { value?: string } | undefined)?.value;
-        saveMetadata({
-          book_id: b.id,
-          recommended_tags: meta.tags,
-          similar_works: meta.similar,
-          generated_by: pluginName,
-        });
+      // 其余结果进「待确认」：与当前不同、且没有自动写入的字段，以及标签、类似作品、改编作品
+      const infoRec = info as Record<string, unknown>;
+      const evidence = infoRec.evidence && typeof infoRec.evidence === 'object' ? infoRec.evidence as Record<string, unknown> : {};
+      const suggestion: SuggestionData = { fields: {} };
+      for (const f of SUGGEST_FIELDS) {
+        const value = typeof info[f] === 'string' ? (info[f] as string).trim() : '';
+        if (!value || filledFields[f] !== undefined) continue;
+        const cur = (current[f] ?? '').trim();
+        if (cur === value) continue;
+        const note = typeof evidence[f] === 'string' ? (evidence[f] as string).trim().slice(0, 200) : '';
+        suggestion.fields[f] = {
+          value, current: cur || null, confidence: fieldConfidence(infoRec, f),
+          ...(note ? { evidence: note } : {}), ...(edited.has(f) ? { locked: true } : {}),
+        };
       }
+      const meta = extractMetadataFromAiResponse(infoRec);
+      const existing = getMetadata(b.id);
+      if (meta.tags.length > 0 && !sameList(meta.tags, existing?.recommended_tags ?? [])) suggestion.recommended_tags = meta.tags;
+      if (meta.similar.length > 0 && !sameList(meta.similar.map(w => w.title), (existing?.similar_works ?? []).map(w => w.title))) {
+        suggestion.similar_works = meta.similar;
+      }
+      // 错标时按正文实际的书名查改编作品，而不是文件名上的
+      const lookupTitle = (mismatch?.title || (info.title && info.title.trim()) || knownTitle || '').trim();
+      const adaptations = await findAdaptations(
+        { title: lookupTitle, author: mismatch?.author || info.author || current.author || undefined, summary: info.summary || current.summary || undefined },
+        db, { throttle: true },
+      ).catch(() => []);
+      if (adaptations.length > 0 && !sameList(adaptations.map(a => a.url), (existing?.adaptations ?? []).map(a => a.url))) {
+        suggestion.adaptations = adaptations.map(({ pic: _pic, ...a }) => a);
+      }
+      saveSuggestion(db, b.id, suggestion);
 
       // Cover + rating from douban: one suggest request shared by both, best-effort.
       const titleForCover = ((info.title && info.title.trim()) || knownTitle || filledFields.title || current.title || '').trim();
@@ -243,6 +269,10 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
   })));
 
   return result;
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join('\u0000') === [...b].sort().join('\u0000');
 }
 
 export function parseEditedFields(raw?: string): string[] {

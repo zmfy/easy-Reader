@@ -2,7 +2,7 @@ import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
 import { buildBookEvidence } from './book-evidence';
-import { FillConfidence, fieldConfidence } from '../ai/fill-prompt';
+import { FillConfidence, detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
 import { DoubanCandidate, doubanSuggestList, fetchCoverThumbnailDataUri } from '../utils/cover';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { parseEditedFields } from './ai-batch-fill';
@@ -41,6 +41,8 @@ export interface AiFillPreview {
   /** 默认封面上印的书名：AI 给出的书名，否则为清洗后的文件名书名（预览与保存一致） */
   coverTitle: string;
   coverCandidates: Array<DoubanCandidate & { thumbnail: string }>;
+  /** AI 判定正文与文件名不是同一部作品时给出（预览只读，不写库；持久标记由后台批量填充写入） */
+  contentMismatch?: { title: string; author?: string; reason?: string };
 }
 
 export class BookNotFoundError extends Error {
@@ -67,6 +69,7 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const info = await aiManager.fillBookInfo(evidence.text, db) as Record<string, unknown>;
   // 分类只接受分类树中的路径（末级名可唯一对应时自动补全），否则不给建议
   info.category = resolveCategoryPath(getCategoryTree(db), str(info.category));
+  const contentMismatch = detectContentMismatch(info);
 
   // 完结：AI 优先，未给出时按文件名推断
   const isFinished = info.is_finished !== undefined ? !!info.is_finished : FINISHED_KEYWORDS.test(book.title);
@@ -139,5 +142,6 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
     lockedFields: LOCKABLE.filter(f => edited.has(f)),
     coverTitle: str(info.title) || cleanedTitle,
     coverCandidates,
+    ...(contentMismatch ? { contentMismatch } : {}),
   };
 }

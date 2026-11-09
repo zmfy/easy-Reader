@@ -6,7 +6,8 @@ import Database from 'better-sqlite3';
 export const FINGERPRINT_VERSION = 2;
 /** Bump when the AI-fill prompt/logic changes → forces a full re-fill next run. */
 // v2: 填充改为依据文件内置书目信息 + 正文节选（含 epub/pdf/umd），低置信字段不自动写入
-export const AI_FILL_VERSION = 2;
+// v3: 其余结果进「待确认」、后台查改编作品、判定文件名与正文是否不符
+export const AI_FILL_VERSION = 3;
 
 /** Algorithm version of fingerprints built before versioning existed. */
 export const LEGACY_FINGERPRINT_VERSION = 1;

@@ -33,6 +33,9 @@ import {
   categoryFilterSql, countByCategoryPath, DEFAULT_CATEGORY_TREE, getCategoryTree, isValidCategoryPath,
 } from '../utils/category-tree';
 import { applyCategories, listLegacyCategoryBooks, markCategoriesReviewed, suggestLegacyCategories } from '../services/category-migrate';
+import {
+  applySuggestion, countSuggestions, dismissContentMismatch, dismissSuggestions, listSuggestions,
+} from '../services/ai-suggestions';
 
 const router = Router();
 
@@ -95,6 +98,11 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     whereClause += " AND ai_fill_status = 'failed'";
   } else if (aiFill === 'none') {
     whereClause += " AND ai_fill_status IS NULL";
+  }
+
+  // 错标：AI 判定正文与文件名不是同一本书、且没被「不是错标」忽略的（管理员筛选词「错标」）
+  if (req.query.mismatch === '1') {
+    whereClause += " AND content_mismatch IS NOT NULL AND COALESCE(json_extract(content_mismatch, '$.dismissed'), 0) = 0";
   }
 
   if (search) {
@@ -327,6 +335,53 @@ router.post('/categories/legacy/apply', authMiddleware, adminMiddleware, (req: R
   }
 });
 
+// GET /api/library/ai-suggestions — 后台 AI 丰富的待确认建议（必须在 /:id 之前注册）
+router.get('/ai-suggestions', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, listSuggestions(getDb()));
+});
+
+// GET /api/library/ai-suggestions/count — 待确认数量（书库页提示条）
+router.get('/ai-suggestions/count', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, { count: countSuggestions(getDb()) });
+});
+
+const applySuggestionsSchema = z.object({
+  items: z.array(z.object({
+    book_id: z.string().min(1),
+    fields: z.array(z.enum(['author', 'summary', 'category'])).max(3),
+    tags: z.boolean(),
+    similar: z.boolean(),
+    adaptations: z.boolean(),
+  })).min(1).max(500),
+});
+
+// POST /api/library/ai-suggestions/apply — 逐本采纳勾选的建议；单本失败不影响其他
+router.post('/ai-suggestions/apply', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  const parsed = applySuggestionsSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  const generatedBy = getActivePluginName(getDb()) ?? undefined;
+  const applied: string[] = [];
+  const failed: Array<{ book_id: string; error: string }> = [];
+  for (const item of parsed.data.items) {
+    try {
+      await applySuggestion(item, req.user!.userId, generatedBy);
+      applied.push(item.book_id);
+    } catch (err) {
+      failed.push({ book_id: item.book_id, error: (err as Error).message });
+    }
+  }
+  successResponse(res, { applied, failed });
+});
+
+const bookIdsSchema = z.object({ book_ids: z.array(z.string().min(1)).min(1).max(1000) });
+
+// POST /api/library/ai-suggestions/dismiss — 忽略建议（删除）
+router.post('/ai-suggestions/dismiss', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = bookIdsSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  successResponse(res, { dismissed: dismissSuggestions(getDb(), parsed.data.book_ids) });
+});
+
 // GET /api/library/:id
 router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
@@ -512,6 +567,12 @@ router.post('/:id/ai-fill/apply', authMiddleware, adminMiddleware, async (req: R
     console.error(`[ai-fill:apply] book=${req.params.id}`, err);
     errorResponse(res, 500, 'INTERNAL_ERROR', '应用 AI 信息失败');
   }
+});
+
+// POST /api/library/:id/content-mismatch/dismiss — 「不是错标」：之后同一判定不再提示
+router.post('/:id/content-mismatch/dismiss', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (!dismissContentMismatch(getDb(), req.params.id)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '没有错标提示'); return; }
+  successResponse(res, null, '已忽略');
 });
 
 // GET /api/library/:id/ai-metadata — recommended tags + similar works
