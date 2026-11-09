@@ -267,7 +267,7 @@ export interface BookAiMetadata {
 }
 
 /** 改编作品（与 backend/src/services/adaptations.ts 对应） */
-export type BookAdaptationType = '电影' | '电视剧' | '动画' | '广播剧' | '其他'
+export type BookAdaptationType = '电影' | '电视剧' | '短剧' | '动画' | '广播剧' | '其他'
 export interface BookAdaptation {
   type: BookAdaptationType
   title: string

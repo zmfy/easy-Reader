@@ -1,5 +1,5 @@
 import { parseDoubanMovieSuggest, parseMissevanSearch, isAllowedAdaptationUrl, searchDoubanMovies, searchMissevanDramas } from '../../src/utils/adaptation-sources';
-import { buildAdaptationPrompt, parseAdaptationResponse, findAdaptations } from '../../src/services/adaptations';
+import { buildAdaptationPrompt, parseAdaptationResponse, findAdaptations, looksLikeShortDrama } from '../../src/services/adaptations';
 import { aiManager } from '../../src/ai/ai-manager';
 
 jest.mock('../../src/utils/adaptation-sources', () => ({
@@ -55,6 +55,19 @@ describe('adaptation sources', () => {
 });
 
 describe('adaptation judgement', () => {
+  it('flags long, recent douban series as possible short dramas', () => {
+    const short = { source: 'douban' as const, title: '我在八零年代当后妈', year: '2024', episodes: '82', url: 'https://movie.douban.com/subject/9/' };
+    const oldSeries = { source: 'douban' as const, title: '三国演义', year: '1994', episodes: '84', url: 'https://movie.douban.com/subject/1/' };
+    expect(looksLikeShortDrama(short)).toBe(true);
+    expect(looksLikeShortDrama(oldSeries)).toBe(false);
+    expect(looksLikeShortDrama({ ...short, episodes: '36' })).toBe(false);
+    expect(looksLikeShortDrama({ ...short, source: 'missevan' as const })).toBe(false);
+    const p = buildAdaptationPrompt({ title: '我在八零年代当后妈' }, [short, oldSeries]);
+    expect(p).toContain('[#0] 我在八零年代当后妈 | 豆瓣影视 | 2024年 | 82集 | 集数多且年份新，可能是短剧');
+    expect(p).not.toContain('84集 | 集数多');
+    expect(parseAdaptationResponse('{"adaptations":[{"index":0,"type":"短剧"}]}', [short])[0].type).toBe('短剧');
+  });
+
   it('prompt lists candidates with source, year and episodes', () => {
     const p = buildAdaptationPrompt({ title: '鬼吹灯', author: '天下霸唱' }, CANDIDATES);
     expect(p).toContain('《鬼吹灯》 作者：天下霸唱');

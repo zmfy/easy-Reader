@@ -167,7 +167,7 @@
               <div class="summary-label">改编作品</div>
               <ul class="similar-list">
                 <li v-for="a in aiMeta.adaptations" :key="a.url">
-                  <el-tag size="small" type="info">{{ a.type }}</el-tag>
+                  <el-tag size="small" type="info" :title="a.type === '短剧' ? SHORT_DRAMA_HINT : undefined">{{ a.type }}</el-tag>
                   <a :href="a.url" target="_blank" rel="noopener noreferrer" class="similar-link adapt-link">{{ a.title }}</a>
                   <span class="similar-author">{{ [a.year, ADAPTATION_SOURCE_LABELS[a.source]].filter(Boolean).join(' · ') }}</span>
                 </li>
@@ -200,7 +200,7 @@ import { useShelfToggle } from '@/composables/useShelfToggle'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
 import { resolveBack } from '@/utils/page-back'
-import { ADAPTATION_SOURCE_LABELS } from '@/utils/ai-fill-form'
+import { ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT } from '@/utils/ai-fill-form'
 import { categoryLabel, toCategoryOptions, type CategoryOption } from '@/utils/category'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'

@@ -161,10 +161,10 @@
 
       <!-- 改编作品：豆瓣影视 / 猫耳FM 的搜索结果经 AI 筛选，只能删除不能手填（每条都要有来源链接） -->
       <section class="block area-adapt">
-        <div class="block-title">改编作品 <span class="hint">来自豆瓣影视、猫耳FM，经 AI 筛选，点击可核对</span></div>
+        <div class="block-title">改编作品 <span class="hint">来自豆瓣影视、猫耳FM，经 AI 筛选，点击可核对；短剧由集数推断</span></div>
         <div v-for="(a, i) in form.adaptations" :key="a.url" class="similar-item">
           <div class="similar-text">
-            <el-tag size="small" type="info">{{ a.type }}</el-tag>
+            <el-tag size="small" type="info" :title="a.type === '短剧' ? SHORT_DRAMA_HINT : undefined">{{ a.type }}</el-tag>
             <a :href="a.url" target="_blank" rel="noopener noreferrer" class="adapt-link">{{ a.title }}</a>
             <span class="similar-author">{{ [a.year, ADAPTATION_SOURCE_LABELS[a.source]].filter(Boolean).join(' · ') }}</span>
           </div>
@@ -188,7 +188,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
-import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, type AiFillForm } from '@/utils/ai-fill-form'
+import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book } from '@/types'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
