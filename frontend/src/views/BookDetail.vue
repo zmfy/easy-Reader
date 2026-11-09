@@ -667,6 +667,7 @@ watch(() => route.params.bookId, () => { fetchBook() })
 
 .info-tags {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 20px;
@@ -767,7 +768,8 @@ watch(() => route.params.bookId, () => { fetchBook() })
 }
 .similar-link:hover { text-decoration: underline; }
 .adapt-link { margin-left: 6px; }
-.category-link { text-decoration: none; }
+/* 链接是 flex 子项，内部标签按文字基线排会多出行高空隙，比同行其他标签低一截 */
+.category-link { display: inline-flex; text-decoration: none; }
 .mismatch-note { margin: 10px 0; }
 .in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>
