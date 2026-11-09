@@ -2,9 +2,7 @@
   <el-card class="dup-card" :class="{ rejected: decision === 'rejected', accepted: decision === 'accepted' }">
     <div class="card-header">
       <div class="title">
-        <el-tag :type="hasHard ? 'danger' : 'warning'" size="small">
-          {{ hasHard ? '硬重复（指纹相同）' : 'AI 判定' }}
-        </el-tag>
+        <el-tag :type="kind.type" size="small">{{ kind.label }}</el-tag>
         <span class="member-count">{{ members.length }} 本</span>
         <el-tag v-if="decision === 'accepted'" type="success" size="small">已确认重复</el-tag>
         <el-tag v-if="decision === 'rejected'" type="info" size="small">已标非重复</el-tag>
@@ -91,7 +89,14 @@ const canonicalPath = ref(props.payload.canonical_file_path)
 const rejectedSet = ref(new Set<string>())
 
 const members = computed(() => props.payload.members)
-const hasHard = computed(() => members.value.some(m => m.decision_type === 'hard'))
+// 扫描会把指纹相同的组和书名相同的组合并，一组里可能两种成员都有
+const kind = computed(() => {
+  const types = new Set(members.value.map(m => m.decision_type))
+  if (types.has('ai')) return { type: 'warning' as const, label: 'AI 判定' }
+  if (types.has('hard') && types.has('soft')) return { type: 'danger' as const, label: '指纹相同 + 书名相同' }
+  if (types.has('hard')) return { type: 'danger' as const, label: '硬重复（指纹相同）' }
+  return { type: 'warning' as const, label: '书名相同（格式或版本不同）' }
+})
 
 function shortPath(p: string): string {
   return p.split('/').slice(-2).join('/')

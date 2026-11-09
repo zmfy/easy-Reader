@@ -246,7 +246,7 @@ export interface DuplicateGroupPayload {
   members: Array<{
     file_path: string
     fingerprint: string
-    decision_type: 'hard' | 'ai'
+    decision_type: 'hard' | 'ai' | 'soft'  // hard=指纹相同；soft=书名相同（作者一致或为空）；ai=AI 判定
     ai_confidence?: number
   }>
   rejected_members?: Array<{ file_path: string; fingerprint?: string }>

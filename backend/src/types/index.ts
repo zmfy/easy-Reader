@@ -233,7 +233,7 @@ export interface DuplicateGroupPayload {
   members: Array<{
     file_path: string;
     fingerprint: string;
-    decision_type: 'hard' | 'ai' | 'soft';     // hard=指纹相同；soft=书名+作者；ai=AI判定
+    decision_type: 'hard' | 'ai' | 'soft';     // hard=指纹相同；soft=书名相同（作者一致或为空）；ai=AI判定
     ai_confidence?: number;           // 0..1
   }>;
 }
