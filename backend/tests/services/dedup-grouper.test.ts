@@ -128,16 +128,83 @@ describe('buildCandidateGroups.title_author_groups', () => {
     expect(r.title_author_groups.length).toBe(0);
   });
 
-  it('author 为空 → 跳过', () => {
+  it('同书名不同格式、都没有作者 → 成一组', () => {
     const r = buildCandidateGroups([
-      mk('/a.txt', '黄金瞳', '', 'fpA'),
-      mk('/b.txt', '黄金瞳', '', 'fpB'),
+      mk('/books/易中天品三国.epub', '易中天品三国', '', 'fpA'),
+      mk('/books/易中天品三国.txt', '易中天品三国', '', 'fpB'),
+    ]);
+    expect(r.title_author_groups.length).toBe(1);
+    expect(r.title_author_groups[0].map(x => x.file_path).sort()).toEqual(['/books/易中天品三国.epub', '/books/易中天品三国.txt']);
+  });
+
+  it('一本有作者、一本没有，书名号 / 作者后缀不同 → 成一组', () => {
+    const r = buildCandidateGroups([
+      mk('/a.epub', '易中天品三国', '', 'fpA'),
+      mk('/b.txt', '《易中天品三国》作者：易中天', '易中天', 'fpB'),
+    ]);
+    expect(r.title_author_groups.length).toBe(1);
+  });
+
+  it('作者为空时不去卷号：分卷不算重复', () => {
+    const r = buildCandidateGroups([
+      mk('/1.txt', '斗罗大陆1', '', 'fpA'),
+      mk('/2.txt', '斗罗大陆2', '', 'fpB'),
+      mk('/s.txt', '明朝那些事儿（上）', '', 'fpC'),
+      mk('/x.txt', '明朝那些事儿（下）', '', 'fpD'),
     ]);
     expect(r.title_author_groups.length).toBe(0);
   });
+
+  it('同书名出现两个不同作者 → 空作者的不归入任何一组', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '黄金瞳', '打眼', 'fpA'),
+      mk('/b.txt', '黄金瞳', '别人', 'fpB'),
+      mk('/c.epub', '黄金瞳', '', 'fpC'),
+    ]);
+    expect(r.title_author_groups.length).toBe(0);
+  });
+
+  it('两条规则命中同一批书 → 合并成一组，不重复出现', () => {
+    const r = buildCandidateGroups([
+      mk('/a.txt', '黄金瞳', '打眼', 'fpA'),
+      mk('/b.txt', '黄金瞳', '打眼', 'fpB'),
+      mk('/c.epub', '黄金瞳', '', 'fpC'),
+    ]);
+    expect(r.title_author_groups.length).toBe(1);
+    expect(r.title_author_groups[0].map(x => x.file_path).sort()).toEqual(['/a.txt', '/b.txt', '/c.epub']);
+  });
 });
 
-import { applyNotDuplicateOverrides } from '../../src/services/dedup-grouper';
+import { applyNotDuplicateOverrides, mergeDuplicateGroups } from '../../src/services/dedup-grouper';
+
+describe('硬重复 + 书名软重复合并', () => {
+  const b = (file_path: string, title: string, fingerprint: string): ScannedBook =>
+    ({ file_path, title, author: '', fingerprint, chapter_count: 10 });
+
+  it('epub 与硬重复组里的同名 umd 配对，三本合成一组', () => {
+    const books = [
+      b('/西游记.umd', '西游记', 'same'),
+      b('/易中天品三国.umd', '易中天品三国', 'same'),
+      b('/易中天品三国.epub', '易中天品三国', 'other'),
+    ];
+    const r = buildCandidateGroups(books);
+    expect(r.hard_groups.length).toBe(1);
+    expect(r.title_author_groups.length).toBe(1);
+    const merged = mergeDuplicateGroups(r.hard_groups, r.title_author_groups);
+    expect(merged.length).toBe(1);
+    expect(merged[0].books.map(x => x.file_path).sort()).toEqual(['/易中天品三国.epub', '/易中天品三国.umd', '/西游记.umd']);
+    expect([...merged[0].hardPaths].sort()).toEqual(['/易中天品三国.umd', '/西游记.umd']);
+  });
+
+  it('没有交集的组保持独立', () => {
+    const merged = mergeDuplicateGroups(
+      [[b('/a', 'A', 'x'), b('/a2', 'A复制', 'x')]],
+      [[b('/c.epub', 'C', 'y'), b('/c.txt', 'C', 'z')]],
+    );
+    expect(merged.length).toBe(2);
+    expect(merged[1].hardPaths.size).toBe(0);
+  });
+});
 
 describe('applyNotDuplicateOverrides', () => {
   const b = (p: string) => ({ file_path: p, title: p, first_chapter_preview: '' });

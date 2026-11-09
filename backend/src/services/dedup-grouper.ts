@@ -21,7 +21,8 @@ export interface CandidateGroups {
    *  - 章节数相同 + first_chapter_hash 相同（fingerprint 不同，可能是排版差异）
    */
   soft_groups: ScannedBook[][];
-  /** 同 lookupKey(title) + 同 normalizeAuthor(author)，指纹不同（≥2 本、≥2 指纹）。 */
+  /** 组内至少 2 种指纹的确定性软重复（可能包含 hard_groups 的成员）：同 lookupKey(title) + 同 normalizeAuthor(author)，
+   *  或严格标题相同且作者不冲突（相同或为空，如同一本书的 epub / txt）。 */
   title_author_groups: ScannedBook[][];
 }
 
@@ -127,11 +128,13 @@ export function buildCandidateGroups(books: ScannedBook[]): CandidateGroups {
 
   const softGroups = mergeOverlappingClusters(allSoftSources);
 
-  // --- Title + author groups (deterministic soft-dup, excludes hard members) ---
+  // --- Title + author groups (deterministic soft-dup) ---
   // Kept separate from soft_groups (not merged) — this is an independent deterministic signal.
+  // 可以包含硬重复组的成员（如「西游记.umd」与「易中天品三国.umd」指纹相同，「易中天品三国.epub」
+  // 只能靠书名和后者配对），由调用方用 mergeDuplicateGroups 并入硬重复组。
   const byTitleAuthor = new Map<string, ScannedBook[]>();
   for (const b of books) {
-    if (!b.fingerprint || inHard.has(b.file_path)) continue;
+    if (!b.fingerprint) continue;
     const author = normalizeAuthor(b.author ?? '');
     if (!author) continue;
     const titleKey = lookupKey(b.title);
@@ -141,14 +144,64 @@ export function buildCandidateGroups(books: ScannedBook[]): CandidateGroups {
     if (arr) arr.push(b);
     else byTitleAuthor.set(key, [b]);
   }
-  const titleAuthorGroups: ScannedBook[][] = [];
+  const titleAuthorClusters: ScannedBook[][] = [];
   for (const [, group] of byTitleAuthor) {
     if (group.length < 2) continue;
     const fps = new Set(group.map(b => b.fingerprint));
-    if (fps.size >= 2) titleAuthorGroups.push(group);
+    if (fps.size >= 2) titleAuthorClusters.push(group);
   }
 
-  return { hard_groups: hardGroups, soft_groups: softGroups, title_author_groups: titleAuthorGroups };
+  // --- Same exact title, compatible authors ---
+  // 扫描时作者只能从文件名解析，「易中天品三国.epub」「易中天品三国.txt」都没有作者，
+  // 不同格式的指纹又必然不同，上面的规则抓不到。这里用不去卷号的严格标题键（避免
+  // 「斗罗大陆1 / 2」被合并），作者相同或为空都算；同标题下出现两个不同作者时有歧义，交给上面的规则。
+  const byExactTitle = new Map<string, ScannedBook[]>();
+  for (const b of books) {
+    if (!b.fingerprint) continue;
+    const key = exactTitleKey(b.title);
+    if (!key) continue;
+    const arr = byExactTitle.get(key);
+    if (arr) arr.push(b);
+    else byExactTitle.set(key, [b]);
+  }
+  for (const [, group] of byExactTitle) {
+    if (group.length < 2) continue;
+    const authors = new Set(group.map(b => normalizeAuthor(b.author ?? '')).filter(Boolean));
+    if (authors.size > 1) continue;
+    const fps = new Set(group.map(b => b.fingerprint));
+    if (fps.size >= 2) titleAuthorClusters.push(group);
+  }
+
+  return {
+    hard_groups: hardGroups,
+    soft_groups: softGroups,
+    title_author_groups: mergeOverlappingClusters(titleAuthorClusters),
+  };
+}
+
+/** 只去掉书名号、「作者：…」、空白和全角差异，保留卷号 / 上下册等区分分卷的部分 */
+function exactTitleKey(title: string): string {
+  return title
+    .replace(/作者[:：].*$/, '')
+    .replace(/[《》【】〈〉「」『』\[\]]/g, '')
+    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[\s　]+/g, '')
+    .toLowerCase();
+}
+
+/**
+ * 合并硬重复组和书名软重复组：有共同成员的组合成一组，避免同一本书出现在两个重复组里。
+ * 成员的判定类型：在任一硬重复组里为 hard，否则为 soft。
+ */
+export function mergeDuplicateGroups(
+  hardGroups: ScannedBook[][],
+  softGroups: ScannedBook[][],
+): Array<{ books: ScannedBook[]; hardPaths: Set<string> }> {
+  const hardPaths = new Set(hardGroups.flat().map(b => b.file_path));
+  return mergeOverlappingClusters([...hardGroups, ...softGroups]).map(books => ({
+    books,
+    hardPaths: new Set(books.filter(b => hardPaths.has(b.file_path)).map(b => b.file_path)),
+  }));
 }
 
 /**

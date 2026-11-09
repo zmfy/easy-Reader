@@ -18,7 +18,7 @@ import {
   DuplicateGroupPayload,
   SeriesGroupPayload,
 } from '../types';
-import { buildCandidateGroups, applyNotDuplicateOverrides, ScannedBook } from './dedup-grouper';
+import { buildCandidateGroups, applyNotDuplicateOverrides, mergeDuplicateGroups, ScannedBook } from './dedup-grouper';
 import { listOverrides } from './manual-override';
 import { buildBatchFromScan, ScanResult } from './batch-builder';
 import { extractAuthorFromName } from '../utils/title-normalizer';
@@ -191,24 +191,20 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // AI dedup removed from scan (deterministic fingerprint dedup only).
     const aiDupGroups: DuplicateGroupPayload[] = [];
 
-    // Hard groups always become duplicate_groups
-    const hardDupPayloads: DuplicateGroupPayload[] = hard_groups.map(group => ({
-      canonical_file_path: pickCanonical(group).file_path,
-      members: group.map(b => ({
-        file_path: b.file_path,
-        fingerprint: b.fingerprint ?? '',
-        decision_type: 'hard' as const,
-      })),
-    }));
-
-    const softDupPayloads: DuplicateGroupPayload[] = title_author_groups.map(group => ({
-      canonical_file_path: pickCanonical(group).file_path,
-      members: group.map(b => ({
-        file_path: b.file_path,
-        fingerprint: b.fingerprint ?? '',
-        decision_type: 'soft' as const,
-      })),
-    }));
+    // 硬重复组与书名软重复组有交集时合成一组（一本书只能出现在一个重复组里）
+    const hardDupPayloads: DuplicateGroupPayload[] = [];
+    const softDupPayloads: DuplicateGroupPayload[] = [];
+    for (const { books: group, hardPaths } of mergeDuplicateGroups(hard_groups, title_author_groups)) {
+      const payload: DuplicateGroupPayload = {
+        canonical_file_path: pickCanonical(group).file_path,
+        members: group.map(b => ({
+          file_path: b.file_path,
+          fingerprint: b.fingerprint ?? '',
+          decision_type: hardPaths.has(b.file_path) ? 'hard' as const : 'soft' as const,
+        })),
+      };
+      (hardPaths.size > 0 ? hardDupPayloads : softDupPayloads).push(payload);
+    }
 
     // Series grouping removed from scan (deferred to the future AI agent).
     const regexSeriesPayloads: SeriesGroupPayload[] = [];
