@@ -161,6 +161,8 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
     if (toLock.length > 0) markFieldsAsEdited(bookId, toLock);
     if (toUnlock.length > 0) unmarkFieldsAsEdited(bookId, toUnlock);
     if (newCategory !== undefined && newCategory !== (book.category ?? '').trim()) markCategoriesReviewed(db, [bookId]);
+    // 已经在单本预览 / 待确认页处理过，这本书的后台建议作废
+    db.prepare('DELETE FROM ai_suggestions WHERE book_id = ?').run(bookId);
     replaceMetadata(bookId, input.recommended_tags, input.similar_works, generatedBy);
     if (input.adaptations) replaceAdaptations(bookId, input.adaptations);
     db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(bookId);

@@ -16,6 +16,10 @@
       <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要几秒到一分钟，可随时取消</div>
     </div>
     <div v-else-if="preview && form" class="preview-body">
+      <p v-if="preview.contentMismatch" class="note note--warning">
+        AI 读到的正文是《{{ preview.contentMismatch.title }}》<template v-if="preview.contentMismatch.author">（{{ preview.contentMismatch.author }}）</template>，与文件名不符，文件可能标错了，下面的建议是按正文给出的。
+        <template v-if="preview.contentMismatch.reason">{{ preview.contentMismatch.reason }}</template>
+      </p>
       <!-- 封面 -->
       <section class="block">
         <div class="block-title">封面 <span class="hint">左右滑动，点选一张</span></div>

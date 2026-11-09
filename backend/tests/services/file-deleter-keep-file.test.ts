@@ -21,6 +21,7 @@ function makeDb(): Database.Database {
     CREATE TABLE reading_progress (id TEXT, user_id TEXT, book_id TEXT);
     CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
     CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
+    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE book_ai_metadata (book_id TEXT);
     CREATE TABLE ai_recaps (book_id TEXT, chapter_index INTEGER, paragraph_index INTEGER, content TEXT);
     CREATE TABLE audit_log (id TEXT PRIMARY KEY, user_id TEXT, action TEXT, resource_id TEXT, file_path TEXT, details TEXT);

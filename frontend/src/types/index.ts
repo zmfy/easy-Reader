@@ -35,6 +35,8 @@ export interface Book {
   first_chapter_hash?: string
   encoding_detected?: string
   manually_edited_fields?: string
+  /** AI 判定正文与文件名不是同一本书：JSON { title, author?, reason?, dismissed? }（见 parseContentMismatch） */
+  content_mismatch?: string | null
 }
 
 export interface ShelfItem {
@@ -246,6 +248,7 @@ export type AuditAction =
   | 'delete_manual_override'
   | 'ai_fill_book'
   | 'ai_fetch_cover'
+  | 'ai_suggestion_apply'
 
 export interface AuditLog {
   id: string
@@ -313,6 +316,8 @@ export interface AiFillPreview {
   lockedFields: AiFillLockableField[]
   coverTitle: string
   coverCandidates: AiFillCoverCandidate[]
+  /** AI 判定正文与文件名不是同一部作品 */
+  contentMismatch?: ContentMismatch
 }
 
 export type AiFillCoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' }
@@ -429,5 +434,47 @@ export interface LegacyCategoryBook {
 export interface CategorySuggestion extends LegacyCategoryBook {
   suggested?: string
   source?: 'map' | 'ai'
+}
+
+// ── 后台 AI 丰富的待确认建议（与 backend/src/services/ai-suggestions.ts 对应）──
+export interface ContentMismatch {
+  title: string
+  author?: string
+  reason?: string
+  dismissed?: boolean
+}
+
+export type SuggestField = 'author' | 'summary' | 'category'
+
+export interface FieldSuggestion {
+  value: string
+  current: string | null
+  confidence: AiFillConfidence
+  evidence?: string
+  locked?: boolean
+}
+
+export interface AiSuggestion {
+  book_id: string
+  title: string
+  author: string | null
+  cover_url: string | null
+  created_at: string
+  content_mismatch: ContentMismatch | null
+  current: { recommended_tags: string[]; similar_works: SimilarWork[]; adaptations: BookAdaptation[] }
+  data: {
+    fields: Partial<Record<SuggestField, FieldSuggestion>>
+    recommended_tags?: string[]
+    similar_works?: SimilarWork[]
+    adaptations?: BookAdaptation[]
+  }
+}
+
+export interface AiSuggestionSelection {
+  book_id: string
+  fields: SuggestField[]
+  tags: boolean
+  similar: boolean
+  adaptations: boolean
 }
 

@@ -86,6 +86,7 @@ function actionLabel(a: string): string {
     delete_manual_override: '删除人工修正',
     ai_fill_book: 'AI 填充书籍',
     ai_fetch_cover: 'AI 抓取封面',
+    ai_suggestion_apply: '采纳 AI 建议',
   }
   return map[a] ?? a
 }

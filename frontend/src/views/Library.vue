@@ -13,6 +13,16 @@
           立即审核
         </el-button>
       </el-alert>
+      <el-alert
+        v-if="suggestionCount > 0 && authStore.isAdmin"
+        type="info"
+        show-icon
+        :closable="false"
+        class="batch-alert"
+      >
+        有 {{ suggestionCount }} 本书的 AI 建议待确认
+        <el-button link type="primary" @click="$router.push('/library/ai-suggestions')">去处理</el-button>
+      </el-alert>
       <div class="page-header">
         <div class="header-left">
           <h1 class="page-title">书库</h1>
@@ -43,10 +53,11 @@
                       <li><strong>重复</strong>：显示所有重复的书（含审核后保留的正常本）</li>
                       <li><strong>ai填充</strong> / <strong>已填充</strong>：只看已 AI 填充的书</li>
                       <li><strong>填充失败</strong>：只看 AI 填充失败的书</li>
+                      <li><strong>错标</strong>：只看 AI 判定文件名与正文不是同一本书的</li>
                     </template>
                   </ul>
                   <div v-if="authStore.isAdmin" class="help-note">
-                    「重复 / ai填充 / 填充失败」为精确触发的筛选词，输入其它内容均按书名/作者搜索。
+                    「重复 / ai填充 / 填充失败 / 错标」为精确触发的筛选词，输入其它内容均按书名/作者搜索。
                   </div>
                 </div>
               </el-popover>
@@ -176,6 +187,16 @@ const scanStore = useScanTaskStore()
 const showScanDialog = ref(false)
 const pendingBatch = ref<ScanBatch | null>(null)
 
+const suggestionCount = ref(0)
+async function refreshSuggestionCount(): Promise<void> {
+  if (!authStore.isAdmin) return
+  try {
+    suggestionCount.value = (await libraryApi.aiSuggestionCount()).data.data?.count ?? 0
+  } catch {
+    suggestionCount.value = 0
+  }
+}
+
 async function refreshPendingBatch(): Promise<void> {
   try {
     const resp = await scanBatchesApi.list('pending')
@@ -246,6 +267,7 @@ function resolveListParams(): ListParams {
     if (raw === '重复') return { ...base, status: 'duplicate_groups' }
     if (raw === 'ai填充' || raw === '已填充') return { ...base, ai_fill: 'filled' }
     if (raw === '填充失败') return { ...base, ai_fill: 'failed' }
+    if (raw === '错标') return { ...base, mismatch: '1' }
   }
   return { ...base, search: raw || undefined }
 }
@@ -344,17 +366,19 @@ async function onScanConfirm(options: ScanStartOptions): Promise<void> {
   }
 }
 
-// 任务完成后刷新书库与 pending batch
+// 任务完成后刷新书库、pending batch 与待确认数量
 watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
   if (oldStatus === 'running' && newStatus !== 'running') {
     void fetchBooks()
     void refreshPendingBatch()
+    void refreshSuggestionCount()
   }
 })
 
 onMounted(fetchBooks)
 onMounted(fetchCategories)
 onMounted(refreshPendingBatch)
+onMounted(refreshSuggestionCount)
 </script>
 
 <style scoped>

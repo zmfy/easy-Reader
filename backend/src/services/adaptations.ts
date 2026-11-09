@@ -33,8 +33,9 @@ export interface AdaptationBookInfo {
  * 微短剧的特征：几十上百集、每集几分钟、近几年上线。豆瓣搜索接口不给单集片长，只能按集数和年份初筛，
  * 在提示里标出「可能是短剧」，由 AI 结合片名、年代排除长篇电视剧（如 1994 年 84 集的《三国演义》）。
  */
-const SHORT_DRAMA_MIN_EPISODES = 50;
-const SHORT_DRAMA_SINCE_YEAR = 2019;
+// 2019 年 62 集的《封神演义》是正剧：微短剧 2021 年后才大量出现，集数通常 60 集以上
+const SHORT_DRAMA_MIN_EPISODES = 60;
+const SHORT_DRAMA_SINCE_YEAR = 2021;
 
 export function looksLikeShortDrama(c: AdaptationCandidate): boolean {
   return c.source === 'douban'
@@ -96,10 +97,38 @@ export function parseAdaptationResponse(raw: string, candidates: AdaptationCandi
 }
 
 /** 搜不到候选时不调用 AI；任何一步失败都返回 []（改编信息是锦上添花，不能让填充失败） */
-export async function findAdaptations(book: AdaptationBookInfo, db: Database.Database): Promise<Adaptation[]> {
+/** 后台批量时外部搜索的最小间隔：全局串行，避免短时间大量请求触发豆瓣 / 猫耳的反爬 */
+export const ADAPTATION_SEARCH_INTERVAL_MS = 3000;
+let searchChain: Promise<unknown> = Promise.resolve();
+let lastSearchAt = 0;
+
+function searchCandidates(title: string): Promise<AdaptationCandidate[]> {
+  return Promise.all([searchDoubanMovies(title), searchMissevanDramas(title)]).then(([d, m]) => [...d, ...m]);
+}
+
+function throttledSearch(title: string): Promise<AdaptationCandidate[]> {
+  const run = searchChain.then(async () => {
+    const wait = lastSearchAt + ADAPTATION_SEARCH_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastSearchAt = Date.now();
+    return searchCandidates(title);
+  });
+  searchChain = run.catch(() => undefined);
+  return run;
+}
+
+/** 测试用：重置限速状态 */
+export function _resetAdaptationThrottle(): void {
+  searchChain = Promise.resolve();
+  lastSearchAt = 0;
+}
+
+/** throttle：后台批量时为 true，外部搜索排队并保持间隔（AI 筛选不受限） */
+export async function findAdaptations(
+  book: AdaptationBookInfo, db: Database.Database, opts: { throttle?: boolean } = {},
+): Promise<Adaptation[]> {
   if (!book.title.trim()) return [];
-  const [douban, missevan] = await Promise.all([searchDoubanMovies(book.title), searchMissevanDramas(book.title)]);
-  const candidates = [...douban, ...missevan];
+  const candidates = await (opts.throttle ? throttledSearch(book.title) : searchCandidates(book.title)).catch(() => []);
   if (candidates.length === 0) return [];
   try {
     // 只是从候选里挑选，不需要深度推理
