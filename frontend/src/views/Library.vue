@@ -54,9 +54,16 @@
           </el-input>
           <!-- 宽屏：分类与排序直接显示 -->
           <div class="filters-inline">
-            <el-select v-model="selectedCategory" placeholder="分类" clearable style="width: 120px" @change="onCategoryChange">
-              <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
-            </el-select>
+            <el-cascader
+              v-model="selectedCategory"
+              :options="categoryOptions"
+              :props="CASCADER_PROPS"
+              :show-all-levels="false"
+              placeholder="分类"
+              clearable
+              style="width: 150px"
+              @change="onCategoryChange"
+            />
             <el-select v-model="sortBy" style="width: 160px" @change="fetchBooks">
               <el-option v-for="o in sortOptions" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
@@ -70,9 +77,16 @@
             </template>
             <div class="filters-pop">
               <div class="filters-pop-label">分类</div>
-              <el-select v-model="selectedCategory" placeholder="全部分类" clearable teleported style="width: 100%" @change="onCategoryChange">
-                <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
-              </el-select>
+              <el-cascader
+                v-model="selectedCategory"
+                :options="categoryOptions"
+                :props="CASCADER_PROPS"
+                placeholder="全部分类"
+                clearable
+                teleported
+                style="width: 100%"
+                @change="onCategoryChange"
+              />
               <div class="filters-pop-label">排序</div>
               <el-select v-model="sortBy" teleported style="width: 100%" @change="fetchBooks">
                 <el-option v-for="o in sortOptions" :key="o.value" :label="o.label" :value="o.value" />
@@ -152,6 +166,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useScanTaskStore } from '@/stores/scan-task'
 import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import type { Book, ScanStartOptions, ScanBatch } from '@/types'
+import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
 const router = useRouter()
 const route = useRoute()
@@ -188,7 +203,16 @@ function sortOrderFor(field: string): 'asc' | 'desc' {
   return field === 'title' ? 'asc' : 'desc'
 }
 
-const categories = ['玄幻', '修真', '都市', '历史', '科幻', '悬疑', '言情', '武侠', '游戏', '综合']
+// 多级分类：可选任意一级（选上级即包含全部下级），值为完整路径；选项带书数
+const CASCADER_PROPS = { checkStrictly: true, emitPath: false }
+const categoryOptions = ref<CategoryOption[]>([])
+async function fetchCategories() {
+  try {
+    const resp = await libraryApi.categories()
+    const info = resp.data.data!
+    categoryOptions.value = toCategoryOptions(info.tree, info.counts)
+  } catch { /* 分类菜单取不到不影响书库列表 */ }
+}
 
 const pagination = reactive({
   page: Number(route.query.page) || 1,
@@ -329,6 +353,7 @@ watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
 })
 
 onMounted(fetchBooks)
+onMounted(fetchCategories)
 onMounted(refreshPendingBatch)
 </script>
 

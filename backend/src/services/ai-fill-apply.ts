@@ -3,11 +3,13 @@ import { getDb } from '../db';
 import { Book } from '../types';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
 import {
-  downloadCoverFromPic, fetchRating, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, saveCoverFile,
+  downloadCoverFromPic, fetchRating, isAllowedCoverImageUrl, isAllowedDoubanSubjectUrl, saveCoverFile,
 } from '../utils/cover';
 import { replaceAdaptations, replaceMetadata } from './book-ai-metadata';
 import { Adaptation, ADAPTATION_TYPES } from './adaptations';
 import { isAllowedAdaptationUrl } from '../utils/adaptation-sources';
+import { getCategoryTree, isValidCategoryPath } from '../utils/category-tree';
+import { markCategoriesReviewed } from './category-migrate';
 import { markFieldsAsEdited, stampFillVersion, unmarkFieldsAsEdited } from './ai-batch-fill';
 import { BookNotFoundError, cleanBookTitle, LockableField, SimilarWork } from './ai-fill-preview';
 
@@ -54,7 +56,7 @@ const similarWorkSchema = z.object({
 const aiFillApplySchema = z.object({
   author: z.string().trim().max(200).optional(),
   summary: z.string().trim().max(20000).optional(),
-  category: z.string().trim().max(50).optional(),
+  category: z.string().trim().max(200).optional(),
   is_finished: z.boolean().optional(),
   recommended_tags: z.array(z.string().trim().min(1).max(30)).max(20),
   similar_works: z.array(similarWorkSchema).max(20),
@@ -98,7 +100,7 @@ async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string
   const cover = input.cover;
   if (cover.type === 'keep') return undefined;
   if (cover.type === 'douban') {
-    if (!isAllowedDoubanImageUrl(cover.pic)) throw new AiFillApplyError('封面地址无效', 422);
+    if (!isAllowedCoverImageUrl(cover.pic)) throw new AiFillApplyError('封面地址无效', 422);
     const url = await downloadCoverFromPic(cover.pic, book.id);
     if (!url) throw new AiFillApplyError('封面下载失败，请重试或选择其他封面', 502);
     return url;
@@ -128,6 +130,12 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
   const toLock: LockableField[] = [];
   const toUnlock: LockableField[] = [];
 
+  // 分类改了就必须是分类树中的路径（保持原值不校验：旧书可能还是单级的旧分类）
+  const newCategory = input.category?.trim();
+  if (newCategory && newCategory !== (book.category ?? '').trim() && !isValidCategoryPath(getCategoryTree(db), newCategory)) {
+    throw new AiFillApplyError('分类不在分类表中', 422);
+  }
+
   for (const field of LOCKABLE) {
     const value = input[field];
     if (value === undefined) continue;
@@ -152,6 +160,7 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
     if (updates.length > 0) db.prepare(`UPDATE books SET ${updates.join(', ')} WHERE id = ?`).run(...values, bookId);
     if (toLock.length > 0) markFieldsAsEdited(bookId, toLock);
     if (toUnlock.length > 0) unmarkFieldsAsEdited(bookId, toUnlock);
+    if (newCategory !== undefined && newCategory !== (book.category ?? '').trim()) markCategoriesReviewed(db, [bookId]);
     replaceMetadata(bookId, input.recommended_tags, input.similar_works, generatedBy);
     if (input.adaptations) replaceAdaptations(bookId, input.adaptations);
     db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(bookId);

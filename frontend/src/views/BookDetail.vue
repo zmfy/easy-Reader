@@ -53,6 +53,14 @@
               <div v-else class="edit-fields">
                 <el-input v-model="editForm.title" placeholder="书名" />
                 <el-input v-model="editForm.author" placeholder="作者" />
+                <el-cascader
+                  v-model="editForm.category"
+                  :options="categoryOptions"
+                  :props="{ checkStrictly: true, emitPath: false }"
+                  :placeholder="editForm.category ? `${editForm.category}（旧分类）` : '分类'"
+                  clearable
+                  filterable
+                />
               </div>
               <div class="header-side">
                 <div class="edit-actions">
@@ -91,7 +99,14 @@
             </div>
 
             <div class="info-tags">
-              <el-tag v-if="book.category">{{ book.category }}</el-tag>
+              <router-link
+                v-if="book.category"
+                :to="{ path: '/library', query: { category: book.category } }"
+                class="category-link"
+                title="查看同类书"
+              >
+                <el-tag>{{ categoryLabel(book.category) }}</el-tag>
+              </router-link>
               <el-tag type="info">{{ book.file_format?.toUpperCase() }}<template v-if="book.file_size"> · {{ formatSize(book.file_size) }}</template></el-tag>
               <el-tag v-if="book.is_finished" type="success">完结</el-tag>
               <el-tag v-else type="warning">连载中</el-tag>
@@ -186,6 +201,7 @@ import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
 import { resolveBack } from '@/utils/page-back'
 import { ADAPTATION_SOURCE_LABELS } from '@/utils/ai-fill-form'
+import { categoryLabel, toCategoryOptions, type CategoryOption } from '@/utils/category'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
@@ -196,6 +212,7 @@ const authStore = useAuthStore()
 
 const book = ref<Book | null>(null)
 const aiMeta = ref<BookAiMetadata | null>(null)
+const categoryOptions = ref<CategoryOption[]>([])
 // Map: similar-work title → in-library book id (if found)
 const similarLinks = ref<Map<string, string>>(new Map())
 const loading = ref(false)
@@ -290,6 +307,11 @@ function startEdit() {
   editForm.summary = book.value.summary || ''
   editForm.category = book.value.category || ''
   editing.value = true
+  if (categoryOptions.value.length === 0) {
+    libraryApi.categories()
+      .then((resp) => { categoryOptions.value = toCategoryOptions(resp.data.data!.tree) })
+      .catch(() => { /* 取不到分类表时保留原分类 */ })
+  }
 }
 
 function cancelEdit() {
@@ -299,7 +321,8 @@ function cancelEdit() {
 async function saveEdit() {
   saving.value = true
   try {
-    const resp = await libraryApi.update(route.params.bookId as string, editForm)
+    // 分类选择器清空时值为 null，后端要字符串
+    const resp = await libraryApi.update(route.params.bookId as string, { ...editForm, category: editForm.category || '' })
     book.value = resp.data.data || null
     editing.value = false
     ElMessage.success('保存成功')
@@ -726,5 +749,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
 }
 .similar-link:hover { text-decoration: underline; }
 .adapt-link { margin-left: 6px; }
+.category-link { text-decoration: none; }
 .in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>

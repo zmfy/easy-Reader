@@ -40,6 +40,7 @@
             @click="form.cover = i"
           >
             <img :src="c.thumbnail" :alt="c.title" />
+            <span v-if="c.kind" class="badge">{{ c.kind }}</span>
             <span class="caption">{{ c.title }}{{ c.year ? ` · ${c.year}` : '' }}</span>
           </button>
           <button
@@ -78,7 +79,19 @@
             />
           </template>
         </div>
+        <!-- 分类：从分类树选（值为完整路径）；当前值不在分类树里时以占位文字显示 -->
+        <el-cascader
+          v-if="f.key === 'category'"
+          v-model="form.category"
+          :options="categoryOptions"
+          :props="{ checkStrictly: true, emitPath: false }"
+          :placeholder="form.category ? `${form.category}（旧分类）` : '分类'"
+          clearable
+          filterable
+          class="category-select"
+        />
         <el-input
+          v-else
           v-model="form[f.key]"
           :type="f.key === 'summary' ? 'textarea' : 'text'"
           :autosize="f.key === 'summary' ? { minRows: 6, maxRows: 12 } : undefined"
@@ -177,6 +190,7 @@ import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
 import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book } from '@/types'
+import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
 const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; applied: [book: Book] }>()
@@ -204,7 +218,16 @@ const textFields: Array<{ key: AiFillLockableField; label: string; max: number }
   { key: 'summary', label: '简介', max: 20000 },
 ]
 
+const categoryOptions = ref<CategoryOption[]>([])
+async function loadCategoryOptions() {
+  if (categoryOptions.value.length > 0) return
+  try {
+    categoryOptions.value = toCategoryOptions((await libraryApi.categories()).data.data!.tree)
+  } catch { /* 取不到分类表时分类保持原值 */ }
+}
+
 watch(() => props.preview, (p) => {
+  if (p) loadCategoryOptions()
   form.value = p ? initialForm(p) : null
   newTag.value = ''
   newSimilar.title = ''
@@ -459,6 +482,10 @@ onBeforeUnmount(() => {
   margin-left: 6px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+.category-select {
+  width: 100%;
 }
 
 .adapt-link {

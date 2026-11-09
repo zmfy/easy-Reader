@@ -278,7 +278,7 @@ describe('batchFill two-pass', () => {
     await batchFill({ books: [{ id: 'lc', file_path: '/nonexistent/lc.epub', file_format: 'epub', title: '克莱因文集' }] });
 
     const row = _testDb!.prepare('SELECT author, summary, category FROM books WHERE id = ?').get('lc');
-    expect(row).toEqual({ author: null, summary: null, category: '心理学' });
+    expect(row).toEqual({ author: null, summary: null, category: '社科/心理学' });  // 末级名补全为分类路径
     // 证据里带文件名（文件不存在也不报错）
     expect(fillSpy.mock.calls[0][0]).toContain('【文件名】lc.epub');
   });

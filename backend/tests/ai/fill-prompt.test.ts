@@ -2,9 +2,9 @@ import { buildFillPrompt, fieldConfidence } from '../../src/ai/fill-prompt';
 
 describe('buildFillPrompt', () => {
   it('embeds evidence and library categories without assuming web novels', () => {
-    const p = buildFillPrompt('【文件名】克莱因文集.epub', { summary_length: '150', categories: '历史,外国文学' });
+    const p = buildFillPrompt('【文件名】克莱因文集.epub', { summary_length: '150', categories: '小说/外国小说,社科/心理学' });
     expect(p).toContain('【文件名】克莱因文集.epub');
-    expect(p).toContain('历史、外国文学');
+    expect(p).toContain('小说/外国小说\n社科/心理学');
     expect(p).toContain('150字左右');
     expect(p).toContain('"confidence"');
     expect(p).not.toContain('熟悉中文网络小说');

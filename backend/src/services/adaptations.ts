@@ -18,6 +18,8 @@ export interface Adaptation {
   year?: string;
   source: AdaptationSource;
   url: string;
+  /** 海报 / 封面（只在预览里作封面候选，不入库） */
+  pic?: string;
 }
 
 export interface AdaptationBookInfo {
@@ -75,7 +77,10 @@ export function parseAdaptationResponse(raw: string, candidates: AdaptationCandi
     const type: AdaptationType = c.source === 'missevan'
       ? '广播剧'
       : (ADAPTATION_TYPES as readonly unknown[]).includes(rawType) ? rawType as AdaptationType : '其他';
-    out.push({ type, title: c.title, ...(c.year ? { year: c.year } : {}), source: c.source, url: c.url });
+    out.push({
+      type, title: c.title, ...(c.year ? { year: c.year } : {}), source: c.source, url: c.url,
+      ...(c.pic ? { pic: c.pic } : {}),
+    });
   }
   return out;
 }

@@ -59,7 +59,7 @@
       <div class="book-title" :title="book.title">{{ displayTitle }}</div>
       <div class="book-author">{{ book.author || '未知作者' }}</div>
       <div class="book-meta">
-        <span v-if="book.category" class="tag category">{{ book.category }}</span>
+        <span v-if="book.category" class="tag category" :title="categoryLabel(book.category)">{{ categoryLeaf(book.category) }}</span>
         <span class="tag format">{{ book.file_format?.toUpperCase() }}</span>
         <span v-if="book.is_finished" class="tag finished">完结</span>
       </div>
@@ -72,6 +72,7 @@ import { ref, computed } from 'vue'
 import { IconPlayerPlay } from '@tabler/icons-vue'
 import type { Book } from '@/types'
 import { useAuthStore } from '@/stores/auth'
+import { categoryLabel, categoryLeaf } from '@/utils/category'
 
 const props = defineProps<{ book: Book }>()
 defineEmits<{ click: []; read: []; detail: []; delete: [Book] }>()

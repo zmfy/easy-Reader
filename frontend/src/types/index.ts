@@ -286,6 +286,8 @@ export interface AiFillCoverCandidate {
   year?: string
   pic: string
   subjectUrl?: string
+  /** 改编作品的海报 / 封面：电视剧、电影、广播剧等；豆瓣书封不带 */
+  kind?: string
   thumbnail: string
 }
 
@@ -402,3 +404,30 @@ export interface HttpsStatus {
   /** 仅上传接口返回：如「证书已过期」 */
   warnings?: string[]
 }
+
+// ── 多级分类（与 backend/src/utils/category-tree.ts、services/category-migrate.ts 对应）──
+export interface CategoryNode {
+  name: string
+  children?: CategoryNode[]
+}
+
+export interface CategoryInfo {
+  tree: CategoryNode[]
+  /** 各分类路径（含下级）的书数 */
+  counts: Record<string, number>
+  /** 内置默认分类树（设置页「恢复默认」用） */
+  defaultTree: CategoryNode[]
+}
+
+export interface LegacyCategoryBook {
+  id: string
+  title: string
+  author: string | null
+  category: string
+}
+
+export interface CategorySuggestion extends LegacyCategoryBook {
+  suggested?: string
+  source?: 'map' | 'ai'
+}
+

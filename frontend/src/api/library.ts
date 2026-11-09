@@ -66,6 +66,16 @@ export const libraryApi = {
   defaultCoverSvg: (params: { title: string; author?: string; category?: string }) =>
     http.get<string>('/library/default-cover', { params, responseType: 'text' }),
 
+  // 多级分类：分类树 + 书数；旧分类整理（建议含 AI 批量调用，超时放宽到 3 分钟）
+  categories: () =>
+    http.get<ApiResponse<import('@/types').CategoryInfo>>('/library/categories'),
+  legacyCategories: () =>
+    http.get<ApiResponse<import('@/types').LegacyCategoryBook[]>>('/library/categories/legacy'),
+  suggestLegacyCategories: () =>
+    http.post<ApiResponse<import('@/types').CategorySuggestion[]>>('/library/categories/legacy/suggest', {}, { timeout: 180000 }),
+  applyCategories: (items: Array<{ book_id: string; category: string }>) =>
+    http.post<ApiResponse<{ updated: number }>>('/library/categories/legacy/apply', { items }),
+
   getAiMetadata: (id: string) =>
     http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),
 

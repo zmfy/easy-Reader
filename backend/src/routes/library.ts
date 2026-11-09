@@ -29,6 +29,10 @@ import { buildAiFillPreview, BookNotFoundError, cleanBookTitle } from '../servic
 import { applyAiFill, AiFillApplyError, parseAiFillApplyBody } from '../services/ai-fill-apply';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
 import { hideFilePathForNonAdmin, withDisplayTitle } from '../utils/book-view';
+import {
+  categoryFilterSql, countByCategoryPath, DEFAULT_CATEGORY_TREE, getCategoryTree, isValidCategoryPath,
+} from '../utils/category-tree';
+import { applyCategories, listLegacyCategoryBooks, markCategoriesReviewed, suggestLegacyCategories } from '../services/category-migrate';
 
 const router = Router();
 
@@ -98,8 +102,10 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     params.push(`%${search}%`, `%${search}%`);
   }
   if (category) {
-    whereClause += ' AND category = ?';
-    params.push(category);
+    // 多级分类：选上级即包含全部下级
+    const filter = categoryFilterSql(category);
+    whereClause += ` AND ${filter.sql}`;
+    params.push(...filter.params);
   }
 
   const total = (db.prepare(`SELECT COUNT(*) as cnt FROM books ${whereClause}`).get(...params) as { cnt: number }).cnt;
@@ -279,6 +285,48 @@ router.get('/default-cover', authMiddleware, (req: Request, res: Response) => {
   res.send(renderDefaultCoverSvg(parsed.data));
 });
 
+// GET /api/library/categories — 分类树 + 各分类（含下级）书数，供书库筛选与编辑（必须在 /:id 之前注册）
+router.get('/categories', authMiddleware, (_req: Request, res: Response) => {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT category, COUNT(*) AS n FROM books
+     WHERE status = 'normal' AND category IS NOT NULL AND TRIM(category) != ''
+     GROUP BY category`
+  ).all() as Array<{ category: string; n: number }>;
+  successResponse(res, { tree: getCategoryTree(db), counts: countByCategoryPath(rows), defaultTree: DEFAULT_CATEGORY_TREE });
+});
+
+// GET /api/library/categories/legacy — 分类不在分类树中的书（设置页「整理」）
+router.get('/categories/legacy', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, listLegacyCategoryBooks(getDb()));
+});
+
+// POST /api/library/categories/legacy/suggest — 给出新分类建议（映射表 + AI），不写库
+router.post('/categories/legacy/suggest', authMiddleware, adminMiddleware, async (_req: Request, res: Response) => {
+  // 没配 AI 时 AI 那部分会失败并被忽略，仍返回映射表能对应的建议
+  try {
+    successResponse(res, await suggestLegacyCategories(getDb()));
+  } catch (err) {
+    console.error('[categories:suggest]', err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '生成分类建议失败');
+  }
+});
+
+const applyCategoriesSchema = z.object({
+  items: z.array(z.object({ book_id: z.string().min(1), category: z.string().min(1).max(200) })).min(1).max(1000),
+});
+
+// POST /api/library/categories/legacy/apply — 写入用户确认的分类
+router.post('/categories/legacy/apply', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = applyCategoriesSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  try {
+    successResponse(res, { updated: applyCategories(getDb(), parsed.data.items) });
+  } catch (err) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', (err as Error).message);
+  }
+});
+
 // GET /api/library/:id
 router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
@@ -295,7 +343,7 @@ const updateBookSchema = z.object({
   author: z.string().max(100).optional(),
   cover_url: z.string().max(500).optional(),
   summary: z.string().max(5000).optional(),
-  category: z.string().max(50).optional(),
+  category: z.string().max(200).optional(),
   tags: z.array(z.string()).optional(),
   publish_date: z.string().max(20).optional(),
   finish_date: z.string().max(20).optional(),
@@ -318,6 +366,11 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   }
 
   const data = parsed.data;
+  // 分类改了才校验：编辑表单会把未改动的旧分类（单级旧值）原样带回
+  if (data.category && data.category !== book.category && !isValidCategoryPath(getCategoryTree(db), data.category)) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '分类不在分类表中');
+    return;
+  }
   const updates: string[] = [];
   const values: unknown[] = [];
 
@@ -340,6 +393,7 @@ router.put('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response
   if (editedFields.length > 0) {
     markFieldsAsEdited(req.params.id, editedFields);
   }
+  if (data.category !== undefined && data.category !== book.category) markCategoriesReviewed(db, [req.params.id]);
 
   if (updates.length > 0) {
     values.push(req.params.id);

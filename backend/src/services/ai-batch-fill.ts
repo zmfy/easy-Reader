@@ -13,6 +13,7 @@ import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
 import { buildBookEvidence } from './book-evidence';
 import { fieldConfidence } from '../ai/fill-prompt';
+import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
 const DEFAULT_CONCURRENCY = 2;
 const RETRIES = 3;
@@ -124,6 +125,9 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       } else {
         info = await callWithRetry(() => aiManager.fillBookInfo(rawText, db, { title: knownTitle }), RETRIES);
       }
+
+      // 分类只接受分类树中的路径（末级名可唯一对应时自动补全），否则不写
+      info.category = resolveCategoryPath(getCategoryTree(db), info.category);
 
       if (fillStatus === 'failed') {
         db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
