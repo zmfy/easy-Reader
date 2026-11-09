@@ -261,6 +261,8 @@ function initSchema(): void {
       generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  // 改编作品（影视 / 广播剧）：JSON array of {type, title, year?, source, url}
+  try { database.exec('ALTER TABLE book_ai_metadata ADD COLUMN adaptations TEXT'); } catch { /* column exists */ }
 
   // === 阅读器 AI 前情提要缓存（按阅读位置） ===
   database.exec(`

@@ -145,6 +145,20 @@
           <el-button size="small" :disabled="!newSimilar.title.trim()" @click="addSimilar">添加</el-button>
         </div>
       </section>
+
+      <!-- 改编作品：豆瓣影视 / 猫耳FM 的搜索结果经 AI 筛选，只能删除不能手填（每条都要有来源链接） -->
+      <section class="block area-adapt">
+        <div class="block-title">改编作品 <span class="hint">来自豆瓣影视、猫耳FM，经 AI 筛选，点击可核对</span></div>
+        <div v-for="(a, i) in form.adaptations" :key="a.url" class="similar-item">
+          <div class="similar-text">
+            <el-tag size="small" type="info">{{ a.type }}</el-tag>
+            <a :href="a.url" target="_blank" rel="noopener noreferrer" class="adapt-link">{{ a.title }}</a>
+            <span class="similar-author">{{ [a.year, ADAPTATION_SOURCE_LABELS[a.source]].filter(Boolean).join(' · ') }}</span>
+          </div>
+          <el-button :icon="IconTrash" circle size="small" text @click="form.adaptations.splice(i, 1)" />
+        </div>
+        <div v-if="form.adaptations.length === 0" class="hint">没有找到改编作品</div>
+      </section>
       </div>
     </div>
 
@@ -161,7 +175,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
-import { initialForm, buildApplyPayload, isLowConfidence, type AiFillForm } from '@/utils/ai-fill-form'
+import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book } from '@/types'
 
 const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean }>()
@@ -315,7 +329,8 @@ onBeforeUnmount(() => {
     "author summary"
     "category summary"
     "status summary"
-    "tags similar";
+    "tags similar"
+    "adapt adapt";
   column-gap: 24px;
   row-gap: 16px;
   align-items: start;
@@ -326,12 +341,13 @@ onBeforeUnmount(() => {
 .area-status { grid-area: status; }
 .area-tags { grid-area: tags; }
 .area-similar { grid-area: similar; }
+.area-adapt { grid-area: adapt; }
 
 /* 窄屏（全屏弹窗）单列 */
 @media (max-width: 768px) {
   .preview-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "author" "category" "summary" "status" "tags" "similar";
+    grid-template-areas: "author" "category" "summary" "status" "tags" "similar" "adapt";
   }
 }
 
@@ -444,6 +460,13 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
+
+.adapt-link {
+  margin-left: 6px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.adapt-link:hover { text-decoration: underline; }
 
 .similar-add {
   display: flex;

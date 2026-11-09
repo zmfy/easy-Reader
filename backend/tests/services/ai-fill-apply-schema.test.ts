@@ -27,6 +27,14 @@ describe('parseAiFillApplyBody', () => {
     expect(parseAiFillApplyBody({ ...base, similar_works: [{ title: 'a', reason: '因'.repeat(400) }] }).ok).toBe(true);
   });
 
+  it('accepts adaptations from allowed sources and rejects other urls', () => {
+    const ok = { type: '广播剧', title: '庆余年 第一季', source: 'missevan', url: 'https://www.missevan.com/mdrama/22755' };
+    expect(parseAiFillApplyBody({ ...base, adaptations: [ok] }).ok).toBe(true);
+    const r = parseAiFillApplyBody({ ...base, adaptations: [{ ...ok, url: 'https://evil.com/mdrama/1' }] });
+    expect(r).toEqual({ ok: false, message: expect.stringContaining('改编作品') });
+    expect(parseAiFillApplyBody({ ...base, adaptations: [{ ...ok, type: '舞台剧' }] }).ok).toBe(false);
+  });
+
   it('names the tags field for too many tags', () => {
     const r = parseAiFillApplyBody({ ...base, recommended_tags: Array.from({ length: 21 }, (_, i) => `t${i}`) });
     expect(r).toEqual({ ok: false, message: expect.stringContaining('推荐标签') });

@@ -7,10 +7,12 @@ function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
     current: {
       title: '三国演义', author: '罗贯中', summary: '旧简介', category: '历史', is_finished: false,
       cover_url: '/covers/b1.jpg', recommended_tags: ['旧标签'], similar_works: [{ title: '水浒传' }],
+      adaptations: [{ type: '电影', title: '赤壁', source: 'douban', url: 'https://movie.douban.com/subject/2/' }],
     },
     suggested: {
       author: '罗贯中（明）', summary: 'AI 简介', category: '古典小说', is_finished: true,
       recommended_tags: ['历史', '权谋'], similar_works: [{ title: '东周列国志', author: '冯梦龙' }],
+      adaptations: [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }],
     },
     lockedFields: [],
     coverTitle: '三国演义',
@@ -23,6 +25,15 @@ function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
 }
 
 describe('initialForm', () => {
+  it('uses AI adaptations, falling back to the current ones when AI found none', () => {
+    expect(initialForm(preview()).adaptations.map(a => a.title)).toEqual(['三国演义'])
+    const p = preview()
+    p.suggested.adaptations = []
+    const f = initialForm(p)
+    expect(f.adaptations.map(a => a.title)).toEqual(['赤壁'])
+    expect(buildApplyPayload(f, p).adaptations).toEqual(p.current.adaptations)
+  })
+
   it('does not prefill low-confidence suggestions', () => {
     const p = preview({ lockedFields: ['summary'] })
     p.current.author = ''
@@ -44,7 +55,7 @@ describe('initialForm', () => {
 
   it('keeps current values when AI returned nothing for a field', () => {
     const p = preview()
-    p.suggested = { recommended_tags: [], similar_works: [] }
+    p.suggested = { recommended_tags: [], similar_works: [], adaptations: [] }
     const f = initialForm(p)
     expect(f).toMatchObject({ author: '罗贯中', summary: '旧简介', category: '历史', is_finished: false })
     expect(f.tags).toEqual(['旧标签'])

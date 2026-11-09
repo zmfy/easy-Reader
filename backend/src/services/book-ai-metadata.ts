@@ -59,19 +59,28 @@ export function replaceMetadata(
   ).run(bookId, JSON.stringify(tags), JSON.stringify(similar), generatedBy ?? null);
 }
 
+/** 写入用户在 AI 填充预览中确认的改编作品（行由 replaceMetadata 先建好） */
+export function replaceAdaptations(bookId: string, adaptations: BookAiMetadata['adaptations']): void {
+  getDb().prepare('UPDATE book_ai_metadata SET adaptations = ? WHERE book_id = ?')
+    .run(JSON.stringify(adaptations), bookId);
+}
+
 export function getMetadata(bookId: string): BookAiMetadata | null {
   const row = getDb().prepare('SELECT * FROM book_ai_metadata WHERE book_id = ?').get(bookId) as
-    | { book_id: string; recommended_tags?: string; similar_works?: string; generated_by?: string; generated_at: string }
+    | { book_id: string; recommended_tags?: string; similar_works?: string; adaptations?: string; generated_by?: string; generated_at: string }
     | undefined;
   if (!row) return null;
   let tags: string[] = [];
   let similar: BookAiMetadata['similar_works'] = [];
+  let adaptations: BookAiMetadata['adaptations'] = [];
   try { if (row.recommended_tags) tags = JSON.parse(row.recommended_tags); } catch { /* ignore */ }
   try { if (row.similar_works) similar = JSON.parse(row.similar_works); } catch { /* ignore */ }
+  try { if (row.adaptations) adaptations = JSON.parse(row.adaptations); } catch { /* ignore */ }
   return {
     book_id: row.book_id,
     recommended_tags: Array.isArray(tags) ? tags : [],
     similar_works: Array.isArray(similar) ? similar : [],
+    adaptations: Array.isArray(adaptations) ? adaptations : [],
     generated_by: row.generated_by ?? null,
     generated_at: row.generated_at,
   };

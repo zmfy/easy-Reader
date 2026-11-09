@@ -121,10 +121,11 @@ export const aiManager = {
     return active.plugin.classifyBook(bookInfo, active.config);
   },
 
-  async chat(prompt: string, db: Database.Database): Promise<string> {
+  /** defaults：调用方给的默认参数（如推理强度），用户在设置里配置的值优先 */
+  async chat(prompt: string, db: Database.Database, defaults?: Record<string, string>): Promise<string> {
     const active = getActivePlugin(db);
     if (!active) throw new Error('未配置 AI 插件');
-    return active.plugin.chat(prompt, active.config);
+    return active.plugin.chat(prompt, { ...defaults, ...active.config });
   },
 
   async judgeDuplicates(

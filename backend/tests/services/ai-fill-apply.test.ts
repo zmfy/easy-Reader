@@ -32,7 +32,7 @@ function setupDb(overrides: Record<string, unknown> = {}): void {
       ai_fill_version INTEGER, ai_fill_status TEXT
     );
     CREATE TABLE book_ai_metadata (
-      book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT,
+      book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT, adaptations TEXT,
       generated_by TEXT, generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -114,6 +114,16 @@ describe('applyAiFill metadata', () => {
     expect(JSON.parse(meta().recommended_tags)).toEqual(['权谋']);
     expect(JSON.parse(meta().similar_works)).toEqual([{ title: '东周列国志', author: '冯梦龙' }]);
     expect(meta().generated_by).toBe('deepseek');
+  });
+
+  it('stores confirmed adaptations, and keeps existing ones when none are submitted', async () => {
+    const list = [{ type: '电视剧' as const, title: '三国演义', year: '1994', source: 'douban' as const, url: 'https://movie.douban.com/subject/1/' }];
+    await applyAiFill('b1', input({ adaptations: list }), 'deepseek');
+    expect(JSON.parse(meta().adaptations)).toEqual(list);
+    await applyAiFill('b1', input(), 'deepseek');
+    expect(JSON.parse(meta().adaptations)).toEqual(list);
+    await applyAiFill('b1', input({ adaptations: [] }), 'deepseek');
+    expect(JSON.parse(meta().adaptations)).toEqual([]);
   });
 
   it('marks the book as AI-filled at the current version', async () => {

@@ -7,6 +7,7 @@ import { DoubanCandidate, doubanSuggestList, fetchCoverThumbnailDataUri } from '
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { parseEditedFields } from './ai-batch-fill';
 import { cleanBookTitle } from '../utils/book-title';
+import { Adaptation, findAdaptations } from './adaptations';
 
 export { cleanBookTitle };
 
@@ -23,10 +24,13 @@ export interface AiFillPreview {
     title: string; author: string | null; summary: string | null; category: string | null;
     is_finished: boolean | null; cover_url: string | null;
     recommended_tags: string[]; similar_works: SimilarWork[];
+    adaptations: Adaptation[];
   };
   suggested: {
     author?: string; summary?: string; category?: string; is_finished?: boolean;
     recommended_tags: string[]; similar_works: SimilarWork[];
+    /** 改编作品：外部平台搜出的候选经 AI 筛选，每条都有来源链接 */
+    adaptations: Adaptation[];
     /** 各字段置信度：low 表示只凭书名和模型知识，前端默认不采用 */
     confidence: Partial<Record<LockableField, FillConfidence>>;
     /** 各字段依据（AI 说明的来源） */
@@ -77,8 +81,12 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const meta = extractMetadataFromAiResponse(info);
   const current = getMetadata(bookId);
 
-  // 豆瓣候选：用 AI 给出的书名检索；缩略图并发下载，失败的候选丢弃
-  const candidates = await doubanSuggestList(str(info.title) || cleanedTitle);
+  // 豆瓣封面候选与改编作品并行：都用 AI 给出的书名检索；缩略图并发下载，失败的候选丢弃
+  const lookupTitle = str(info.title) || cleanedTitle;
+  const [candidates, adaptations] = await Promise.all([
+    doubanSuggestList(lookupTitle),
+    findAdaptations({ title: lookupTitle, author: str(info.author) ?? book.author ?? undefined, summary }, db),
+  ]);
   const thumbnails = await Promise.all(candidates.map(c => fetchCoverThumbnailDataUri(c.pic)));
   const coverCandidates = candidates.flatMap((c, i) => (thumbnails[i] ? [{ ...c, thumbnail: thumbnails[i]! }] : []));
 
@@ -104,6 +112,7 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
       cover_url: book.cover_url ?? null,
       recommended_tags: current?.recommended_tags ?? [],
       similar_works: current?.similar_works ?? [],
+      adaptations: (current?.adaptations ?? []) as Adaptation[],
     },
     suggested: {
       ...(str(info.author) ? { author: str(info.author) } : {}),
@@ -112,6 +121,7 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
       is_finished: isFinished,
       recommended_tags: meta.tags,
       similar_works: meta.similar,
+      adaptations,
       confidence,
       evidence: evidenceNotes,
     },

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { buildAiFillPreview } from '../../src/services/ai-fill-preview';
 import { aiManager } from '../../src/ai/ai-manager';
+import { findAdaptations } from '../../src/services/adaptations';
 import { doubanSuggestList, fetchCoverThumbnailDataUri, downloadCover, fetchRating } from '../../src/utils/cover';
 
 let testDb: Database.Database;
@@ -12,6 +13,7 @@ jest.mock('../../src/utils/cover', () => ({
   fetchRating: jest.fn(),
   saveCoverFile: jest.fn(),
 }));
+jest.mock('../../src/services/adaptations', () => ({ findAdaptations: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../src/ai/ai-manager', () => ({
   aiManager: { fillBookInfo: jest.fn() },
   isAiConfigured: jest.fn().mockReturnValue(true),
@@ -33,7 +35,7 @@ function setupDb(): void {
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE book_ai_metadata (
-      book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT,
+      book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT, adaptations TEXT,
       generated_by TEXT, generated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
@@ -63,6 +65,16 @@ beforeEach(() => {
 });
 
 describe('buildAiFillPreview', () => {
+  it('returns current and suggested adaptations, looked up with the AI title and author', async () => {
+    const found = [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }];
+    (findAdaptations as jest.Mock).mockResolvedValueOnce(found);
+    testDb.prepare(`UPDATE book_ai_metadata SET adaptations = '[{"type":"电影","title":"赤壁"}]'`).run();
+    const p = await buildAiFillPreview('b1');
+    expect(p.suggested.adaptations).toEqual(found);
+    expect(p.current.adaptations).toEqual([{ type: '电影', title: '赤壁' }]);
+    expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '三国演义', author: '罗贯中', summary: '东汉末年' });
+  });
+
   it('returns per-field confidence and evidence notes', async () => {
     fill.mockResolvedValueOnce({
       author: '罗贯中', summary: '东汉末年', category: '历史',
