@@ -5,7 +5,9 @@ import { renderDefaultCoverSvg } from '../utils/default-cover';
 import {
   downloadCoverFromPic, fetchRating, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, saveCoverFile,
 } from '../utils/cover';
-import { replaceMetadata } from './book-ai-metadata';
+import { replaceAdaptations, replaceMetadata } from './book-ai-metadata';
+import { Adaptation, ADAPTATION_TYPES } from './adaptations';
+import { isAllowedAdaptationUrl } from '../utils/adaptation-sources';
 import { markFieldsAsEdited, stampFillVersion, unmarkFieldsAsEdited } from './ai-batch-fill';
 import { BookNotFoundError, cleanBookTitle, LockableField, SimilarWork } from './ai-fill-preview';
 
@@ -23,6 +25,8 @@ export interface AiFillApplyInput {
   is_finished?: boolean;
   recommended_tags: string[];
   similar_works: SimilarWork[];
+  /** 用户确认的改编作品；未提供时保留原有 */
+  adaptations?: Adaptation[];
   cover: CoverChoice;
   /** 选中豆瓣封面时为该候选的书目页，否则为第一个候选的；用于在书没有评分时抓取评分 */
   ratingSubjectUrl?: string;
@@ -31,6 +35,14 @@ export interface AiFillApplyInput {
   /** 预览返回的 AI 建议原样回传，用于区分「接受 AI 结果」与「手动修改」 */
   suggested: { author?: string; summary?: string; category?: string };
 }
+
+const adaptationSchema = z.object({
+  type: z.enum(ADAPTATION_TYPES),
+  title: z.string().trim().min(1).max(200),
+  year: z.string().trim().max(10).optional(),
+  source: z.enum(['douban', 'missevan']),
+  url: z.string().max(300).refine(isAllowedAdaptationUrl),
+});
 
 const similarWorkSchema = z.object({
   title: z.string().trim().min(1).max(100),
@@ -46,6 +58,7 @@ const aiFillApplySchema = z.object({
   is_finished: z.boolean().optional(),
   recommended_tags: z.array(z.string().trim().min(1).max(30)).max(20),
   similar_works: z.array(similarWorkSchema).max(20),
+  adaptations: z.array(adaptationSchema).max(30).optional(),
   cover: z.discriminatedUnion('type', [
     z.object({ type: z.literal('keep') }),
     z.object({ type: z.literal('douban'), pic: z.string().max(500) }),
@@ -62,7 +75,7 @@ const aiFillApplySchema = z.object({
 
 const FIELD_LABELS: Record<string, string> = {
   author: '作者', summary: '简介', category: '分类', is_finished: '连载状态',
-  recommended_tags: '推荐标签', similar_works: '类似作品', cover: '封面', coverTitle: '封面书名',
+  recommended_tags: '推荐标签', similar_works: '类似作品', adaptations: '改编作品', cover: '封面', coverTitle: '封面书名',
 };
 
 /** 校验应用请求体；失败时给出具体字段，方便用户在预览中修改 */
@@ -140,6 +153,7 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
     if (toLock.length > 0) markFieldsAsEdited(bookId, toLock);
     if (toUnlock.length > 0) unmarkFieldsAsEdited(bookId, toUnlock);
     replaceMetadata(bookId, input.recommended_tags, input.similar_works, generatedBy);
+    if (input.adaptations) replaceAdaptations(bookId, input.adaptations);
     db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(bookId);
     stampFillVersion(db, bookId);
   })();

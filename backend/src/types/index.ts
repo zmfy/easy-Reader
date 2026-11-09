@@ -308,6 +308,8 @@ export interface BookAiMetadata {
   book_id: string;
   recommended_tags: string[];
   similar_works: Array<{ title: string; author?: string; reason?: string }>;
+  /** 改编作品（见 services/adaptations.ts） */
+  adaptations: Array<{ type: string; title: string; year?: string; source: string; url: string }>;
   generated_by?: string | null;
   generated_at: string;
 }

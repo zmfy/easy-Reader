@@ -147,6 +147,17 @@
                 </li>
               </ul>
             </div>
+
+            <div v-if="aiMeta?.adaptations?.length" class="ai-meta-section">
+              <div class="summary-label">改编作品</div>
+              <ul class="similar-list">
+                <li v-for="a in aiMeta.adaptations" :key="a.url">
+                  <el-tag size="small" type="info">{{ a.type }}</el-tag>
+                  <a :href="a.url" target="_blank" rel="noopener noreferrer" class="similar-link adapt-link">{{ a.title }}</a>
+                  <span class="similar-author">{{ [a.year, ADAPTATION_SOURCE_LABELS[a.source]].filter(Boolean).join(' · ') }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -174,6 +185,7 @@ import { useShelfToggle } from '@/composables/useShelfToggle'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
 import { resolveBack } from '@/utils/page-back'
+import { ADAPTATION_SOURCE_LABELS } from '@/utils/ai-fill-form'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
 import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
@@ -713,5 +725,6 @@ watch(() => route.params.bookId, () => { fetchBook() })
   text-decoration: none;
 }
 .similar-link:hover { text-decoration: underline; }
+.adapt-link { margin-left: 6px; }
 .in-library-tag { margin-left: 6px; vertical-align: middle; }
 </style>

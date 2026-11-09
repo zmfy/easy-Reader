@@ -261,8 +261,19 @@ export interface BookAiMetadata {
   book_id: string
   recommended_tags: string[]
   similar_works: Array<{ title: string; author?: string; reason?: string }>
+  adaptations?: BookAdaptation[]
   generated_by?: string | null
   generated_at: string
+}
+
+/** 改编作品（与 backend/src/services/adaptations.ts 对应） */
+export type BookAdaptationType = '电影' | '电视剧' | '动画' | '广播剧' | '其他'
+export interface BookAdaptation {
+  type: BookAdaptationType
+  title: string
+  year?: string
+  source: 'douban' | 'missevan'
+  url: string
 }
 
 // ── 单本 AI 填充预览（与 backend/src/services/ai-fill-preview.ts / ai-fill-apply.ts 对应）──
@@ -285,10 +296,13 @@ export interface AiFillPreview {
     title: string; author: string | null; summary: string | null; category: string | null
     is_finished: boolean | null; cover_url: string | null
     recommended_tags: string[]; similar_works: SimilarWork[]
+    adaptations: BookAdaptation[]
   }
   suggested: {
     author?: string; summary?: string; category?: string; is_finished?: boolean
     recommended_tags: string[]; similar_works: SimilarWork[]
+    /** 改编作品：外部平台候选经 AI 筛选，每条有来源链接 */
+    adaptations: BookAdaptation[]
     /** 各字段置信度：low = 只凭书名和模型知识，默认不采用 */
     confidence?: Partial<Record<AiFillLockableField, AiFillConfidence>>
     /** 各字段依据 */
@@ -308,6 +322,7 @@ export interface AiFillApplyInput {
   is_finished?: boolean
   recommended_tags: string[]
   similar_works: SimilarWork[]
+  adaptations: BookAdaptation[]
   cover: AiFillCoverChoice
   ratingSubjectUrl?: string
   coverTitle?: string
