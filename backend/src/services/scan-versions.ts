@@ -5,7 +5,8 @@ import Database from 'better-sqlite3';
 //     HTML is escaped, both of which change the first-chapter text being hashed.
 export const FINGERPRINT_VERSION = 2;
 /** Bump when the AI-fill prompt/logic changes → forces a full re-fill next run. */
-export const AI_FILL_VERSION = 1;
+// v2: 填充改为依据文件内置书目信息 + 正文节选（含 epub/pdf/umd），低置信字段不自动写入
+export const AI_FILL_VERSION = 2;
 
 /** Algorithm version of fingerprints built before versioning existed. */
 export const LEGACY_FINGERPRINT_VERSION = 1;

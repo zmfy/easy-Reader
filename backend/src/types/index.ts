@@ -137,6 +137,18 @@ export interface ReaderPlugin {
   getProgress(): Promise<number>;
   /** Optional: release held resources when evicted from the plugin cache. */
   dispose?(): void;
+  /** Optional: 文件内置的书目信息（EPUB OPF / PDF 文档属性 / UMD 头部），供 AI 填充作依据 */
+  getMetadata?(): Promise<BookFileMetadata>;
+}
+
+export interface BookFileMetadata {
+  title?: string;
+  author?: string;
+  publisher?: string;
+  date?: string;
+  subjects?: string[];
+  description?: string;
+  isbn?: string;
 }
 
 export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill';

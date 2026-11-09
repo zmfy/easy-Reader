@@ -20,7 +20,7 @@ const pluginCache = new Map<string, CachedPlugin>();
 // book (chapters + content + assets on page open) share a single parse.
 const pendingLoads = new Map<string, Promise<ReaderPlugin>>();
 
-function createPlugin(format: string): ReaderPlugin {
+export function createPlugin(format: string): ReaderPlugin {
   switch (format.toLowerCase()) {
     case 'txt':  return new TxtParser();
     case 'epub': return new EpubParser();

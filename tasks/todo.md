@@ -463,3 +463,43 @@
 - [x] PDF 划线与批注（study；11-08 插入，计划 docs/superpowers/plans/2026-11-08-pdf-highlight.md）
 - [x] PWA 第一期 + HTTPS 自带证书（11-08 在 main 完成并合并进 study；官网教程待写）。原计划：PWA（main，再合并进 study）：manifest + Service Worker + 图标（vite-plugin-pwa）、「有新版本，点击刷新」提示、手机浏览器里的「安装到桌面」入口（http 访问时说明需要 HTTPS）；官网配套教程「装到手机桌面」+「从外网访问：DDNS / Tailscale / 内网穿透」
 - 候选：每日回顾（遗忘曲线）+ 微信推送（企业微信机器人 / Server 酱 / PushPlus Webhook）；微信小程序因域名白名单与类目资质，只做「API + 开源模板，用户自建」
+
+决定（用户）：分两期，第一期不做离线阅读；桌面名称跟随网站名称；启动进入上次读的书；新版本 / 没网提示对所有 HTTPS 访问者生效；图标由 Claude 设计
+
+- [x] 后端：/manifest.webmanifest 动态清单、GET /reader/last-read
+- [x] 图标：scripts/gen-icons.py 生成 favicon.svg 与各尺寸 PNG
+- [x] Service Worker（vite-plugin-pwa）、新版本提示、没网提示（含服务器连不上）
+- [x] /continue 启动路由、登录回跳（只允许站内路径）
+- [x] 用户菜单「安装到桌面」：系统安装框 / iOS 步骤 / 非 HTTPS 提示 / 不支持提示
+- [x] 合入 main（11-08 本地，与 feature/https 一起）
+- [ ] 官网教程「装到手机桌面」「从外网访问：DDNS / 证书 / Tailscale」
+# 使用自己的证书提供 HTTPS（11-08，main 上 feature/https）
+
+决定（用户）：只做软件供应商，不申请 / 续签证书；放文件与设置页上传两种都做；证书过期继续用、只提醒；PWA 分支与本分支一起合入 main
+
+- [x] 证书检查与存储、HTTPS 管理器（热更新、保留上一张可用证书、端口占用）
+- [x] 管理员接口 GET/PUT/DELETE /settings/https（不返回私钥）
+- [x] 设置页「HTTPS 证书」卡片、铃铛到期提醒
+- [x] docker-compose 8443:3443、README / DOCKERHUB / CHANGELOG
+- [x] 与 feature/pwa 一起合入 main（11-08 本地）
+
+# PWA / HTTPS 审查遗留的小问题（11-08，待定）
+
+- PWA：默认密码账号先去改密码 / 已登录访问 /login?redirect= 时回跳丢失；后台挂着的页面要冷启动才看到更新提示；未被 SW 接管的页面点「刷新」无反应；globPatterns 不含 mjs；short_name 可能截断组合 emoji；撤掉 PWA 需发 selfDestroying 版本
+- HTTPS：check() 合并调用时开关 / 上传可能返回旧状态（最多等 1 分钟轮询）；带密码私钥只提示「无法解析私钥」；只有 IP 的证书不显示地址；关闭「系统提醒」后铃铛隐藏证书提醒；通用 PUT /api/settings 改 https_enabled 不立即生效；开关关闭时经 API 上传只提示「证书已保存」
+
+# AI 填充准确率优化（第一步：有据可依）— main 分支，完成后合并到 study
+
+实测：《克莱因文集》(epub) 现逻辑 → 作者「误道者」/科幻/起点（全编造，113s）；
+带元数据+正文+分类表的新 prompt → 梅兰妮·克莱因/非虚构/心理学（全对，4.4s）。
+
+- [x] 1. ReaderPlugin 增加可选 `getMetadata()`：epub 读 OPF（作者/出版社/日期/主题词/简介/ISBN）、pdf 读文档信息字典、umd 读头部信息块（书名/作者/出版社/类型）、txt 无内置元数据
+- [x] 2. 统一证据构造 `buildBookEvidence(book)`：内置元数据 + 正文节选（txt 读开头；epub/pdf/umd 经插件取前几章，含目录/版权页）+ txt 开头「作者：/内容简介」启发式；扫描版 PDF 无文字层则节选为空
+- [x] 3. 重写 `fill-prompt.ts`：去掉「网络小说」预设；依据优先级 元数据 > 正文 > 模型知识；书库已有分类表；返回 `book_type` / `confidence` / `evidence`；平台/连载时间仅网络小说填写
+- [x] 4. 预览与批量填充：低置信字段预览中默认不勾选并显示依据；批量填充不自动写入低置信字段
+- [x] 5. MiniMax 推理强度默认 low（设置可调高）
+- [x] 6. 验证：单测（各格式元数据解析、prompt 构造、置信度过滤）；实测克莱因文集 + 书库 txt/umd/pdf 各一本，网文效果不退化
+- [ ] 7. 合并到 study 分支
+
+实测（真实 MiniMax，每本 5–9s）：克莱因文集/封神演义(umd)/水浒传/温暖的人皮/吴思三部曲/屠格涅夫文集/柯南(纯图 epub) 均正确；
+合集按整套命名；「傲慢与偏见.pdf」正文实为张德芬《遇见未知的自己》，「温暖的人皮」正文署名李西闽（库中作者为焚琴煮鹤）。

@@ -15,7 +15,7 @@
 
 import fs from 'fs';
 import zlib from 'zlib';
-import { ReaderPlugin } from '../types';
+import { BookFileMetadata, ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
 
 interface ChapterMeta {
@@ -33,6 +33,29 @@ function tryDecompress(data: Buffer): Buffer | null {
   try { return zlib.inflateSync(data); } catch { /* empty */ }
   try { return zlib.inflateRawSync(data); } catch { /* empty */ }
   return null;
+}
+
+/**
+ * 解析文件头部的书目信息块：23 + type(2字节LE) + flag(1) + 总长度(1字节，含5字节头) + UTF-16LE 数据。
+ * 0x02 书名、0x03 作者、0x04/0x05 年/月、0x07 类型、0x08 出版者；遇到非 23 块即停止。
+ */
+export function parseUmdHeader(buf: Buffer): BookFileMetadata {
+  const fields: Record<number, string> = {};
+  let i = 4;
+  while (i + 5 <= buf.length && i < 4096 && buf[i] === 0x23) {
+    const type = buf.readUInt16LE(i + 1);
+    const len = buf[i + 4];
+    if (len < 5) break;
+    if (type >= 0x02 && type <= 0x08) fields[type] = buf.slice(i + 5, i + len).toString('utf16le').trim();
+    i += len;
+  }
+  const meta: BookFileMetadata = {};
+  if (fields[0x02]) meta.title = fields[0x02];
+  if (fields[0x03]) meta.author = fields[0x03];
+  if (fields[0x08]) meta.publisher = fields[0x08];
+  if (/^\d{4}$/.test(fields[0x04] ?? '')) meta.date = fields[0x04] + (/^\d{1,2}$/.test(fields[0x05] ?? '') ? `-${fields[0x05]}` : '');
+  if (fields[0x07]) meta.subjects = [fields[0x07]];
+  return meta;
 }
 
 /**
@@ -113,6 +136,7 @@ export class UmdParser implements ReaderPlugin {
   format = 'umd';
   private chapters: ChapterMeta[] = [];
   private fullText = '';
+  private metadata: BookFileMetadata = {};
 
   async load(filePath: string): Promise<void> {
     const buf = fs.readFileSync(filePath);
@@ -121,6 +145,7 @@ export class UmdParser implements ReaderPlugin {
     if (buf.length < 4 || buf[0] !== 0x89 || buf[1] !== 0x9B || buf[2] !== 0x9A) {
       throw new Error('无效的UMD文件（魔数不匹配）');
     }
+    this.metadata = parseUmdHeader(buf);
 
     // 在文件前部搜索 23 84 块，获取章节标题和正文起始位置
     let chapterTitles: string[] = [];
@@ -231,5 +256,9 @@ export class UmdParser implements ReaderPlugin {
 
   async getProgress(): Promise<number> {
     return 0;
+  }
+
+  async getMetadata(): Promise<BookFileMetadata> {
+    return this.metadata;
   }
 }

@@ -89,7 +89,8 @@ const minmaxPlugin: AiPlugin = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.apiKey}`,
       },
-      body: requestBody(prompt, config),
+      // 填充是依据书目信息整理，不需要深度推理：未设置推理强度时用 low（默认 max 一本要一两分钟）
+      body: requestBody(prompt, { reasoningEffort: 'low', ...config }),
     });
 
     if (!resp.ok) throw await apiError(resp, config);
