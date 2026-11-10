@@ -45,12 +45,12 @@
 
       <!-- 窄屏底栏：顶栏只留书名，功能按钮放这里；与顶栏一起显隐（点屏幕中间） -->
       <nav class="reader-dock" :class="{ hidden: !toolbarVisible, compact: dockCompact }" aria-label="阅读工具" @click.stop>
-        <button class="dock-btn" @click="openToc('toc')"><IconList :size="22" :stroke-width="1.75" /><span>目录</span></button>
-        <button class="dock-btn" @click="openToc('bookmark')"><IconBookmark :size="22" :stroke-width="1.75" /><span>书签</span></button>
+        <button class="dock-btn" aria-label="目录" @click="openToc('toc')"><IconList :size="22" :stroke-width="1.75" /><span>目录</span></button>
+        <button class="dock-btn" aria-label="书签" @click="openToc('bookmark')"><IconBookmark :size="22" :stroke-width="1.75" /><span>书签</span></button>
         <button v-if="listenAvailable" class="dock-btn" :class="{ on: listenActive }" :aria-label="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="22" :stroke-width="1.75" /><span>听书</span><i v-if="ttsReady" class="ai-badge">AI</i></button>
-        <button v-if="aiReady" class="dock-btn" @click="openAsk"><IconSparkles :size="22" :stroke-width="1.75" /><span>问书</span></button>
+        <button v-if="aiReady" class="dock-btn" aria-label="问书（AI）" @click="openAsk"><IconSparkles :size="22" :stroke-width="1.75" /><span>问书</span></button>
         <button class="dock-btn" :aria-label="nightMode ? '切换到日间（靛青）' : '切换到夜间'" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="22" :stroke-width="1.75" /><span>{{ nightMode ? '日间' : '夜间' }}</span></button>
-        <button class="dock-btn" @click="settingsPanelVisible = true"><IconSettings :size="22" :stroke-width="1.75" /><span>设置</span></button>
+        <button class="dock-btn" aria-label="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="22" :stroke-width="1.75" /><span>设置</span></button>
       </nav>
 
       <div class="paper" :class="{ 'pdf-wrapper': isPdfRender, listening: listenActive }" :style="paperStyle">
