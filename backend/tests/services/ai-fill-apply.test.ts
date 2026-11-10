@@ -29,7 +29,7 @@ function setupDb(overrides: Record<string, unknown> = {}): void {
       id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT, summary TEXT, category TEXT,
       cover_url TEXT, rating REAL, file_path TEXT NOT NULL, file_format TEXT NOT NULL,
       is_finished INTEGER DEFAULT 0, manually_edited_fields TEXT,
-      ai_fill_version INTEGER, ai_fill_status TEXT
+      ai_fill_version INTEGER, ai_fill_status TEXT, ai_reviewed_at DATETIME
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
@@ -132,6 +132,7 @@ describe('applyAiFill metadata', () => {
     await applyAiFill('b1', input());
     expect(row().ai_fill_status).toBe('filled');
     expect(row().ai_fill_version).toBe(AI_FILL_VERSION);
+    expect(row().ai_reviewed_at).not.toBeNull();   // 审核过，之后批量填充跳过
   });
 });
 

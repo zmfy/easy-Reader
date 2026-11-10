@@ -225,7 +225,14 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
   return updated;
 }
 
+/** 忽略建议；忽略也算审核过，之后批量填充跳过这些书 */
 export function dismissSuggestions(db: Database.Database, bookIds: string[]): number {
   if (bookIds.length === 0) return 0;
-  return db.prepare(`DELETE FROM ai_suggestions WHERE book_id IN (${bookIds.map(() => '?').join(',')})`).run(...bookIds).changes;
+  const marks = bookIds.map(() => '?').join(',');
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE books SET ai_reviewed_at = CURRENT_TIMESTAMP WHERE id IN (SELECT book_id FROM ai_suggestions WHERE book_id IN (${marks}))`
+    ).run(...bookIds);
+    return db.prepare(`DELETE FROM ai_suggestions WHERE book_id IN (${marks})`).run(...bookIds).changes;
+  })();
 }

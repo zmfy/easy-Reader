@@ -165,7 +165,8 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
     db.prepare('DELETE FROM ai_suggestions WHERE book_id = ?').run(bookId);
     replaceMetadata(bookId, input.recommended_tags, input.similar_works, generatedBy);
     if (input.adaptations) replaceAdaptations(bookId, input.adaptations);
-    db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(bookId);
+    // 审核过：之后批量填充跳过这本（单本书页仍可重新填充）
+    db.prepare("UPDATE books SET ai_fill_status = 'filled', ai_reviewed_at = CURRENT_TIMESTAMP WHERE id = ?").run(bookId);
     stampFillVersion(db, bookId);
   })();
 

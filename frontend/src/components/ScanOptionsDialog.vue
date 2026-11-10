@@ -48,7 +48,7 @@
               <el-button size="small" type="warning" plain :disabled="!aiConfigured" @click="onResetAll">重置全部填充记录</el-button>
             </div>
             <div class="reset-hint">空字段且依据明确的结果直接写入；其余结果（改已有内容、低置信、标签、改编作品）和「文件名与正文不符」提示进书库的「AI 建议待确认」</div>
-            <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍</div>
+            <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍。审核过的书(待确认页采纳 / 忽略、单本书页确认填充)批量填充会跳过,「重置全部填充记录」后才会重填</div>
           </div>
         </el-form-item>
 
@@ -195,7 +195,7 @@ async function onResetFailed(): Promise<void> {
 
 async function onResetAll(): Promise<void> {
   try {
-    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败)。下次带 AI 填充的扫描会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败),审核过的书也会清掉审核标记、重新参与批量填充。下次带 AI 填充的扫描会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
   } catch { return }
   try {
     const resp = await libraryApi.aiFillResetAll()

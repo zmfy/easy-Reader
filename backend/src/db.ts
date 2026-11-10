@@ -367,6 +367,18 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
   `);
 
+  // 已审核：待确认页采纳 / 忽略、单本书页确认填充过的书，批量填充跳过；「重置全部填充记录」时清掉
+  let reviewedAdded = false;
+  try { database.exec('ALTER TABLE books ADD COLUMN ai_reviewed_at DATETIME'); reviewedAdded = true; } catch { /* column exists */ }
+  if (reviewedAdded) {
+    // 刚加列：按操作日志补记以前在待确认页采纳过的书（以前的「忽略」没有日志，补不上）
+    database.exec(
+      `UPDATE books SET ai_reviewed_at = (
+         SELECT MAX(a.created_at) FROM audit_log a WHERE a.action = 'ai_suggestion_apply' AND a.resource_id = books.id)
+       WHERE id IN (SELECT resource_id FROM audit_log WHERE action = 'ai_suggestion_apply')`
+    );
+  }
+
   // === Plan 1: recover stale running tasks on startup ===
   database.prepare(
     "UPDATE scan_tasks SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE status = 'running'"
