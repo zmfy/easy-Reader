@@ -68,6 +68,7 @@ describe('removeOrphanBooks', () => {
       CREATE TABLE books (id TEXT PRIMARY KEY, status TEXT, duplicate_of TEXT);
       CREATE TABLE shelf (id TEXT, user_id TEXT, book_id TEXT);
       CREATE TABLE reading_progress (id TEXT, user_id TEXT, book_id TEXT);
+      CREATE TABLE reading_history (user_id TEXT, book_id TEXT, opened_at TEXT);
       CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
       CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
       CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
@@ -96,6 +97,7 @@ describe('removeOrphanBooks at scale', () => {
       CREATE TABLE books (id TEXT PRIMARY KEY, status TEXT, duplicate_of TEXT);
       CREATE TABLE shelf (id TEXT, user_id TEXT, book_id TEXT);
       CREATE TABLE reading_progress (id TEXT, user_id TEXT, book_id TEXT);
+      CREATE TABLE reading_history (user_id TEXT, book_id TEXT, opened_at TEXT);
       CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
       CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
       CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);

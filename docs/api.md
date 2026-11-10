@@ -295,7 +295,7 @@
 
 `cover_url` 为 `null` 时，客户端自行显示默认封面。
 
-## 5. 书架
+## 5. 书架与阅读历史
 
 每个用户有自己的书架。
 
@@ -330,6 +330,37 @@
 ### DELETE /api/v1/shelf/:bookId
 
 不在书架中时返回 404。
+
+### 阅读历史
+
+和书架不同，阅读历史不用手动添加：客户端每次打开一本书阅读时调用一次「记一次打开」，历史按最近打开排序。历史只记打开时间，移除、清空历史都不影响阅读进度和书架。
+
+#### GET /api/v1/history
+
+参数 `page`（默认 1）、`pageSize`（默认 30，最大 100），分页格式见 1.3。最近打开的在前：
+
+```json
+[{
+  "book_id": "4807…", "opened_at": "2026-11-10 07:41:05.123",
+  "title": "西游记", "display_title": "西游记", "author": "吴承恩",
+  "cover_url": "/covers/4807….jpg", "category": "玄幻", "file_format": "umd",
+  "chapter_index": 12, "chapter_title": "第十三回 …", "progress_updated_at": "2026-11-05 04:15:19"
+}]
+```
+
+`opened_at` 精确到毫秒（UTC）。没有阅读进度时，`chapter_index` 等进度字段为 `null`；已从书库删除的书不列出。
+
+#### POST /api/v1/history/:bookId
+
+记一次打开（已在历史中则刷新打开时间、排到最前）。书不存在返回 404。
+
+#### DELETE /api/v1/history/:bookId
+
+从历史移除一本；不在历史中返回 404。
+
+#### DELETE /api/v1/history
+
+清空自己的阅读历史，返回 `{ "removed": 12 }`。
 
 ## 6. 阅读
 

@@ -546,3 +546,10 @@
 - [x] 4. 验证：单测、tsc/vue-tsc/vitest；合并 study、重建开发容器
 
 验证：后端 634、前端 159 通过；容器库副本跑迁移，按操作日志补记 37 本（= 采纳过的书数），全库进度 42/42。
+
+# 阅读历史
+
+- [x] 1. reading_history 表（按阅读进度回填）、services/reading-history.ts、/api/history（列表分页、记录、移除、清空）、删书 / 删用户清理
+- [x] 2. 阅读器进入即记录；「历史」页（继续阅读、详情、移除、清空、加载更多）；菜单「历史」
+- [x] 3. docs/api.md、CHANGELOG
+- [x] 4. 验证：jest / vue-tsc / vitest；容器实测（TXT、EPUB、原生 PDF 打开顺序、回到上次位置、移除清空、手机布局）

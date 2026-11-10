@@ -446,6 +446,7 @@ import { readerKeyAction, pageScrollDistance, alignedPageDistance, tapZoneAction
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, isEinkTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
+import { historyApi } from '@/api/history'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
@@ -1359,6 +1360,8 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   loadBookInfo()
   refreshShelf()
+  // 阅读历史：一进来就记（含原生 PDF、查看模式），只记打开时间，不改阅读位置
+  historyApi.record(bookId).catch(() => {})
   const aiStatus = settingsApi.getAiStatus().then(r => {
     aiReady.value = !!r.data.data?.configured
     ttsReady.value = !!r.data.data?.tts_enabled
