@@ -2919,6 +2919,12 @@ onUnmounted(() => {
   border-radius: 0;
   box-shadow: none;
 }
+/* 窄屏纸张占满宽度：去掉左右黑框（否则贴着屏幕边缘成两条黑线）；墨水屏靠点按翻页，隐藏滚动条（位置看顶栏进度条） */
+@media (max-width: 768px) {
+  .reader--eink .paper { border: none; }
+}
+.reader--eink .reader-content { scrollbar-width: none; }
+.reader--eink .reader-content::-webkit-scrollbar { display: none; }
 .reader--eink .side-tools {
   border: 1px solid #000000;
   border-radius: 8px;

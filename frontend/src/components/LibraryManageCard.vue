@@ -1,5 +1,6 @@
 <template>
-  <section class="section-card manage-card" aria-label="书库管理">
+  <!-- 书库为空：展开成大卡片，引导第一次导入 -->
+  <section v-if="expanded" class="section-card manage-card" aria-label="书库管理">
     <div class="manage-main">
       <div class="manage-text">
         <h2 class="manage-title">书库管理</h2>
@@ -34,13 +35,49 @@
     <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
     <AiFillDialog v-model="showFillDialog" />
   </section>
+
+  <!-- 平时：标题旁一个按钮，点开是扫描导入、AI 填充和待办；有待办时带角标 -->
+  <span v-else class="manage-compact">
+    <el-dropdown trigger="click" placement="bottom-start" @command="onCommand">
+      <el-badge :value="badgeCount" :hidden="badgeCount === 0" class="manage-badge">
+        <el-button type="primary" class="manage-trigger" :loading="scanStore.isRunning">
+          <IconRefresh v-if="!scanStore.isRunning" :size="16" :stroke-width="1.9" />
+          <span>导入与管理</span>
+          <IconChevronDown :size="14" :stroke-width="2" />
+        </el-button>
+      </el-badge>
+      <template #dropdown>
+        <el-dropdown-menu class="manage-menu">
+          <el-dropdown-item command="scan">
+            <IconRefresh :size="16" :stroke-width="1.9" /><span>扫描导入</span>
+            <span class="menu-meta">导入 NAS 里的新书</span>
+          </el-dropdown-item>
+          <el-dropdown-item command="fill" :disabled="scanStore.isRunning">
+            <IconSparkles :size="16" :stroke-width="1.9" /><span>AI 填充</span>
+            <span v-if="fillMeta" class="menu-meta" :class="{ 'menu-meta--warn': fillPaused }">{{ fillMeta }}</span>
+          </el-dropdown-item>
+          <el-dropdown-item
+            v-for="(t, i) in actionTodos"
+            :key="t.key"
+            :command="`todo:${t.key}`"
+            :divided="i === 0"
+            :class="{ 'menu-todo--warn': t.warn }"
+          >
+            <span>{{ t.label }}</span><IconChevronRight :size="14" :stroke-width="2" class="menu-arrow" />
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
+    <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
+    <AiFillDialog v-model="showFillDialog" />
+  </span>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { IconChevronRight, IconRefresh, IconSparkles } from '@tabler/icons-vue'
+import { IconChevronDown, IconChevronRight, IconRefresh, IconSparkles } from '@tabler/icons-vue'
 import ScanOptionsDialog from './ScanOptionsDialog.vue'
 import AiFillDialog from './AiFillDialog.vue'
 import { libraryApi } from '@/api/library'
@@ -49,9 +86,11 @@ import { useScanTaskStore } from '@/stores/scan-task'
 import type { AiFillStatus, ScanBatch, ScanStartOptions } from '@/types'
 
 /**
- * 书库页顶部的管理区（仅管理员）：扫描导入、AI 填充两个入口，以及待审核批次、AI 建议待确认、填充进度等待办。
+ * 书库管理入口（仅管理员）：扫描导入、AI 填充，以及待审核批次、AI 建议待确认、填充进度等待办。
+ * expanded：书库为空时展开成大卡片引导第一次导入；平时是标题旁的「导入与管理」按钮 + 下拉菜单，有待办带角标。
  * 扫描 / 填充任务结束时通知书库页刷新书目。
  */
+defineProps<{ expanded?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const router = useRouter()
@@ -89,6 +128,24 @@ const todos = computed<Todo[]>(() => {
   }
   return list
 })
+
+/** 下拉菜单：需要处理的待办（填充进度放在「AI 填充」那一项后面显示） */
+const actionTodos = computed(() => todos.value.filter(t => t.key !== 'fill'))
+const fillPaused = computed(() => fillStatus.value?.last_task?.status === 'paused')
+const fillMeta = computed(() => {
+  const f = fillStatus.value
+  if (!f || f.total === 0) return ''
+  if (f.remaining === 0) return '已全部填充'
+  return `${fillPaused.value ? '已暂停 · ' : ''}已填 ${f.done} / ${f.total}`
+})
+/** 角标：要去处理的事（待审核批次、待确认建议、填充暂停） */
+const badgeCount = computed(() => actionTodos.value.length + (fillPaused.value && (fillStatus.value?.remaining ?? 0) > 0 ? 1 : 0))
+
+function onCommand(cmd: string): void {
+  if (cmd === 'scan') void handleScan()
+  else if (cmd === 'fill') showFillDialog.value = true
+  else todos.value.find(t => `todo:${t.key}` === cmd)?.action()
+}
 
 async function refreshPendingBatches(): Promise<void> {
   try {
@@ -225,6 +282,16 @@ onMounted(refreshAll)
   color: var(--warning);
 }
 .todo-chip--warn:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
+
+/* 平时：标题旁的按钮 */
+.manage-compact { display: inline-flex; align-items: center; }
+.manage-trigger :deep(> span) { display: inline-flex; align-items: center; gap: 6px; }
+.manage-badge :deep(.el-badge__content) { z-index: 1; }
+.menu-meta { margin-left: 10px; font-size: 12px; color: var(--text-2); }
+.menu-meta--warn { color: var(--warning); }
+:global(.manage-menu .el-dropdown-menu__item) { gap: 6px; min-width: 220px; }
+:global(.manage-menu .menu-arrow) { margin-left: auto; }
+:global(.manage-menu .menu-todo--warn) { color: var(--warning); }
 
 /* 手机：两个按钮各占一半，并排 */
 @media (max-width: 640px) {

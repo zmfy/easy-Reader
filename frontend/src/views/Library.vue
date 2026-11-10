@@ -1,11 +1,14 @@
 <template>
   <DefaultLayout>
     <div class="library-page">
-      <LibraryManageCard v-if="authStore.isAdmin" @changed="fetchBooks" />
+      <!-- 书库为空：管理入口展开成大卡片，引导第一次导入 -->
+      <LibraryManageCard v-if="authStore.isAdmin && libraryEmpty" expanded @changed="fetchBooks" />
       <div class="page-header">
         <div class="header-left">
           <h1 class="page-title">书库</h1>
           <span class="book-count">{{ pagination.total }} 本</span>
+          <!-- 平时：标题旁的「导入与管理」按钮，不占地方 -->
+          <LibraryManageCard v-if="authStore.isAdmin && !libraryEmpty" @changed="fetchBooks" />
         </div>
         <div class="header-actions">
           <el-input
@@ -99,7 +102,7 @@
       <div v-else-if="books.length === 0" class="empty-state">
         <IconBooks class="empty-icon" :size="48" :stroke-width="1.5" />
         <div class="empty-state-title">书库空空如也</div>
-        <div class="empty-state-desc">{{ authStore.isAdmin ? '点上方「扫描导入」，把 NAS 书库目录里的小说导入进来' : '管理员导入书籍后会显示在这里' }}</div>
+        <div class="empty-state-desc">{{ authStore.isAdmin ? (libraryEmpty ? '点上方「扫描导入」，把 NAS 书库目录里的小说导入进来' : '没有符合条件的书') : '管理员导入书籍后会显示在这里' }}</div>
       </div>
 
       <div v-else class="books-grid">
@@ -131,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { IconSearch, IconHelpCircle, IconFilter, IconBooks } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -214,6 +217,10 @@ function resolveListParams(): ListParams {
   return { ...base, search: raw || undefined }
 }
 
+// 书库真的是空的（不是搜索 / 筛选没结果）：管理入口展开成大卡片
+const loadedOnce = ref(false)
+const libraryEmpty = computed(() => loadedOnce.value && pagination.total === 0 && !searchQuery.value.trim() && !selectedCategory.value)
+
 // 请求序号：搜索 / 切换条件较快时，只采用最后一次请求的结果，避免慢响应覆盖新结果
 let fetchSeq = 0
 
@@ -226,6 +233,7 @@ async function fetchBooks() {
     if (seq !== fetchSeq) return
     books.value = booksResp.data.data
     Object.assign(pagination, booksResp.data.pagination)
+    loadedOnce.value = true
   } finally {
     if (seq === fetchSeq) loading.value = false
   }
@@ -290,7 +298,7 @@ onMounted(fetchCategories)
 
 .header-left {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
 }
 
