@@ -36,11 +36,8 @@
                 全书库已填充 <strong>{{ fillStatus.done }}</strong> / {{ fillStatus.total }} 本<template v-if="fillStatus.remaining > 0">，还剩 <strong>{{ fillStatus.remaining }}</strong> 本</template>
               </div>
               <div v-if="fillStatus.last_task?.status === 'paused'" class="fill-paused">上次已暂停：{{ fillStatus.last_task.error }}</div>
-              <div v-if="fillStatus.remaining > 0" class="fill-actions">
-                <el-button size="small" type="primary" plain :loading="startingFill" @click="onContinueFill">
-                  {{ fillStatus.last_task?.status === 'paused' ? '继续填充' : '只做 AI 填充' }}
-                </el-button>
-                <span class="reset-hint">不重新扫描文件，从没填充过的书接着处理；每 500 本一批，完成一批即可去确认</span>
+              <div v-if="fillStatus.remaining > 0" class="reset-hint">
+                底部「{{ fillLabel }}」不重新扫描文件，从没填充过的书接着处理；每 500 本一批，完成一批即可去确认
               </div>
             </div>
             <div class="reset-row">
@@ -65,6 +62,10 @@
 
       <template #footer>
         <el-button @click="visible = false">取消</el-button>
+        <el-button
+          v-if="aiConfigured && fillStatus && fillStatus.remaining > 0"
+          type="primary" plain :loading="startingFill" @click="onContinueFill"
+        >{{ fillLabel }}</el-button>
         <el-button type="primary" @click="onStartScan">开始扫描</el-button>
       </template>
     </el-dialog>
@@ -135,6 +136,7 @@ watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate();
 const scanStore = useScanTaskStore()
 const fillStatus = ref<AiFillStatus | null>(null)
 const startingFill = ref(false)
+const fillLabel = computed(() => fillStatus.value?.last_task?.status === 'paused' ? '继续填充' : '只做 AI 填充')
 
 async function refreshFillStatus(): Promise<void> {
   try {
@@ -225,7 +227,6 @@ async function onResetAll(): Promise<void> {
   border-radius: var(--radius-sm);
 }
 .fill-paused { font-size: 12px; color: var(--warning); }
-.fill-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 6px; }
 .reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
 .ai-disabled-hint { font-size: 12px; margin-bottom: 6px; padding: 6px 10px; line-height: 1.5; }
 .tier-icon { vertical-align: -2px; margin-right: 2px; color: var(--warning); }
