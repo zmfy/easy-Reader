@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
 import { saveCoverFile } from '../utils/cover';
-import { cleanBookTitle } from '../utils/book-title';
+import { coverTitle } from '../utils/book-title';
 
 /**
  * 默认封面文件：豆瓣找不到封面时（批量填充）、用户在预览里选「默认封面」时（单本应用）、
@@ -19,7 +19,7 @@ export function createDefaultCover(
   override: { title?: string | null; author?: string | null; category?: string | null } = {},
 ): string {
   const svg = renderDefaultCoverSvg({
-    title: override.title?.trim() || cleanBookTitle(book.title),
+    title: override.title?.trim() || coverTitle(book.title),
     author: override.author ?? book.author,
     category: override.category ?? book.category,
   });
