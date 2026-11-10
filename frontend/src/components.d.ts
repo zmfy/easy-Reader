@@ -53,6 +53,7 @@ declare module 'vue' {
     HighlightMenu: typeof import('./components/HighlightMenu.vue')['default']
     HttpsCertCard: typeof import('./components/HttpsCertCard.vue')['default']
     InstallHelpDialog: typeof import('./components/InstallHelpDialog.vue')['default']
+    LibraryManageCard: typeof import('./components/LibraryManageCard.vue')['default']
     MindExpandPanel: typeof import('./components/MindExpandPanel.vue')['default']
     MindMapCanvas: typeof import('./components/MindMapCanvas.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']

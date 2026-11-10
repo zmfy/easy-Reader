@@ -1,28 +1,7 @@
 <template>
   <DefaultLayout>
     <div class="library-page">
-      <el-alert
-        v-if="pendingBatch && authStore.isAdmin"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="batch-alert"
-      >
-        存在未处理的扫描批次
-        <el-button link type="primary" @click="$router.push(`/library/scan-batches/${pendingBatch.id}`)">
-          立即审核
-        </el-button>
-      </el-alert>
-      <el-alert
-        v-if="suggestionCount > 0 && authStore.isAdmin"
-        type="info"
-        show-icon
-        :closable="false"
-        class="batch-alert"
-      >
-        有 {{ suggestionCount }} 本书的 AI 建议待确认
-        <el-button link type="primary" @click="$router.push('/library/ai-suggestions')">去处理</el-button>
-      </el-alert>
+      <LibraryManageCard v-if="authStore.isAdmin" @changed="fetchBooks" />
       <div class="page-header">
         <div class="header-left">
           <h1 class="page-title">书库</h1>
@@ -105,27 +84,6 @@
             </div>
           </el-popover>
         </div>
-        <div v-if="authStore.isAdmin" class="header-buttons">
-          <el-button
-            class="scan-btn fill-btn"
-            :disabled="scanStore.isRunning"
-            title="AI 填充"
-            @click="showFillDialog = true"
-          >
-            <IconSparkles class="scan-icon" :size="16" :stroke-width="1.75" />
-            <span class="btn-text">AI 填充</span>
-          </el-button>
-          <el-button
-            type="primary"
-            class="scan-btn"
-            :loading="scanStore.isRunning"
-            title="扫描导入"
-            @click="handleScan"
-          >
-            <IconRefresh v-if="!scanStore.isRunning" class="scan-icon" :size="16" :stroke-width="1.75" />
-            <span class="btn-text">扫描导入</span>
-          </el-button>
-        </div>
       </div>
 
       <div v-if="loading" class="loading-grid">
@@ -141,7 +99,7 @@
       <div v-else-if="books.length === 0" class="empty-state">
         <IconBooks class="empty-icon" :size="48" :stroke-width="1.5" />
         <div class="empty-state-title">书库空空如也</div>
-        <div class="empty-state-desc">点击「扫描导入」将 NAS 中的小说导入书库</div>
+        <div class="empty-state-desc">{{ authStore.isAdmin ? '点上方「扫描导入」，把 NAS 书库目录里的小说导入进来' : '管理员导入书籍后会显示在这里' }}</div>
       </div>
 
       <div v-else class="books-grid">
@@ -167,57 +125,28 @@
         />
       </div>
 
-      <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
-      <AiFillDialog v-if="authStore.isAdmin" v-model="showFillDialog" />
 
     </div>
   </DefaultLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive, watch } from 'vue'
-import { IconSearch, IconHelpCircle, IconFilter, IconRefresh, IconBooks, IconSparkles } from '@tabler/icons-vue'
+import { ref, onMounted, reactive } from 'vue'
+import { IconSearch, IconHelpCircle, IconFilter, IconBooks } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
-import ScanOptionsDialog from '@/components/ScanOptionsDialog.vue'
-import AiFillDialog from '@/components/AiFillDialog.vue'
+import LibraryManageCard from '@/components/LibraryManageCard.vue'
 import { libraryApi } from '@/api/library'
-import { scanBatchesApi } from '@/api/scan-batches'
 import { useAuthStore } from '@/stores/auth'
-import { useScanTaskStore } from '@/stores/scan-task'
 import { deleteBookWithPrompts } from '@/composables/useBookDelete'
-import type { Book, ScanStartOptions, ScanBatch } from '@/types'
+import type { Book } from '@/types'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const scanStore = useScanTaskStore()
-
-const showScanDialog = ref(false)
-const showFillDialog = ref(false)
-const pendingBatch = ref<ScanBatch | null>(null)
-
-const suggestionCount = ref(0)
-async function refreshSuggestionCount(): Promise<void> {
-  if (!authStore.isAdmin) return
-  try {
-    suggestionCount.value = (await libraryApi.aiSuggestionCount()).data.data?.count ?? 0
-  } catch {
-    suggestionCount.value = 0
-  }
-}
-
-async function refreshPendingBatch(): Promise<void> {
-  try {
-    const resp = await scanBatchesApi.list('pending')
-    pendingBatch.value = resp.data.data![0] ?? null
-  } catch {
-    pendingBatch.value = null
-  }
-}
 
 const books = ref<Book[]>([])
 const loading = ref(false)
@@ -340,58 +269,8 @@ function debouncedSearch() {
   }, 300)
 }
 
-async function handleScan(): Promise<void> {
-  // Sync from server before deciding — ScanProgressBar polling may have stopped
-  await scanStore.refresh()
-  if (scanStore.isRunning) {
-    if (!scanStore.isPolling) scanStore.startPolling()
-    ElMessage.info('已有扫描任务进行中，进度条已显示在顶部')
-    return
-  }
-  await refreshPendingBatch()
-  if (pendingBatch.value) {
-    ElMessageBox.alert(`存在未处理的待审核批次（${pendingBatch.value.id.slice(0,8)}），请先处理后再扫描。`, '提示', {
-      confirmButtonText: '去处理',
-      callback: () => router.push(`/library/scan-batches/${pendingBatch.value!.id}`),
-    })
-    return
-  }
-  showScanDialog.value = true
-}
-
-async function onScanConfirm(options: ScanStartOptions): Promise<void> {
-  try {
-    await scanStore.startScan(options)
-    ElMessage.success('扫描任务已启动')
-  } catch (err: unknown) {
-    const e = err as { response?: { status?: number; data?: { code?: string } } }
-    if (e.response?.status === 409) {
-      if (e.response.data?.code === 'PENDING_BATCH') {
-        ElMessage.warning('请先处理待审核批次')
-        await refreshPendingBatch()
-      } else {
-        ElMessage.warning('已有扫描任务在运行')
-        void scanStore.refresh()
-      }
-    } else {
-      ElMessage.error('扫描失败')
-    }
-  }
-}
-
-// 任务完成后刷新书库、pending batch 与待确认数量
-watch(() => scanStore.activeTask?.status, (newStatus, oldStatus) => {
-  if (oldStatus === 'running' && newStatus !== 'running') {
-    void fetchBooks()
-    void refreshPendingBatch()
-    void refreshSuggestionCount()
-  }
-})
-
 onMounted(fetchBooks)
 onMounted(fetchCategories)
-onMounted(refreshPendingBatch)
-onMounted(refreshSuggestionCount)
 </script>
 
 <style scoped>
@@ -425,16 +304,7 @@ onMounted(refreshSuggestionCount)
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-left: auto;   /* 宽屏：搜索与筛选靠右，紧挨扫描按钮 */
-}
-
-.header-buttons { display: flex; align-items: center; gap: 8px; }
-.header-buttons .el-button + .el-button { margin-left: 0; }
-
-.scan-btn > :deep(span) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  margin-left: auto;   /* 宽屏：搜索与筛选靠右 */
 }
 
 .search-help {
@@ -505,7 +375,7 @@ onMounted(refreshSuggestionCount)
   .library-page { padding: 16px; }
 }
 
-/* 窄屏手机：第一行标题 + 扫描图标；第二行搜索框占满整行 + 筛选按钮
+/* 窄屏手机：第一行标题；第二行搜索框占满整行 + 筛选按钮
    （flex 子项默认按内容宽度撑开，会超出右侧边距）；两列卡片，否则 172px 最小宽度只能排一列 */
 @media (max-width: 480px) {
   .page-header {
@@ -513,13 +383,6 @@ onMounted(refreshSuggestionCount)
     margin-bottom: 20px;
   }
   .header-left { order: 1; }
-  .header-buttons {
-    order: 2;
-    margin-left: auto;
-  }
-  .scan-btn { padding: 8px 10px; }
-  .scan-btn .btn-text { display: none; }
-  .scan-btn .scan-icon { width: 18px; height: 18px; }
   .header-actions {
     order: 3;
     margin-left: 0;
@@ -557,9 +420,5 @@ onMounted(refreshSuggestionCount)
   display: flex;
   justify-content: center;
   margin-top: 32px;
-}
-
-.batch-alert {
-  margin-bottom: 20px;
 }
 </style>

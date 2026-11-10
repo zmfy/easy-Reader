@@ -1,5 +1,5 @@
 <template>
-  <div class="reader-page" :class="{ 'reader--eink': eink }" :style="readerStyle">
+  <div class="reader-page" :class="{ 'reader--eink': eink, 'dock-on': toolbarVisible }" :style="readerStyle">
 
     <!-- ── PDF 原生渲染模式 ── -->
     <template v-if="isPdf">
@@ -42,21 +42,22 @@
           <span class="nav-progress">
             {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
           </span>
-          <!-- 窄屏：右侧工具栏放不下，按钮收在顶栏右侧 -->
-          <div class="nav-actions">
-            <button class="nav-btn" title="章节目录" @click="openToc('toc')"><IconList :size="20" :stroke-width="1.75" /></button>
-            <button class="nav-btn" title="书签（按 B 添加当前位置）" @click="openToc('bookmark')"><IconBookmark :size="20" :stroke-width="1.75" /></button>
-            <button v-if="highlightable" class="nav-btn" :class="{ unsupported: pdfNoText }" :title="noteTip" :aria-label="noteTip" @click="openToc('note')"><IconHighlight :size="20" :stroke-width="1.75" /></button>
-            <button class="nav-btn" title="学习导图" @click="openBookMap"><IconSitemap :size="20" :stroke-width="1.75" /></button>
-            <button class="nav-btn" :class="{ on: onShelf }" :title="shelfLabel" :aria-label="shelfLabel" :aria-pressed="onShelf" @click="toggleShelf"><IconBooks :size="20" :stroke-width="1.75" /></button>
-            <button v-if="aiReady" class="nav-btn" title="问书（AI）" @click="openAsk"><IconSparkles :size="20" :stroke-width="1.75" /></button>
-            <button v-if="listenAvailable" class="nav-btn" :class="{ on: listenActive }" :title="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="20" :stroke-width="1.75" /><span v-if="ttsReady" class="ai-badge">AI</span></button>
-            <button class="nav-btn" title="阅读设置" @click="settingsPanelVisible = true"><IconSettings :size="20" :stroke-width="1.75" /></button>
-          </div>
         </div>
         <!-- 全书进度：读到第几章 -->
         <div class="nav-bar"><i :style="{ width: bookProgress }" /></div>
       </header>
+
+      <!-- 窄屏底栏：顶栏只留书名，功能按钮放这里；与顶栏一起显隐（点屏幕中间） -->
+      <nav class="reader-dock" :class="{ hidden: !toolbarVisible, compact: dockCompact }" aria-label="阅读工具" @click.stop>
+        <button class="dock-btn" @click="openToc('toc')"><IconList :size="22" :stroke-width="1.75" /><span>目录</span></button>
+        <button class="dock-btn" @click="openToc('bookmark')"><IconBookmark :size="22" :stroke-width="1.75" /><span>书签</span></button>
+        <button v-if="highlightable" class="dock-btn" :class="{ unsupported: pdfNoText }" :aria-label="noteTip" @click="openToc('note')"><IconHighlight :size="22" :stroke-width="1.75" /><span>笔记</span></button>
+        <button class="dock-btn" @click="openBookMap"><IconSitemap :size="22" :stroke-width="1.75" /><span>导图</span></button>
+        <button v-if="listenAvailable" class="dock-btn" :class="{ on: listenActive }" :aria-label="ttsReady ? '听书（MiniMax AI 语音）' : '听书（浏览器语音）'" @click="toggleListen"><IconHeadphones :size="22" :stroke-width="1.75" /><span>听书</span><i v-if="ttsReady" class="ai-badge">AI</i></button>
+        <button v-if="aiReady" class="dock-btn" @click="openAsk"><IconSparkles :size="22" :stroke-width="1.75" /><span>问书</span></button>
+        <button class="dock-btn" :aria-label="nightMode ? '切换到日间（靛青）' : '切换到夜间'" @click="toggleNight"><component :is="nightMode ? IconSun : IconMoon" :size="22" :stroke-width="1.75" /><span>{{ nightMode ? '日间' : '夜间' }}</span></button>
+        <button class="dock-btn" @click="settingsPanelVisible = true"><IconSettings :size="22" :stroke-width="1.75" /><span>设置</span></button>
+      </nav>
 
       <div class="paper" :class="{ 'pdf-wrapper': isPdfRender, listening: listenActive }" :style="paperStyle">
         <!-- 右侧悬浮工具栏：纸张右外侧的竖向胶囊，图标按钮 + 悬停提示（宽屏） -->
@@ -197,6 +198,15 @@
       :modal-class="'reader-drawer'"
     >
       <div class="settings-panel">
+        <!-- 窄屏：底栏放不下的「书架」「书籍详情」放在这里 -->
+        <div class="setting-group narrow-only">
+          <div class="setting-label">本书</div>
+          <div class="mode-options">
+            <button class="mode-btn" :class="{ active: onShelf }" :aria-pressed="onShelf" @click="toggleShelf">{{ onShelf ? '已在书架（点击移出）' : '加入书架' }}</button>
+            <button class="mode-btn" @click="router.push(`/book/${bookId}`)">书籍详情</button>
+          </div>
+        </div>
+
         <!-- 阅读模式 -->
         <div class="setting-group">
           <div class="setting-label">阅读模式</div>
@@ -212,6 +222,24 @@
               @click="setPageMode('waterfall')"
             >瀑布流</button>
           </div>
+        </div>
+
+        <!-- 点击屏幕：所有主题通用（原为墨水屏专属） -->
+        <div class="setting-group">
+          <div class="setting-label">点击屏幕</div>
+          <div class="mode-options">
+            <button
+              class="mode-btn"
+              :class="{ active: readerStore.settings.tapPaging }"
+              @click="readerStore.updateSettings({ tapPaging: true })"
+            >左右翻页</button>
+            <button
+              class="mode-btn"
+              :class="{ active: !readerStore.settings.tapPaging }"
+              @click="readerStore.updateSettings({ tapPaging: false })"
+            >只呼出菜单</button>
+          </div>
+          <div class="tap-hint">{{ readerStore.settings.tapPaging ? '点屏幕左侧 / 右侧翻页，点中间呼出菜单' : '点屏幕任意位置呼出 / 收起菜单' }}；键盘方向键、设备的翻页键同样可用</div>
         </div>
 
         <!-- 漫画图片：只在当前内容有纯图片页时显示 -->
@@ -244,7 +272,6 @@
               @click="readerStore.applyTheme(key as ReaderTheme)"
             >{{ val.label }}</button>
           </div>
-          <div v-if="eink" class="eink-hint">点屏幕左侧 / 右侧翻页，点中间呼出菜单；设备的翻页键同样可用</div>
         </div>
 
         <!-- 字号 -->
@@ -507,7 +534,7 @@ import { pollUntil } from '@/utils/poll'
 import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, HL_CONTENT_SELECTOR, type TextAnchor } from '@/utils/highlight-anchor'
 import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
 import { groupHighlightsByChapter } from '@/utils/highlight-list'
-import { readerKeyAction, pageScrollDistance, alignedPageDistance, tapZoneAction } from '@/utils/reader-keys'
+import { readerKeyAction, pageScrollDistance, alignedPageDistance, contentTapAction } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, isEinkTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
@@ -744,15 +771,15 @@ function toggleToolbar() {
 // 点在这些元素上是在操作它们，不翻页
 const INTERACTIVE_SELECTOR = 'a, button, input, textarea, select, label, img, video, audio, mark, [role="button"], [data-no-page-turn]'
 
-/** 正文点击：墨水屏按点的位置翻页（左侧上翻、右侧下翻、中间呼出菜单），其他主题切换顶栏 */
+/** 正文点击：开启「点击翻页」时按点的位置翻页（左侧上翻、右侧下翻、中间呼出菜单），关闭时只切换菜单；所有主题通用 */
 function onContentClick(e: MouseEvent) {
-  if (!eink.value) { toggleToolbar(); return }
+  if (!readerStore.settings.tapPaging) { toggleToolbar(); return }
   if (window.getSelection()?.toString()) return  // 正在选字（划线）
   if ((e.target as Element | null)?.closest?.(INTERACTIVE_SELECTOR)) return
   const el = contentRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
-  const action = tapZoneAction(e.clientX - rect.left, rect.width)
+  const action = contentTapAction(e.clientX - rect.left, rect.width, true)
   if (action === 'toggle') toggleToolbar()
   else pageBy(action)
 }
@@ -1538,6 +1565,8 @@ function onAskEnter(e: KeyboardEvent) {
 const ttsReady = ref(false)
 const browserSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window
 const listenAvailable = computed(() => (ttsReady.value || browserSpeech) && !isPdfRender.value)
+/** 窄屏底栏按钮多于 6 个时只显示图标，保证一行放得下 */
+const dockCompact = computed(() => 5 + [highlightable.value, listenAvailable.value, aiReady.value].filter(Boolean).length > 6)
 
 // 当前章节的段落元素（与阅读位置同一套段落）；瀑布流取当前章节的区块
 function listenChapter() {
@@ -1660,13 +1689,13 @@ function lineTopAtPoint(x: number, y: number, container: Element): number | null
 
 // 下翻：把距屏幕底部约两行的那一行对齐到顶部；找不到文字（如 PDF 页面图）时按固定距离
 /**
- * 翻一屏（键盘与墨水屏点按共用）：保留两行正文衔接。墨水屏瞬间跳转（平滑滚动在墨水屏上会一路残影），
- * 并在章节翻页模式下，到底再下翻进入下一章、到顶再上翻回到上一章。
+ * 翻一屏（键盘与点按翻页共用）：保留两行正文衔接。墨水屏瞬间跳转（平滑滚动在墨水屏上会一路残影）；
+ * 开启点击翻页（或墨水屏）时，章节翻页模式下到底再下翻进入下一章、到顶再上翻回到上一章。
  */
 function pageBy(action: 'pageUp' | 'pageDown') {
   const el = contentRef.value
   if (!el) return
-  if (eink.value && readerStore.settings.pageMode === 'scroll') {
+  if ((eink.value || readerStore.settings.tapPaging) && readerStore.settings.pageMode === 'scroll') {
     const current = reader.currentChapterIndex.value
     if (action === 'pageDown' && el.scrollTop + el.clientHeight >= el.scrollHeight - 4) {
       if (current < reader.chapters.value.length - 1) void goToNextChapter()
@@ -1971,7 +2000,6 @@ onUnmounted(() => {
   background: var(--reader-accent);
   transition: width 0.3s ease;
 }
-.nav-actions { display: none; gap: 2px; }
 .nav-btn,
 .side-tool,
 .end-btn {
@@ -2748,7 +2776,10 @@ onUnmounted(() => {
   .reader-content { --paper-w: 100%; }
   .paper { width: 100% !important; }
   .side-tools { display: none; }
-  .nav-actions { display: flex; }
+  /* 底栏会盖住最后几行：纸张底部留出空间 */
+  .paper { padding-bottom: calc(88px + env(safe-area-inset-bottom)) !important; }
+  /* 底栏显示时，听书播放条让到它上方 */
+  .reader-page.dock-on .listen-bar { bottom: calc(76px + env(safe-area-inset-bottom)); }
   .nav-inner { padding: 0 8px; }
 }
 /* 手机（<640px）：纸张去掉卡片外框 */
@@ -2766,8 +2797,6 @@ onUnmounted(() => {
   /* PDF 页面按原版缩放，尽量占满屏幕宽度 */
   .paper.pdf-wrapper { padding: 12px 6px 16px; }
   .toc-del { opacity: 1; }
-  /* 顶栏按钮多，进度数字收起（顶栏底部的进度条仍在） */
-  .nav-progress { display: none; }
   /* 播放条：信息一行，按钮一行 */
   .listen-bar { flex-wrap: wrap; gap: 8px; bottom: calc(10px + env(safe-area-inset-bottom)); }
   .listen-info { flex-basis: 100%; }
@@ -2895,7 +2924,61 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: none;
 }
-.eink-hint {
+/* 窄屏底栏：固定在屏幕底部的毛玻璃条，与顶栏一起显隐 */
+.reader-dock {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  justify-content: space-around;
+  background: color-mix(in srgb, var(--reader-paper-bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-top: 1px solid var(--reader-divider);
+  font-family: var(--font-sans);
+  transition: transform 300ms ease;
+}
+.reader-dock.hidden { transform: translateY(100%); }
+.dock-btn {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 72px;
+  height: 52px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--reader-text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.dock-btn:active { background: var(--reader-hover-bg); }
+.dock-btn.on { color: var(--reader-accent); }
+.dock-btn.unsupported { opacity: 0.45; }
+.dock-btn .ai-badge { right: 50%; bottom: auto; top: 4px; margin-right: -20px; font-style: normal; }
+.reader-dock.compact .dock-btn span { display: none; }
+.reader-dock.compact .dock-btn { height: 44px; }
+.narrow-only { display: none; }
+@media (max-width: 768px) {
+  .reader-dock { display: flex; }
+  .narrow-only { display: flex; }
+}
+.reader--eink .reader-dock {
+  background: #ffffff;
+  backdrop-filter: none;
+  border-top: 1px solid #000000;
+  transition: none;
+}
+
+.tap-hint {
   margin-top: 8px;
   font-size: 12px;
   line-height: 1.6;
