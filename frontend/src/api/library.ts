@@ -47,6 +47,9 @@ export const libraryApi = {
 
   aiFillResetAll: () =>
     http.post<ApiResponse<{ reset: number }>>('/library/ai-fill-reset-all'),
+  /** 给没有封面的书生成默认封面（本地生成，不调用 AI） */
+  generateDefaultCovers: () =>
+    http.post<ApiResponse<{ generated: number }>>('/library/default-covers', {}),
 
   get: (id: string) =>
     http.get<ApiResponse<Book>>(`/library/${id}`),

@@ -1,7 +1,7 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import {
-  parseDoubanRating, parseDoubanSuggestList, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
+  parseDoubanRating, parseDoubanSuggestList, pickDoubanBook, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
 } from '../../src/utils/cover';
 
 describe('parseDoubanRating', () => {
@@ -46,6 +46,24 @@ describe('parseDoubanSuggestList', () => {
   it('returns [] for invalid or non-array JSON', () => {
     expect(parseDoubanSuggestList('not json')).toEqual([]);
     expect(parseDoubanSuggestList('{"a":1}')).toEqual([]);
+  });
+});
+
+describe('豆瓣联想结果只取书，不取作者', () => {
+  const mixed = [
+    { title: '南怀瑾', type: 'a', pic: 'https://img1.doubanio.com/view/personage/m/public/x.jpg', url: 'https://book.douban.com/author/4503235/' },
+    { title: '金刚经说什么', type: 'b', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg', url: 'https://book.douban.com/subject/26785340/' },
+  ];
+  it('pickDoubanBook 跳过作者条目', () => {
+    expect(pickDoubanBook(mixed)?.title).toBe('金刚经说什么');
+    expect(pickDoubanBook([mixed[0]])).toBeUndefined();
+    expect(pickDoubanBook('x')).toBeUndefined();
+  });
+  it('封面候选里没有作者照片', () => {
+    expect(parseDoubanSuggestList(JSON.stringify(mixed)).map(c => c.title)).toEqual(['金刚经说什么']);
+  });
+  it('没有 type 字段的条目照旧当作书', () => {
+    expect(pickDoubanBook([{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s2.jpg' }])?.title).toBe('西游记');
   });
 });
 

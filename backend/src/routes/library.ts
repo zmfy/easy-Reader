@@ -30,6 +30,7 @@ import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-look
 import { buildAiFillPreview, BookNotFoundError, cleanBookTitle } from '../services/ai-fill-preview';
 import { applyAiFill, AiFillApplyError, parseAiFillApplyBody } from '../services/ai-fill-apply';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
+import { countMissingCovers, fillMissingDefaultCovers } from '../services/default-cover-file';
 import { hideFilePathForNonAdmin, withDisplayTitle } from '../utils/book-view';
 import {
   categoryFilterSql, countByCategoryPath, DEFAULT_CATEGORY_TREE, getCategoryTree, isValidCategoryPath,
@@ -235,7 +236,12 @@ router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, re
 
 // GET /api/library/ai-fill-status — 全书库填充进度与最近一次填充任务（暂停时含原因）
 router.get('/ai-fill-status', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
-  successResponse(res, { ...getFillProgress(), last_task: getLastFillTask() });
+  successResponse(res, { ...getFillProgress(), no_cover: countMissingCovers(getDb()), last_task: getLastFillTask() });
+});
+
+// POST /api/library/default-covers — 给没有封面的书生成默认封面（本地生成，不调用 AI、不请求外网）
+router.post('/default-covers', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, { generated: fillMissingDefaultCovers(getDb()) }, '已生成默认封面');
 });
 
 // POST /api/library/ai-fill-reset-failed — admin: requeue books whose AI fill failed
