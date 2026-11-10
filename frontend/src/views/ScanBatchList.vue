@@ -8,6 +8,7 @@
         <el-table-column prop="id" label="批次 ID" width="280">
           <template #default="{ row }">
             <code>{{ row.id.slice(0, 8) }}</code>
+            <span v-if="(row.part_count ?? 1) > 1" class="part">第 {{ row.part_index }} / {{ row.part_count }} 批</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
@@ -93,5 +94,6 @@ onMounted(fetchBatches)
 </script>
 
 <style scoped>
+.part { margin-left: 8px; font-size: 12px; color: var(--text-2); }
 .summary { font-size: 13px; color: var(--text-2); }
 </style>

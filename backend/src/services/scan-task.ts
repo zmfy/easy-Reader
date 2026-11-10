@@ -70,6 +70,13 @@ export function finishScanTask(id: string, status: 'completed' | 'failed', error
   ).run(status, error ?? null, id);
 }
 
+/** AI 填充因额度用完 / 连续失败自动暂停：不算运行中，再次启动填充即从未完成的书继续 */
+export function pauseScanTask(id: string, reason: string): void {
+  db().prepare(
+    `UPDATE scan_tasks SET status = 'paused', finished_at = CURRENT_TIMESTAMP, error = ? WHERE id = ? AND status = 'running'`
+  ).run(reason, id);
+}
+
 export function cancelScanTask(id: string): void {
   db().prepare(
     `UPDATE scan_tasks SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'`

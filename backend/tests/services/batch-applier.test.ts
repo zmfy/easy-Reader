@@ -21,7 +21,7 @@ function setup(): void {
       file_mtime REAL, fingerprint_version INTEGER
     );
     CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT NOT NULL, summary TEXT, cover_url TEXT, author TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT, apply_summary TEXT);
+    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT, apply_summary TEXT, part_index INTEGER, part_count INTEGER);
     CREATE TABLE scan_batch_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL, admin_decision TEXT, admin_payload TEXT, reviewed_at DATETIME, reviewed_by TEXT);
     CREATE TABLE manual_overrides (id TEXT PRIMARY KEY, type TEXT NOT NULL, book_id_a TEXT, book_id_b TEXT, series_id TEXT, created_by TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
   `);

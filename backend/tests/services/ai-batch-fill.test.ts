@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError, resetAllFills } from '../../src/services/ai-batch-fill';
+import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError, isQuotaError, isAuthError, resetAllFills, FillBatchSummary, MAX_CONSECUTIVE_FAILURES } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
 import { doubanSuggest, downloadCover, fetchRating } from '../../src/utils/cover';
@@ -79,7 +79,7 @@ function makeIntegrationDb(): Database.Database {
       content_mismatch TEXT
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
     CREATE TABLE book_ai_metadata (
       book_id TEXT PRIMARY KEY,
       recommended_tags TEXT,
@@ -515,5 +515,133 @@ describe('batchFill suggestions and content mismatch', () => {
     fillSpy.mockResolvedValueOnce({ author: '吴承恩', summary: '简介', category: '小说/中国古典小说' });
     await run();
     expect(suggestion()).toBeUndefined();
+  });
+});
+
+
+describe('isQuotaError', () => {
+  it.each([
+    'DeepSeek API error: 402',
+    'MiniMax API error: status_code=1008 - insufficient balance',
+    'MiniMax API error: 429 - {"base_resp":{"status_code":2056,"status_msg":"usage limit exceeded"}}',
+    'You exceeded your current quota, please check your plan',
+    '账户余额不足',
+  ])('识别额度用完：%s', (m) => {
+    expect(isQuotaError(new Error(m))).toBe(true);
+  });
+  it.each(['MiniMax API error: 429 - rate limit', 'DeepSeek API error: 500', 'fetch failed'])('其他错误不算：%s', (m) => {
+    expect(isQuotaError(new Error(m))).toBe(false);
+  });
+});
+
+describe('batchFill 额度暂停 / 熔断 / 分批', () => {
+  let fillSpy: jest.SpyInstance;
+  let timeoutSpy: jest.SpyInstance;
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `q${i + 1}`);
+  const books = (list: string[]) => list.map(id => ({ id, file_path: `/nonexistent/${id}.txt`, file_format: 'txt', title: `书${id}` }));
+  const status = (id: string) =>
+    _testDb!.prepare('SELECT ai_fill_status AS s, ai_fill_version AS v FROM books WHERE id = ?').get(id) as { s: string | null; v: number | null };
+
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    // 顺序处理，结果可预期
+    _testDb.prepare("INSERT INTO settings (key, value) VALUES ('ai_fill_concurrency', '1')").run();
+    for (const id of ids(12)) insBook(_testDb, { id, title: `书${id}`, file_path: `/nonexistent/${id}.txt` });
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+    // 重试等待立即执行
+    timeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((fn: () => void) => { fn(); return 0; }) as unknown as typeof setTimeout);
+  });
+  afterEach(() => {
+    fillSpy.mockRestore();
+    timeoutSpy.mockRestore();
+    if (_testDb) { _testDb.close(); _testDb = null; }
+  });
+
+  it('额度用完立即暂停：之后的书不标失败、不盖戳，再跑一次从停下的地方继续', async () => {
+    let calls = 0;
+    fillSpy.mockImplementation(async () => {
+      calls++;
+      if (calls === 3) throw new Error('DeepSeek API error: 402');
+      return { summary: '简介' };
+    });
+    const r = await batchFill({ books: books(ids(5)) });
+    expect(r.paused?.reason).toBe('quota');
+    expect(fillSpy).toHaveBeenCalledTimes(3);           // 额度错误不重试，之后的书不再调用
+    expect(status('q1')).toMatchObject({ s: 'filled', v: AI_FILL_VERSION });
+    expect(status('q2')).toMatchObject({ s: 'filled', v: AI_FILL_VERSION });
+    for (const id of ['q3', 'q4', 'q5']) expect(status(id)).toEqual({ s: null, v: null });
+    expect(r.failed).toHaveLength(0);
+
+    // 续跑：只剩没处理的书（q3 起）
+    fillSpy.mockReset();
+    fillSpy.mockResolvedValue({ summary: '简介' });
+    const left = selectFillCandidates(_testDb!, false).map(b => b.id).filter(id => id <= 'q5' && id.length === 2);
+    expect(left).toEqual(['q3', 'q4', 'q5']);
+  });
+
+  it(`连续 ${MAX_CONSECUTIVE_FAILURES} 本出错时暂停，并撤销这一串失败标记`, async () => {
+    let calls = 0;
+    fillSpy.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) return { summary: '简介' };     // q1 正常
+      throw new Error('DeepSeek API error: 500');
+    });
+    const r = await batchFill({ books: books(ids(12)) });
+    expect(r.paused?.reason).toBe('errors');
+    expect(status('q1')).toMatchObject({ s: 'filled' });
+    // q2..q11 连续出错 → 全部撤销，可再次填充；q12 未处理
+    for (const id of ids(12).slice(1)) expect(status(id)).toEqual({ s: null, v: null });
+    expect(r.failed).toHaveLength(0);
+  });
+
+  it('密钥无效（401）第一本就暂停，不标失败', async () => {
+    fillSpy.mockRejectedValue(new Error('MiniMax API error: 401 - {"error":{"type":"authorized_error"}}'));
+    const r = await batchFill({ books: books(ids(5)) });
+    expect(r.paused?.reason).toBe('auth');
+    expect(fillSpy).toHaveBeenCalledTimes(1);
+    for (const id of ids(5)) expect(status(id)).toEqual({ s: null, v: null });
+    expect(isAuthError(new Error('DeepSeek API error: 500'))).toBe(false);
+  });
+
+  it('熔断撤销的失败不计入批次通知', async () => {
+    let calls = 0;
+    fillSpy.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) return { summary: '简介' };   // q1 正常，q2..q11 连续出错触发熔断
+      throw new Error('DeepSeek API error: 500');
+    });
+    const done: FillBatchSummary[] = [];
+    await batchFill({ books: books(ids(12)), batchSize: 2, onBatchDone: s => done.push(s) });
+    expect(done.map(d => [d.processed, d.failed])).toEqual([[1, 0]]);
+  });
+
+  it('偶发出错不触发熔断，书照常标为失败', async () => {
+    let calls = 0;
+    fillSpy.mockImplementation(async () => {
+      calls++;
+      if (calls >= 2 && calls <= 5) throw new Error('DeepSeek API error: 500');   // 只有 q2（含 3 次重试）出错
+      return { summary: '简介' };
+    });
+    const r = await batchFill({ books: books(ids(4)) });
+    expect(r.paused).toBeUndefined();
+    expect(status('q2')).toMatchObject({ s: 'failed', v: AI_FILL_VERSION });
+    expect(status('q3')).toMatchObject({ s: 'filled' });
+  });
+
+  it('每满一批回调一次，建议记入对应批次号；批次号全局递增', async () => {
+    fillSpy.mockImplementation(async () => ({ author: '某人', summary: '简介', confidence: { author: 'low' } }));
+    const done: FillBatchSummary[] = [];
+    await batchFill({ books: books(ids(5)), batchSize: 2, onBatchDone: s => done.push(s) });
+    expect(done.map(d => [d.batch_no, d.processed])).toEqual([[1, 2], [2, 2], [3, 1]]);
+    expect(done[0]).toMatchObject({ auto_filled: 2, suggested: 2 });   // 简介自动写入，低置信作者进待确认
+    const rows = _testDb!.prepare('SELECT book_id, batch_no FROM ai_suggestions ORDER BY book_id').all();
+    expect(rows).toEqual([
+      { book_id: 'q1', batch_no: 1 }, { book_id: 'q2', batch_no: 1 },
+      { book_id: 'q3', batch_no: 2 }, { book_id: 'q4', batch_no: 2 }, { book_id: 'q5', batch_no: 3 },
+    ]);
+    // 下一次填充接着编号
+    const more: FillBatchSummary[] = [];
+    await batchFill({ books: books(['q6']), batchSize: 2, onBatchDone: s => more.push(s) });
+    expect(more[0].batch_no).toBe(4);
   });
 });

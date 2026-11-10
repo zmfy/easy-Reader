@@ -1,11 +1,11 @@
 <template>
   <DefaultLayout>
     <div class="page page--narrow">
-      <PageHeader title="AI 建议待确认" back="/library" :count="items.length">
+      <PageHeader title="AI 建议待确认" back="/library" :count="totalPending">
         <template #actions>
           <el-button :disabled="visible.length === 0 || busy" @click="dismissAll">全部忽略</el-button>
           <el-button type="primary" :disabled="selectedCount === 0 || busy" :loading="applying" @click="applySelected">
-            采纳已勾选（{{ selectedCount }} 本）
+            采纳本批已勾选（{{ selectedCount }} 本）
           </el-button>
         </template>
       </PageHeader>
@@ -13,13 +13,25 @@
         后台 AI 丰富时，空字段且依据明确的结果已直接写入；这里是需要你确认的其余结果。默认勾选了依据明确 / 推断的内容；低置信、你手动改过的字段，以及文件名与正文不符的书默认不勾。
       </p>
 
+      <div v-if="batchTabs.length > 1" class="segmented filters">
+        <button
+          v-for="b in batchTabs" :key="String(b.key)" type="button" class="segmented-item"
+          :class="{ 'is-active': b.key === current }" @click="switchBatch(b.key)"
+        >{{ b.label }}（{{ b.count }}）</button>
+      </div>
+      <p v-else-if="batchTabs.length === 1 && current !== null" class="batch-single">{{ batchTabs[0].label }}</p>
+
+      <div v-if="currentJobs.length > 0" class="note job-note">
+        后台采纳中：{{ jobDone }} / {{ jobTotal }} 本{{ jobFailed > 0 ? `（失败 ${jobFailed} 本，会放回列表）` : '' }}。可以离开本页，完成后铃铛会提醒。
+      </div>
+
       <div v-if="mismatchCount > 0" class="segmented filters">
         <button type="button" class="segmented-item" :class="{ 'is-active': filter === 'all' }" @click="filter = 'all'">全部（{{ items.length }}）</button>
         <button type="button" class="segmented-item" :class="{ 'is-active': filter === 'mismatch' }" @click="filter = 'mismatch'">文件名不符（{{ mismatchCount }}）</button>
       </div>
 
       <div v-if="loading" class="empty-state">加载中…</div>
-      <div v-else-if="visible.length === 0" class="empty-state">没有待确认的 AI 建议</div>
+      <div v-else-if="visible.length === 0" class="empty-state">{{ totalPending > 0 ? '这一批已处理完' : '没有待确认的 AI 建议' }}</div>
 
       <section v-for="s in visible" :key="s.book_id" class="section-card sg-card">
         <div class="sg-head">
@@ -84,18 +96,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { IconArrowRight } from '@tabler/icons-vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { libraryApi } from '@/api/library'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 import { categoryLabel } from '@/utils/category'
 import { SHORT_DRAMA_HINT } from '@/utils/ai-fill-form'
 import {
   SUGGEST_FIELDS, SUGGEST_FIELD_LABELS, defaultChoice, hasSelection, toSelection, type SuggestionChoice,
 } from '@/utils/ai-suggestions'
-import type { AiFillConfidence, AiSuggestion, SuggestField } from '@/types'
+import type { AiApplyJob, AiFillConfidence, AiSuggestion, AiSuggestionBatch, SuggestField } from '@/types'
 
 const CONFIDENCE_LABELS: Record<AiFillConfidence, string> = { high: '依据明确', medium: '依据推断', low: '低置信' }
 
@@ -105,6 +119,29 @@ const loading = ref(true)
 const applying = ref(false)
 const busy = ref(false)
 const filter = ref<'all' | 'mismatch'>('all')
+
+// 按填充批次（每 500 本一批）分开确认；'none' 是分批之前留下的
+type BatchKey = number | 'none'
+const route = useRoute()
+const noticeStore = useSystemNoticeStore()
+const router = useRouter()
+const batches = ref<AiSuggestionBatch[]>([])
+const jobs = ref<AiApplyJob[]>([])
+const current = ref<BatchKey | null>(null)
+// 超过这么多本时交给后台采纳（一次请求逐本处理太久会超时）
+const BACKGROUND_APPLY_MIN = 20
+const JOB_POLL_MS = 2000
+let jobTimer: ReturnType<typeof setTimeout> | null = null
+
+const keyOf = (b: AiSuggestionBatch): BatchKey => b.batch_no ?? 'none'
+const batchTabs = computed(() => batches.value
+  .filter(b => b.count > 0 || b.applying > 0)
+  .map(b => ({ key: keyOf(b), count: b.count, label: b.batch_no == null ? '未分批' : `第 ${b.batch_no} 批` })))
+const totalPending = computed(() => batches.value.reduce((n, b) => n + b.count, 0))
+const currentJobs = computed(() => jobs.value.filter(j => (j.batch_no ?? 'none') === current.value))
+const jobDone = computed(() => currentJobs.value.reduce((n, j) => n + j.done, 0))
+const jobTotal = computed(() => currentJobs.value.reduce((n, j) => n + j.total, 0))
+const jobFailed = computed(() => currentJobs.value.reduce((n, j) => n + j.failed, 0))
 
 const mismatchCount = computed(() => items.value.filter(s => s.content_mismatch).length)
 const visible = computed(() => (filter.value === 'mismatch' ? items.value.filter(s => s.content_mismatch) : items.value))
@@ -123,18 +160,82 @@ function errMsg(err: unknown, fallback: string): string {
   return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
 }
 
-async function load() {
+async function loadBatches() {
+  const data = (await libraryApi.aiSuggestionBatches()).data.data
+  batches.value = data?.batches ?? []
+  jobs.value = data?.jobs ?? []
+  scheduleJobPoll()
+}
+
+/** 选批次：地址栏指定的 → 当前的（仍有待确认）→ 最早一批有待确认的 */
+function pickBatch(preferred: BatchKey | null): BatchKey | null {
+  const tabs = batchTabs.value
+  const pending = tabs.filter(t => t.count > 0)
+  if (preferred !== null && tabs.some(t => t.key === preferred)) return preferred
+  return pending[0]?.key ?? tabs[0]?.key ?? null
+}
+
+function queryBatch(): BatchKey | null {
+  const raw = route.query.batch
+  if (raw === 'none') return 'none'
+  const n = Number(raw)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
+async function loadItems() {
+  items.value = current.value === null ? [] : (await libraryApi.aiSuggestions(current.value)).data.data ?? []
+  for (const s of items.value) if (!choices[s.book_id]) choices[s.book_id] = defaultChoice(s)
+  if (mismatchCount.value === 0) filter.value = 'all'
+}
+
+async function load(preferred: BatchKey | null = current.value ?? queryBatch()) {
   loading.value = true
   try {
-    items.value = (await libraryApi.aiSuggestions()).data.data ?? []
-    for (const s of items.value) if (!choices[s.book_id]) choices[s.book_id] = defaultChoice(s)
-    if (mismatchCount.value === 0) filter.value = 'all'
+    await loadBatches()
+    current.value = pickBatch(preferred)
+    if (current.value !== null && String(current.value) !== String(route.query.batch ?? '')) {
+      void router.replace({ query: { ...route.query, batch: String(current.value) } })
+    }
+    await loadItems()
   } catch (err) {
     ElMessage.error(errMsg(err, '加载失败'))
   } finally {
     loading.value = false
   }
 }
+
+function switchBatch(key: BatchKey) {
+  if (key === current.value) return
+  filter.value = 'all'
+  void load(key)
+}
+
+// 当前批处理完：跳到下一批
+async function afterRemoved() {
+  const b = batches.value.find(x => keyOf(x) === current.value)
+  if (b) b.count = items.value.length
+  if (items.value.length === 0 && currentJobs.value.length === 0) await load(null)
+}
+
+function scheduleJobPoll() {
+  if (jobTimer) clearTimeout(jobTimer)
+  jobTimer = null
+  if (jobs.value.length === 0) return
+  jobTimer = setTimeout(async () => {
+    const before = jobs.value.length
+    try { await loadBatches() } catch { /* 下次再试 */ }
+    // 有任务结束（失败的书会放回列表）：刷新当前批
+    if (jobs.value.length < before) await jobsFinished()
+  }, JOB_POLL_MS)
+}
+
+async function jobsFinished() {
+  void noticeStore.loadTasks()   // 铃铛立即显示采纳结果
+  // 当前批还有（失败放回的）书就留在本批，否则 pickBatch 会跳到最早一批有待确认的
+  await load(current.value)
+}
+
+onUnmounted(() => { if (jobTimer) clearTimeout(jobTimer) })
 
 function removeLocal(ids: string[]) {
   const set = new Set(ids)
@@ -147,10 +248,20 @@ async function apply(list: AiSuggestion[]) {
   busy.value = true
   applying.value = payload.length > 1
   try {
+    if (payload.length >= BACKGROUND_APPLY_MIN) {
+      const job = (await libraryApi.createAiApplyJob(payload, typeof current.value === 'number' ? current.value : null)).data.data!
+      removeLocal(payload.map(p => p.book_id))
+      ElMessage.success(`已转为后台采纳（${job.total} 本），完成后铃铛会提醒`)
+      await loadBatches()
+      // 小批量可能已经做完：直接进入下一批
+      if (currentJobs.value.length === 0) await jobsFinished()
+      return
+    }
     const res = (await libraryApi.applyAiSuggestions(payload)).data.data!
     removeLocal(res.applied)
     if (res.failed.length) ElMessage.warning(`已采纳 ${res.applied.length} 本，${res.failed.length} 本失败：${res.failed[0].error}`)
     else ElMessage.success(`已采纳 ${res.applied.length} 本`)
+    await afterRemoved()
   } catch (err) {
     ElMessage.error(errMsg(err, '采纳失败'))
   } finally {
@@ -167,6 +278,7 @@ async function dismissIds(ids: string[]) {
   try {
     await libraryApi.dismissAiSuggestions(ids)
     removeLocal(ids)
+    await afterRemoved()
   } catch (err) {
     ElMessage.error(errMsg(err, '操作失败'))
   } finally {
@@ -178,7 +290,7 @@ const dismiss = (s: AiSuggestion) => dismissIds([s.book_id])
 
 async function dismissAll() {
   try {
-    await ElMessageBox.confirm(`忽略当前列表中全部 ${visible.value.length} 本书的 AI 建议？不会改动书的信息。`, '全部忽略', {
+    await ElMessageBox.confirm(`忽略本批当前列表中全部 ${visible.value.length} 本书的 AI 建议？不会改动书的信息。`, '全部忽略', {
       type: 'warning', confirmButtonText: '全部忽略', cancelButtonText: '取消',
     })
   } catch { return }
@@ -195,12 +307,20 @@ async function dismissMismatch(s: AiSuggestion) {
   }
 }
 
-onMounted(load)
+onMounted(() => { void load() })
 </script>
 
 <style scoped>
 .filters {
   margin: 4px 0 16px;
+}
+.batch-single {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.job-note {
+  margin-bottom: 14px;
 }
 .sg-card {
   margin-bottom: 14px;

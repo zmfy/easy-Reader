@@ -15,6 +15,8 @@ import shelfRoutes from './routes/shelf';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
 import studySummaryRoutes from './routes/study-summary';
+import noticesRoutes from './routes/notices';
+import { kickApplyWorker } from './services/ai-apply-job';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
 import { startUpdateChecker } from './services/update-check';
@@ -86,6 +88,7 @@ api.use('/shelf', shelfRoutes);
 api.use('/reader', readerRoutes);
 api.use('/settings', settingsRoutes);
 api.use('/study', studySummaryRoutes);
+api.use('/notices', noticesRoutes);
 
 // API 文档（docs/api.md）：/api/docs 网页查看，/api/docs.md 原文
 api.get('/docs.md', (_req: express.Request, res: express.Response) => {
@@ -132,6 +135,7 @@ app.listen(PORT, () => {
   console.log(`Novel Reader Backend running on port ${PORT}`);
   if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
     startUpdateChecker();
+    kickApplyWorker();   // 接着跑重启前没跑完的后台采纳任务
     // 使用自己的证书：设置页「启用 HTTPS」打开且 DATA_DIR/certs 里有可用的 fullchain.pem + privkey.pem 时，在 HTTPS_PORT 上提供 HTTPS
     startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443, isEnabled: () => isHttpsEnabled(getDb()) });
   }

@@ -31,6 +31,18 @@
               当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
               （<IconAlertTriangle v-if="estimate.tier === 'high'" :size="14" class="tier-icon" />{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
             </div>
+            <div v-if="aiConfigured && fillStatus && fillStatus.total > 0" class="fill-progress">
+              <div>
+                全书库已填充 <strong>{{ fillStatus.done }}</strong> / {{ fillStatus.total }} 本<template v-if="fillStatus.remaining > 0">，还剩 <strong>{{ fillStatus.remaining }}</strong> 本</template>
+              </div>
+              <div v-if="fillStatus.last_task?.status === 'paused'" class="fill-paused">上次已暂停：{{ fillStatus.last_task.error }}</div>
+              <div v-if="fillStatus.remaining > 0" class="fill-actions">
+                <el-button size="small" type="primary" plain :loading="startingFill" @click="onContinueFill">
+                  {{ fillStatus.last_task?.status === 'paused' ? '继续填充' : '只做 AI 填充' }}
+                </el-button>
+                <span class="reset-hint">不重新扫描文件，从没填充过的书接着处理；每 500 本一批，完成一批即可去确认</span>
+              </div>
+            </div>
             <div class="reset-row">
               <el-button size="small" :disabled="!aiConfigured" @click="onResetFailed">重置「填充失败」记录</el-button>
               <el-button size="small" type="warning" plain :disabled="!aiConfigured" @click="onResetAll">重置全部填充记录</el-button>
@@ -75,6 +87,8 @@ import { libraryApi } from '@/api/library'
 import { settingsApi } from '@/api/settings'
 import { IconAlertTriangle } from '@tabler/icons-vue'
 import CostWarningDialog from './CostWarningDialog.vue'
+import { useScanTaskStore } from '@/stores/scan-task'
+import type { AiFillStatus } from '@/types'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
@@ -116,7 +130,33 @@ async function refreshEstimate(): Promise<void> {
 }
 
 watch([() => form.ai_fill, () => form.full_rescan], () => { void refreshEstimate() })
-watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate() } })
+watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate(); void refreshFillStatus() } })
+
+const scanStore = useScanTaskStore()
+const fillStatus = ref<AiFillStatus | null>(null)
+const startingFill = ref(false)
+
+async function refreshFillStatus(): Promise<void> {
+  try {
+    fillStatus.value = (await libraryApi.aiFillStatus()).data.data ?? null
+  } catch {
+    fillStatus.value = null
+  }
+}
+
+async function onContinueFill(): Promise<void> {
+  startingFill.value = true
+  try {
+    await scanStore.startAiFill()
+    ElMessage.success('AI 填充已在后台开始，进度见页面顶部')
+    visible.value = false
+  } catch (e) {
+    const code = (e as { response?: { data?: { code?: string } } }).response?.data?.code
+    ElMessage.error(code === 'TASK_RUNNING' ? '已有扫描 / 填充任务在运行' : '启动失败')
+  } finally {
+    startingFill.value = false
+  }
+}
 
 const tierLabel = computed(() => {
   const labels: Record<string, string> = { free: '免费', low: '低费用', high: '高费用', unknown: '未知' }
@@ -176,6 +216,16 @@ async function onResetAll(): Promise<void> {
   border-radius: var(--radius-sm);
 }
 .reset-row { display: flex; gap: 8px; margin-top: 10px; }
+.fill-progress {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+}
+.fill-paused { font-size: 12px; color: var(--warning); }
+.fill-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 6px; }
 .reset-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; }
 .ai-disabled-hint { font-size: 12px; margin-bottom: 6px; padding: 6px 10px; line-height: 1.5; }
 .tier-icon { vertical-align: -2px; margin-right: 2px; color: var(--warning); }

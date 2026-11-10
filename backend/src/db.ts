@@ -274,6 +274,64 @@ function initSchema(): void {
   `);
   // AI 判定正文与文件名不是同一本书：JSON { title, author?, reason?, dismissed? }
   try { database.exec('ALTER TABLE books ADD COLUMN content_mismatch TEXT'); } catch { /* column exists */ }
+  // 建议按填充批次分组（每 500 本一批，见 services/ai-batch-fill.ts）；apply_job_id：已交给后台采纳任务、处理中
+  try { database.exec('ALTER TABLE ai_suggestions ADD COLUMN batch_no INTEGER'); } catch { /* column exists */ }
+  try { database.exec('ALTER TABLE ai_suggestions ADD COLUMN apply_job_id TEXT'); } catch { /* column exists */ }
+  // 分批之前留下的建议：按生成时间每 500 条补一个批次号
+  const unbatched = database.prepare(
+    'SELECT book_id FROM ai_suggestions WHERE batch_no IS NULL ORDER BY created_at, book_id'
+  ).all() as Array<{ book_id: string }>;
+  if (unbatched.length > 0) {
+    const seqRow = database.prepare("SELECT value FROM settings WHERE key = 'ai_fill_batch_seq'").get() as { value?: string } | undefined;
+    let seq = parseInt(seqRow?.value ?? '0') || 0;
+    const setBatch = database.prepare('UPDATE ai_suggestions SET batch_no = ? WHERE book_id = ?');
+    database.transaction(() => {
+      unbatched.forEach((r, i) => {
+        if (i % 500 === 0) seq++;
+        setBatch.run(seq, r.book_id);
+      });
+      database.prepare("INSERT INTO settings (key, value) VALUES ('ai_fill_batch_seq', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(String(seq));
+    })();
+  }
+
+  // 后台采纳任务（待确认页「全部采纳」）：items 为勾选结果 JSON；重启后 running 改回 pending 接着跑
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ai_apply_jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'pending',   -- pending / running / completed / failed
+      batch_no INTEGER,
+      total INTEGER NOT NULL DEFAULT 0,
+      done INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      items TEXT NOT NULL,
+      started_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME,
+      error TEXT
+    );
+  `);
+  database.prepare("UPDATE ai_apply_jobs SET status = 'pending' WHERE status = 'running'").run();
+
+  // 后台任务通知（铃铛）：填充每批完成 / 暂停 / 完成、采纳完成、扫描生成审核批次
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS notices (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',   -- info / success / warning
+      title TEXT NOT NULL,
+      message TEXT,
+      link TEXT,                            -- 前端路由，如 /library/ai-suggestions?batch=3
+      action TEXT,                          -- 额外按钮，如 resume_fill（继续填充）
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      read_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_notices_created_at ON notices(created_at);
+  `);
+
+  // 扫描审核按每批最多 500 本拆分：同一次扫描的第几批 / 共几批
+  try { database.exec('ALTER TABLE scan_batches ADD COLUMN part_index INTEGER'); } catch { /* column exists */ }
+  try { database.exec('ALTER TABLE scan_batches ADD COLUMN part_count INTEGER'); } catch { /* column exists */ }
 
   // 多级分类上线前的单级旧分类一律进「待整理」（如旧的「历史」恰好与新的一级分类同名，但常是误判的古典小说）。
   // 只在第一次运行时记录一次；确认或改过分类后移出（见 services/category-migrate.ts）

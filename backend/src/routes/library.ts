@@ -20,7 +20,9 @@ import {
 import { runScanTask } from '../services/scan-walker';
 import { fetchAndSaveCover } from '../utils/cover';
 import { deleteBookCascade, getDuplicatesOf, countAffectedUsers } from '../services/file-deleter';
-import { markFieldsAsEdited, batchFill, selectFillCandidates, resetAllFills } from '../services/ai-batch-fill';
+import { markFieldsAsEdited, resetAllFills } from '../services/ai-batch-fill';
+import { runAiFill, getFillProgress, getLastFillTask } from '../services/ai-fill-task';
+import { enqueueApplyJob, getApplyJob, listActiveApplyJobs } from '../services/ai-apply-job';
 import { selectDuplicateGroupBooks } from '../services/duplicate-view';
 import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { getMetadata } from '../services/book-ai-metadata';
@@ -34,7 +36,7 @@ import {
 } from '../utils/category-tree';
 import { applyCategories, listLegacyCategoryBooks, markCategoriesReviewed, suggestLegacyCategories } from '../services/category-migrate';
 import {
-  applySuggestion, countSuggestions, dismissContentMismatch, dismissSuggestions, listSuggestions,
+  applySuggestion, countSuggestions, dismissContentMismatch, dismissSuggestions, listSuggestions, listSuggestionBatches,
 } from '../services/ai-suggestions';
 
 const router = Router();
@@ -220,13 +222,8 @@ router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, re
   setImmediate(() => {
     void (async () => {
       try {
-        const db = getDb();
-        setScanProgress(taskId, { stage: 'ai_fill' });
-        const toFill = selectFillCandidates(db, force);
-        if (toFill.length > 0) {
-          await batchFill({ taskId, user_id: req.user!.userId, books: toFill });
-        }
-        finishScanTask(taskId, 'completed');
+        await runAiFill(taskId, req.user!.userId, { force });
+        finishScanTask(taskId, 'completed');   // 已暂停 / 已取消的任务不会被改回 completed
       } catch (e) {
         finishScanTask(taskId, 'failed', (e as Error).message);
       }
@@ -234,6 +231,11 @@ router.post('/ai-fill-batch', authMiddleware, adminMiddleware, (req: Request, re
   });
 
   successResponse(res, { taskId, status: 'running' }, '批量填充任务已启动');
+});
+
+// GET /api/library/ai-fill-status — 全书库填充进度与最近一次填充任务（暂停时含原因）
+router.get('/ai-fill-status', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, { ...getFillProgress(), last_task: getLastFillTask() });
 });
 
 // POST /api/library/ai-fill-reset-failed — admin: requeue books whose AI fill failed
@@ -335,9 +337,21 @@ router.post('/categories/legacy/apply', authMiddleware, adminMiddleware, (req: R
   }
 });
 
-// GET /api/library/ai-suggestions — 后台 AI 丰富的待确认建议（必须在 /:id 之前注册）
-router.get('/ai-suggestions', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
-  successResponse(res, listSuggestions(getDb()));
+// GET /api/library/ai-suggestions — 后台 AI 丰富的待确认建议（必须在 /:id 之前注册）；?batch=N 只列该批
+router.get('/ai-suggestions', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const raw = req.query.batch as string | undefined;
+  let batchNo: number | null | undefined;
+  if (raw === 'none') batchNo = null;
+  else if (raw !== undefined && raw !== '') {
+    batchNo = parseInt(raw);
+    if (!Number.isInteger(batchNo) || batchNo < 1) { errorResponse(res, 422, 'VALIDATION_ERROR', '批次号不正确'); return; }
+  }
+  successResponse(res, listSuggestions(getDb(), batchNo));
+});
+
+// GET /api/library/ai-suggestions/batches — 各填充批次的待确认数量与进行中的后台采纳任务
+router.get('/ai-suggestions/batches', authMiddleware, adminMiddleware, (_req: Request, res: Response) => {
+  successResponse(res, { batches: listSuggestionBatches(getDb()), jobs: listActiveApplyJobs() });
 });
 
 // GET /api/library/ai-suggestions/count — 待确认数量（书库页提示条）
@@ -371,6 +385,25 @@ router.post('/ai-suggestions/apply', authMiddleware, adminMiddleware, async (req
     }
   }
   successResponse(res, { applied, failed });
+});
+
+const applyJobSchema = z.object({
+  batch_no: z.number().int().positive().nullable().default(null),
+  items: applySuggestionsSchema.shape.items.element.array().min(1).max(1000),
+});
+
+// POST /api/library/ai-suggestions/apply-jobs — 大批量采纳交给后台排队执行，立即返回任务；完成后铃铛通知
+router.post('/ai-suggestions/apply-jobs', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const parsed = applyJobSchema.safeParse(req.body);
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  successResponse(res, enqueueApplyJob(parsed.data.items, req.user!.userId, parsed.data.batch_no), '已转为后台采纳');
+});
+
+// GET /api/library/ai-suggestions/apply-jobs/:id — 后台采纳进度
+router.get('/ai-suggestions/apply-jobs/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const job = getApplyJob(req.params.id);
+  if (!job) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '任务不存在'); return; }
+  successResponse(res, job);
 });
 
 const bookIdsSchema = z.object({ book_ids: z.array(z.string().min(1)).min(1).max(1000) });
