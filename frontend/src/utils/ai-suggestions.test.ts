@@ -18,13 +18,13 @@ const s: AiSuggestion = {
 describe('ai suggestion helpers', () => {
   it('pre-selects confident, unlocked fields and present lists', () => {
     expect(defaultChoice(s)).toEqual({
-      fields: { author: false, summary: true, category: false }, tags: true, similar: false, adaptations: false,
+      fields: { title: false, author: false, summary: true, category: false }, tags: true, similar: false, adaptations: false,
     })
   })
 
   it('selects nothing by default for a mismatched file', () => {
     expect(defaultChoice({ ...s, content_mismatch: { title: '诡秘之主' } })).toEqual({
-      fields: { author: false, summary: false, category: false }, tags: false, similar: false, adaptations: false,
+      fields: { title: false, author: false, summary: false, category: false }, tags: false, similar: false, adaptations: false,
     })
   })
 
@@ -33,7 +33,20 @@ describe('ai suggestion helpers', () => {
     c.fields.author = true
     c.similar = true  // 没有类似作品建议：不提交
     expect(toSelection(s, c)).toEqual({ book_id: 'b1', fields: ['author', 'summary'], tags: true, similar: false, adaptations: false })
-    expect(hasSelection({ fields: { author: false, summary: false, category: false }, tags: false, similar: false, adaptations: false })).toBe(false)
+    expect(hasSelection({ fields: { title: false, author: false, summary: false, category: false }, tags: false, similar: false, adaptations: false })).toBe(false)
+  })
+
+  it('错标的书勾上「书名」才提交书名，作为第一项', () => {
+    const m: AiSuggestion = {
+      ...s, content_mismatch: { title: '诡秘之主' },
+      data: { fields: { title: { value: '诡秘之主', current: '西游记', confidence: 'medium' }, ...s.data.fields } },
+    }
+    const c = defaultChoice(m)
+    expect(c.fields.title).toBe(false)
+    c.fields.title = true
+    c.fields.summary = true
+    expect(toSelection(m, c).fields).toEqual(['title', 'summary'])
+    expect(hasSelection(c)).toBe(true)
   })
 
   it('parses active content mismatch only', () => {

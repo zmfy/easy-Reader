@@ -466,7 +466,8 @@ export interface ContentMismatch {
   dismissed?: boolean
 }
 
-export type SuggestField = 'author' | 'summary' | 'category'
+/** title 只出现在错标的书上：认可 AI 判定时把书名改为正文书名 */
+export type SuggestField = 'title' | 'author' | 'summary' | 'category'
 
 export interface FieldSuggestion {
   value: string

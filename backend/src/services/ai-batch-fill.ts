@@ -14,7 +14,7 @@ import { authorsMatch } from '../utils/author-match';
 import { buildBookEvidence } from './book-evidence';
 import { detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
 import { findAdaptations } from './adaptations';
-import { recordContentMismatch, saveSuggestion, SuggestionData, SUGGEST_FIELDS } from './ai-suggestions';
+import { FILL_SUGGEST_FIELDS, recordContentMismatch, saveSuggestion, SuggestionData } from './ai-suggestions';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
 const DEFAULT_CONCURRENCY = 2;
@@ -279,7 +279,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       const infoRec = info as Record<string, unknown>;
       const evidence = infoRec.evidence && typeof infoRec.evidence === 'object' ? infoRec.evidence as Record<string, unknown> : {};
       const suggestion: SuggestionData = { fields: {} };
-      for (const f of SUGGEST_FIELDS) {
+      for (const f of FILL_SUGGEST_FIELDS) {
         const value = typeof info[f] === 'string' ? (info[f] as string).trim() : '';
         if (!value || filledFields[f] !== undefined) continue;
         const cur = (current[f] ?? '').trim();

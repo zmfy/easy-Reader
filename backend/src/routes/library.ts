@@ -36,7 +36,7 @@ import {
 } from '../utils/category-tree';
 import { applyCategories, listLegacyCategoryBooks, markCategoriesReviewed, suggestLegacyCategories } from '../services/category-migrate';
 import {
-  applySuggestion, countSuggestions, dismissContentMismatch, dismissSuggestions, listSuggestions, listSuggestionBatches,
+  acceptContentMismatch, applySuggestion, countSuggestions, dismissContentMismatch, dismissSuggestions, listSuggestions, listSuggestionBatches,
 } from '../services/ai-suggestions';
 
 const router = Router();
@@ -362,7 +362,7 @@ router.get('/ai-suggestions/count', authMiddleware, adminMiddleware, (_req: Requ
 const applySuggestionsSchema = z.object({
   items: z.array(z.object({
     book_id: z.string().min(1),
-    fields: z.array(z.enum(['author', 'summary', 'category'])).max(3),
+    fields: z.array(z.enum(['title', 'author', 'summary', 'category'])).max(4),
     tags: z.boolean(),
     similar: z.boolean(),
     adaptations: z.boolean(),
@@ -600,6 +600,13 @@ router.post('/:id/ai-fill/apply', authMiddleware, adminMiddleware, async (req: R
     console.error(`[ai-fill:apply] book=${req.params.id}`, err);
     errorResponse(res, 500, 'INTERNAL_ERROR', '应用 AI 信息失败');
   }
+});
+
+// POST /api/library/:id/content-mismatch/accept — 认可错标判定：书名改为 AI 读到的正文书名，清除提示
+router.post('/:id/content-mismatch/accept', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  const db = getDb();
+  if (!acceptContentMismatch(db, req.params.id)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '没有错标提示'); return; }
+  successResponse(res, db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id), '书名已改为正文书名');
 });
 
 // POST /api/library/:id/content-mismatch/dismiss — 「不是错标」：之后同一判定不再提示
