@@ -14,7 +14,7 @@ import { ScanTask } from '../types';
 export interface FillProgress {
   /** 参与填充的书（正常、非重复） */
   total: number;
-  /** 已按当前版本处理过 */
+  /** 已按当前版本处理过，或审核过（批量填充不再处理） */
   done: number;
   remaining: number;
 }
@@ -22,7 +22,7 @@ export interface FillProgress {
 export function getFillProgress(db: Database.Database = getDb()): FillProgress {
   const row = db.prepare(
     `SELECT COUNT(*) AS total,
-            SUM(CASE WHEN ai_fill_version >= ? THEN 1 ELSE 0 END) AS done
+            SUM(CASE WHEN ai_fill_version >= ? OR ai_reviewed_at IS NOT NULL THEN 1 ELSE 0 END) AS done
      FROM books WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')`
   ).get(AI_FILL_VERSION) as { total: number; done: number | null };
   const done = row.done ?? 0;

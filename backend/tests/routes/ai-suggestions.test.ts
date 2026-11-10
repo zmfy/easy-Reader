@@ -97,6 +97,9 @@ describe('AI suggestion routes', () => {
   it('dismisses suggestions', async () => {
     expect(await json(await call('POST', '/ai-suggestions/dismiss', { book_ids: ['b1', 'b2'] }))).toEqual({ dismissed: 2 });
     expect(await json(await call('GET', '/ai-suggestions/count'))).toEqual({ count: 0 });
+    // 忽略也算审核过：之后批量填充跳过
+    const reviewed = getDb().prepare('SELECT COUNT(*) AS n FROM books WHERE ai_reviewed_at IS NOT NULL').get();
+    expect(reviewed).toEqual({ n: 2 });
   });
 
   it('filters mismatched books, and stops flagging after「不是错标」for the same detection', async () => {

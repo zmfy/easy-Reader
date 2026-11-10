@@ -115,7 +115,8 @@ export function selectFillCandidates(db: Database.Database, force: boolean): Fil
   return db.prepare(
     `SELECT id, file_path, file_format, title, author FROM books
      WHERE status = 'normal' AND (duplicate_of IS NULL OR duplicate_of = '')
-       AND (ai_fill_version IS NULL OR ai_fill_version < ?)`
+       AND (ai_fill_version IS NULL OR ai_fill_version < ?)
+       AND ai_reviewed_at IS NULL`
   ).all(AI_FILL_VERSION) as FillCandidate[];
 }
 
@@ -133,8 +134,8 @@ export function stampFillVersion(db: Database.Database, bookId: string): void {
 /** Clear AI-fill stamps on all books so the next AI-fill scan re-processes them. */
 export function resetAllFills(db: Database.Database): number {
   const info = db.prepare(
-    `UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL
-     WHERE ai_fill_version IS NOT NULL OR ai_fill_status IS NOT NULL`
+    `UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL, ai_reviewed_at = NULL
+     WHERE ai_fill_version IS NOT NULL OR ai_fill_status IS NOT NULL OR ai_reviewed_at IS NOT NULL`
   ).run();
   return info.changes;
 }

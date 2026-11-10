@@ -52,7 +52,7 @@ function db(): Database.Database {
   d.exec(`CREATE TABLE books (
     id TEXT PRIMARY KEY, title TEXT, author TEXT, summary TEXT,
     file_path TEXT, file_format TEXT, status TEXT, duplicate_of TEXT,
-    ai_fill_version INTEGER, ai_fill_status TEXT
+    ai_fill_version INTEGER, ai_fill_status TEXT, ai_reviewed_at DATETIME
   );`);
   return d;
 }
@@ -76,7 +76,8 @@ function makeIntegrationDb(): Database.Database {
       ai_fill_version INTEGER,
       ai_fill_status TEXT,
       manually_edited_fields TEXT,
-      content_mismatch TEXT
+      content_mismatch TEXT,
+      ai_reviewed_at DATETIME
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
@@ -144,6 +145,16 @@ describe('selectFillCandidates', () => {
     ins(d, { id: 'f', title: 'F', author: '作者', summary: '简介', file_path: '/f' });
     const ids = selectFillCandidates(d, false).map(r => r.id);
     expect(ids).toContain('f');
+  });
+
+  it('审核过的书即使版本号过期也跳过；重置全部填充记录后重新进入', () => {
+    const d = db();
+    ins(d, { id: 'r', title: 'R', file_path: '/r', ai_fill_version: AI_FILL_VERSION - 1 });
+    ins(d, { id: 's', title: 'S', file_path: '/s' });
+    d.prepare("UPDATE books SET ai_reviewed_at = CURRENT_TIMESTAMP WHERE id = 'r'").run();
+    expect(selectFillCandidates(d, false).map(r => r.id)).toEqual(['s']);
+    resetAllFills(d);
+    expect(selectFillCandidates(d, false).map(r => r.id).sort()).toEqual(['r', 's']);
   });
 
   it('version-driven: excludes a book stamped at the current version', () => {
