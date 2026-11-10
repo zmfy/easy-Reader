@@ -215,6 +215,7 @@ async function afterRemoved() {
   const b = batches.value.find(x => keyOf(x) === current.value)
   if (b) b.count = items.value.length
   if (items.value.length === 0 && currentJobs.value.length === 0) await load(null)
+  if (totalPending.value === 0) void noticeStore.loadTasks()   // 全部确认完，铃铛里的待确认提醒随之消失
 }
 
 function scheduleJobPoll() {

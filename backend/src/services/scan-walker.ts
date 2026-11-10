@@ -20,9 +20,8 @@ import {
 } from '../types';
 import { buildCandidateGroups, applyNotDuplicateOverrides, mergeDuplicateGroups, ScannedBook } from './dedup-grouper';
 import { listOverrides } from './manual-override';
-import { buildBatchesFromScan, ScanResult, SCAN_BATCH_SIZE } from './batch-builder';
-import { addNotice } from './notices';
-import { ScanBatch } from '../types';
+import { buildBatchesFromScan, ScanResult } from './batch-builder';
+import { notifyScanReview } from './notices';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { deleteBookRelations } from './relation-cleanup';
 
@@ -138,7 +137,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         garbled,
         encoding_fixed: encodingFixed,
       };
-      notifyReviewBatches(buildBatchesFromScan(taskId, partial));
+      buildBatchesFromScan(taskId, partial);
+      notifyScanReview();
       return;
     }
 
@@ -244,7 +244,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     } else {
       // mode === 'review' — skip batch creation when result has nothing to review
       if (!isEmpty(result)) {
-        notifyReviewBatches(buildBatchesFromScan(taskId, result));
+        buildBatchesFromScan(taskId, result);
+        notifyScanReview();   // 与之前未审核的合并成一条提醒
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
@@ -268,21 +269,6 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     finishScanTask(taskId, 'failed', msg);
     console.error('Scan task failed:', err);
   }
-}
-
-/** 审核模式：扫描生成了待审核批次，铃铛提醒去审核 */
-function notifyReviewBatches(batches: ScanBatch[]): void {
-  const total = batches.reduce((n, b) => {
-    try { return n + (JSON.parse(b.summary_counts).new ?? 0); } catch { return n; }
-  }, 0);
-  addNotice({
-    kind: 'scan_review', level: 'info',
-    title: '扫描完成，有待审核的书',
-    message: batches.length > 1
-      ? `新书 ${total} 本，分成 ${batches.length} 批（每批最多 ${SCAN_BATCH_SIZE} 本），可逐批审核`
-      : `新书 ${total} 本，请审核后入库`,
-    link: '/library/scan-batches',
-  });
 }
 
 interface ScannedBookEx extends ScannedBook {

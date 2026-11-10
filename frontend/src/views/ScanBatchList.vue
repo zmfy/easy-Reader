@@ -53,9 +53,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { scanBatchesApi } from '@/api/scan-batches'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { ScanBatch } from '@/types'
 
 const router = useRouter()
+const noticeStore = useSystemNoticeStore()
 const batches = ref<ScanBatch[]>([])
 const loading = ref(false)
 
@@ -87,6 +89,7 @@ async function onDiscard(id: string): Promise<void> {
   await ElMessageBox.confirm('废弃此批次将丢失 AI 判定结果，确定？', '确认', { type: 'warning' })
   await scanBatchesApi.discard(id)
   ElMessage.success('已废弃')
+  void noticeStore.loadTasks()
   await fetchBatches()
 }
 
