@@ -15,3 +15,17 @@ export function formatServerTime(value: string | null | undefined, mode: 'dateti
   if (!d) return value ?? ''
   return mode === 'date' ? d.toLocaleDateString('zh-CN') : d.toLocaleString('zh-CN', { hour12: false })
 }
+
+/** 相对时间：刚刚 / N 分钟前 / N 小时前 / 昨天 / N 天前，一周以上显示日期 */
+export function relativeTime(value: string | null | undefined, now: Date = new Date()): string {
+  const d = parseServerTime(value)
+  if (!d) return value ?? ''
+  const sec = Math.max(0, (now.getTime() - d.getTime()) / 1000)
+  if (sec < 60) return '刚刚'
+  if (sec < 3600) return `${Math.floor(sec / 60)} 分钟前`
+  if (sec < 86400) return `${Math.floor(sec / 3600)} 小时前`
+  const days = Math.floor(sec / 86400)
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days} 天前`
+  return d.toLocaleDateString('zh-CN')
+}

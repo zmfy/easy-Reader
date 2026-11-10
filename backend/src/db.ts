@@ -134,6 +134,25 @@ function initSchema(): void {
     try { database.exec(stmt); } catch { /* column exists */ }
   }
 
+  // 阅读历史：进入阅读器就记一次（含原生 PDF、查看模式），按最近打开排序；与阅读进度分开，移除历史不影响进度
+  const hadHistory = !!database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reading_history'").get();
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS reading_history (
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, book_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reading_history_user_opened ON reading_history(user_id, opened_at);
+  `);
+  // 刚建表：以前读过（有进度）的书补进历史
+  if (!hadHistory) {
+    database.exec(
+      `INSERT OR IGNORE INTO reading_history (user_id, book_id, opened_at)
+       SELECT user_id, book_id, COALESCE(updated_at, CURRENT_TIMESTAMP) FROM reading_progress`
+    );
+  }
+
   // === Plan 1 schema: scan_tasks ===
   database.exec(`
     CREATE TABLE IF NOT EXISTS scan_tasks (

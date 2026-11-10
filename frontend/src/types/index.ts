@@ -39,6 +39,22 @@ export interface Book {
   content_mismatch?: string | null
 }
 
+/** 阅读历史一项：最近打开的在前，附阅读进度 */
+export interface HistoryItem {
+  book_id: string
+  opened_at: string
+  title: string
+  /** 清洗后的书名，仅用于显示 */
+  display_title?: string
+  author: string | null
+  cover_url: string | null
+  category: string | null
+  file_format: string
+  chapter_index: number | null
+  chapter_title: string | null
+  progress_updated_at: string | null
+}
+
 export interface ShelfItem {
   id: string
   user_id: string
