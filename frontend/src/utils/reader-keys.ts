@@ -39,11 +39,16 @@ export function alignedPageDistance(targetLineTop: number, viewportTop: number, 
 
 export type TapZoneAction = 'pageUp' | 'pageDown' | 'toggle'
 
-/** 墨水屏点按翻页：点屏幕左侧 30% 上翻一屏、右侧 30% 下翻一屏，中间呼出 / 收起菜单 */
+/** 点按翻页：点屏幕左侧 30% 上翻一屏、右侧 30% 下翻一屏，中间呼出 / 收起菜单 */
 export function tapZoneAction(x: number, width: number): TapZoneAction {
   if (width <= 0) return 'toggle'
   const ratio = x / width
   if (ratio < 0.3) return 'pageUp'
   if (ratio >= 0.7) return 'pageDown'
   return 'toggle'
+}
+
+/** 正文点击：开启「点击翻页」时按点的位置翻页，关闭时点哪里都只呼出 / 收起菜单（所有主题通用） */
+export function contentTapAction(x: number, width: number, tapPaging: boolean): TapZoneAction {
+  return tapPaging ? tapZoneAction(x, width) : 'toggle'
 }

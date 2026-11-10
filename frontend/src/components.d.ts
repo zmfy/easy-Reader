@@ -52,6 +52,7 @@ declare module 'vue' {
     ElTree: typeof import('element-plus/es')['ElTree']
     HttpsCertCard: typeof import('./components/HttpsCertCard.vue')['default']
     InstallHelpDialog: typeof import('./components/InstallHelpDialog.vue')['default']
+    LibraryManageCard: typeof import('./components/LibraryManageCard.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']
     OfflineNotice: typeof import('./components/OfflineNotice.vue')['default']
     PageHeader: typeof import('./components/PageHeader.vue')['default']

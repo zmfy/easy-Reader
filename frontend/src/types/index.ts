@@ -149,6 +149,8 @@ export interface ReaderSettings {
   pageMode: 'scroll' | 'waterfall'
   /** 漫画等纯图片页：适合高度（一屏一页）/ 适合宽度（铺满纸张宽度，上下滚动） */
   imageFit: 'height' | 'width'
+  /** 点击屏幕：左右两侧翻页、中间呼出菜单（所有主题）；关闭时点哪里都只呼出菜单 */
+  tapPaging: boolean
 }
 
 export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai_fill'

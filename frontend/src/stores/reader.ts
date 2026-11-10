@@ -19,6 +19,7 @@ const defaultSettings: ReaderSettings = {
   fontColor: '#1a2440',
   pageMode: 'scroll',
   imageFit: 'height',
+  tapPaging: true,
 }
 
 export const themes: Record<ReaderTheme, { backgroundColor: string; fontColor: string; label: string }> = {

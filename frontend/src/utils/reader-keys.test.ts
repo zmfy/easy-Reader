@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readerKeyAction, pageScrollDistance, alignedPageDistance } from './reader-keys'
+import { readerKeyAction, pageScrollDistance, alignedPageDistance, contentTapAction } from './reader-keys'
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) =>
   ({ key: k, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
@@ -66,5 +66,17 @@ describe('alignedPageDistance', () => {
 
   it('never scrolls more than a full screen', () => {
     expect(alignedPageDistance(2000, 56, 900)).toBe(900)
+  })
+})
+
+describe('contentTapAction', () => {
+  it('开启点击翻页：左侧上翻、右侧下翻、中间呼出菜单', () => {
+    expect(contentTapAction(50, 400, true)).toBe('pageUp')
+    expect(contentTapAction(350, 400, true)).toBe('pageDown')
+    expect(contentTapAction(200, 400, true)).toBe('toggle')
+  })
+  it('关闭时点哪里都只呼出菜单', () => {
+    expect(contentTapAction(50, 400, false)).toBe('toggle')
+    expect(contentTapAction(350, 400, false)).toBe('toggle')
   })
 })
