@@ -77,8 +77,18 @@ export const libraryApi = {
     http.post<ApiResponse<{ updated: number }>>('/library/categories/legacy/apply', { items }),
 
   // 后台 AI 丰富的待确认建议
-  aiSuggestions: () =>
-    http.get<ApiResponse<import('@/types').AiSuggestion[]>>('/library/ai-suggestions'),
+  // batch：只取某个填充批次（'none' 为分批之前没有批次号的）
+  aiSuggestions: (batch?: number | 'none') =>
+    http.get<ApiResponse<import('@/types').AiSuggestion[]>>('/library/ai-suggestions', { params: batch === undefined ? {} : { batch } }),
+  aiSuggestionBatches: () =>
+    http.get<ApiResponse<{ batches: import('@/types').AiSuggestionBatch[]; jobs: import('@/types').AiApplyJob[] }>>('/library/ai-suggestions/batches'),
+  // 大批量采纳交给后台排队执行，立即返回任务
+  createAiApplyJob: (items: import('@/types').AiSuggestionSelection[], batchNo: number | null) =>
+    http.post<ApiResponse<import('@/types').AiApplyJob>>('/library/ai-suggestions/apply-jobs', { items, batch_no: batchNo }),
+  getAiApplyJob: (id: string) =>
+    http.get<ApiResponse<import('@/types').AiApplyJob>>(`/library/ai-suggestions/apply-jobs/${id}`),
+  aiFillStatus: () =>
+    http.get<ApiResponse<import('@/types').AiFillStatus>>('/library/ai-fill-status'),
   aiSuggestionCount: () =>
     http.get<ApiResponse<{ count: number }>>('/library/ai-suggestions/count'),
   applyAiSuggestions: (items: import('@/types').AiSuggestionSelection[]) =>

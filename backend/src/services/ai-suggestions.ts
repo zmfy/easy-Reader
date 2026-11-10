@@ -46,16 +46,18 @@ export function isEmptySuggestion(d: SuggestionData): boolean {
     && !d.recommended_tags?.length && !d.similar_works?.length && !d.adaptations?.length;
 }
 
-/** 保存（覆盖）一本书的建议；没有任何建议时删除旧的 */
-export function saveSuggestion(db: Database.Database, bookId: string, data: SuggestionData): void {
+/** 保存（覆盖）一本书的建议，记入填充批次；没有任何建议时删除旧的。返回是否留下了建议 */
+export function saveSuggestion(db: Database.Database, bookId: string, data: SuggestionData, batchNo: number | null = null): boolean {
   if (isEmptySuggestion(data)) {
     deleteSuggestion(db, bookId);
-    return;
+    return false;
   }
   db.prepare(
-    `INSERT INTO ai_suggestions (book_id, data, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(book_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`
-  ).run(bookId, JSON.stringify(data));
+    `INSERT INTO ai_suggestions (book_id, data, created_at, batch_no, apply_job_id) VALUES (?, ?, CURRENT_TIMESTAMP, ?, NULL)
+     ON CONFLICT(book_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at,
+       batch_no = excluded.batch_no, apply_job_id = NULL`
+  ).run(bookId, JSON.stringify(data), batchNo);
+  return true;
 }
 
 export function deleteSuggestion(db: Database.Database, bookId: string): void {
@@ -64,7 +66,8 @@ export function deleteSuggestion(db: Database.Database, bookId: string): void {
 
 export function countSuggestions(db: Database.Database): number {
   return (db.prepare(
-    `SELECT COUNT(*) AS n FROM ai_suggestions s JOIN books b ON b.id = s.book_id WHERE b.status = 'normal'`
+    `SELECT COUNT(*) AS n FROM ai_suggestions s JOIN books b ON b.id = s.book_id
+     WHERE b.status = 'normal' AND s.apply_job_id IS NULL`
   ).get() as { n: number }).n;
 }
 
@@ -112,23 +115,51 @@ export interface SuggestionView {
   author: string | null;
   cover_url: string | null;
   created_at: string;
+  batch_no: number | null;
   content_mismatch: ContentMismatch | null;
   current: { recommended_tags: string[]; similar_works: SimilarWork[]; adaptations: Adaptation[] };
   data: SuggestionData;
 }
 
-export function listSuggestions(db: Database.Database): SuggestionView[] {
+export interface SuggestionBatch {
+  batch_no: number | null;
+  count: number;
+  mismatch_count: number;
+  /** 已交给后台采纳、还在处理中的本数 */
+  applying: number;
+}
+
+/** 各填充批次的待确认数量（从早到晚） */
+export function listSuggestionBatches(db: Database.Database): SuggestionBatch[] {
   const rows = db.prepare(
-    `SELECT s.book_id, s.data, s.created_at, b.title, b.author, b.cover_url, b.content_mismatch
+    `SELECT s.batch_no, s.apply_job_id, b.content_mismatch
+     FROM ai_suggestions s JOIN books b ON b.id = s.book_id WHERE b.status = 'normal'`
+  ).all() as Array<{ batch_no: number | null; apply_job_id: string | null; content_mismatch: string | null }>;
+  const map = new Map<number | null, SuggestionBatch>();
+  for (const r of rows) {
+    let b = map.get(r.batch_no);
+    if (!b) { b = { batch_no: r.batch_no, count: 0, mismatch_count: 0, applying: 0 }; map.set(r.batch_no, b); }
+    if (r.apply_job_id) { b.applying++; continue; }
+    b.count++;
+    if (activeContentMismatch(r.content_mismatch)) b.mismatch_count++;
+  }
+  return [...map.values()].sort((a, b) => (a.batch_no ?? 0) - (b.batch_no ?? 0));
+}
+
+/** 待确认建议；给了批次号时只列该批。已交给后台采纳的不列出 */
+export function listSuggestions(db: Database.Database, batchNo?: number | null): SuggestionView[] {
+  const rows = db.prepare(
+    `SELECT s.book_id, s.data, s.created_at, s.batch_no, b.title, b.author, b.cover_url, b.content_mismatch
      FROM ai_suggestions s JOIN books b ON b.id = s.book_id
-     WHERE b.status = 'normal' ORDER BY (b.content_mismatch IS NOT NULL) DESC, b.title`
-  ).all() as Array<{ book_id: string; data: string; created_at: string; title: string; author: string | null; cover_url: string | null; content_mismatch: string | null }>;
+     WHERE b.status = 'normal' AND s.apply_job_id IS NULL ${batchNo !== undefined ? 'AND s.batch_no IS ?' : ''}
+     ORDER BY (b.content_mismatch IS NOT NULL) DESC, b.title`
+  ).all(...(batchNo !== undefined ? [batchNo] : [])) as Array<{ book_id: string; data: string; created_at: string; batch_no: number | null; title: string; author: string | null; cover_url: string | null; content_mismatch: string | null }>;
   return rows.flatMap((r) => {
     let data: SuggestionData;
     try { data = JSON.parse(r.data); } catch { return []; }
     const meta = getMetadata(r.book_id);
     return [{
-      book_id: r.book_id, title: r.title, author: r.author, cover_url: r.cover_url, created_at: r.created_at,
+      book_id: r.book_id, title: r.title, author: r.author, cover_url: r.cover_url, created_at: r.created_at, batch_no: r.batch_no,
       content_mismatch: activeContentMismatch(r.content_mismatch),
       current: {
         recommended_tags: meta?.recommended_tags ?? [],

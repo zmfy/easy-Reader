@@ -10,7 +10,7 @@
     <div class="nb-panel">
       <div v-if="!isNarrow" class="nb-head">系统提醒</div>
 
-      <div v-if="!noticeStore.configWarning && !noticeStore.certWarning && !latest" class="nb-empty">暂无提醒</div>
+      <div v-if="!noticeStore.configWarning && !noticeStore.certWarning && !latest && tasks.length === 0" class="nb-empty">暂无提醒</div>
 
       <div v-if="noticeStore.certWarning" class="nb-notice nb-notice--warning">
         <IconAlertTriangle class="nb-notice-icon" :size="17" :stroke-width="2" />
@@ -63,6 +63,30 @@
           </div>
         </div>
       </div>
+      <template v-if="tasks.length > 0">
+        <div class="nb-task-head">
+          <span>后台任务</span>
+          <button v-if="noticeStore.taskUnread > 0" class="nb-link" type="button" @click="noticeStore.markAllTasksRead()">全部已读</button>
+        </div>
+        <div
+          v-for="n in tasks" :key="n.id"
+          class="nb-notice" :class="[n.level === 'warning' ? 'nb-notice--warning' : n.level === 'success' ? 'nb-notice--success' : '', { 'is-read': !!n.read_at }]"
+        >
+          <component :is="taskIcon(n)" class="nb-notice-icon" :size="17" :stroke-width="2" />
+          <div class="nb-notice-body">
+            <div class="nb-notice-text">
+              <strong>{{ n.title }}</strong><span v-if="!n.read_at" class="nb-unread" aria-label="未读" />
+              <div v-if="n.message" class="nb-task-msg">{{ n.message }}</div>
+              <div class="nb-task-time">{{ timeLabel(n.created_at) }}</div>
+            </div>
+            <div v-if="n.action === 'resume_fill' || n.link || !n.read_at" class="nb-task-actions">
+              <el-button v-if="n.action === 'resume_fill'" size="small" type="primary" :loading="resuming" @click="resumeFill(n)">继续填充</el-button>
+              <el-button v-if="n.link" size="small" :type="n.action ? undefined : 'primary'" plain @click="openTask(n)">{{ linkLabel(n) }}</el-button>
+              <el-button v-if="!n.read_at" size="small" text @click="noticeStore.markTaskRead(n.id)">知道了</el-button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
   </component>
 </template>
@@ -72,10 +96,13 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
 import { ElDrawer, ElPopover } from 'element-plus'
-import { IconAlertTriangle, IconBell, IconChevronDown, IconInfoCircle } from '@tabler/icons-vue'
+import { ElMessage } from 'element-plus'
+import { IconAlertTriangle, IconBell, IconChevronDown, IconCircleCheck, IconInfoCircle } from '@tabler/icons-vue'
+import { useScanTaskStore } from '@/stores/scan-task'
 import { useSystemNoticeStore } from '@/stores/system-notice'
 import { boldSegments } from '@/utils/inline-bold'
-import type { Release, ReleaseItem } from '@/types'
+import { formatServerTime } from '@/utils/time'
+import type { Release, ReleaseItem, TaskNotice } from '@/types'
 
 const emit = defineEmits<{ navigate: [] }>()
 const router = useRouter()
@@ -89,6 +116,45 @@ const expanded = ref(false)
 
 const count = computed(() => noticeStore.count)
 const latest = computed(() => noticeStore.latest)
+const scanStore = useScanTaskStore()
+const tasks = computed(() => noticeStore.taskNotices.slice(0, 10))
+const resuming = ref(false)
+
+function taskIcon(n: TaskNotice) {
+  return n.level === 'warning' ? IconAlertTriangle : n.level === 'success' ? IconCircleCheck : IconInfoCircle
+}
+
+function linkLabel(n: TaskNotice): string {
+  if (n.link?.startsWith('/library/scan-batches')) return '去审核'
+  if (n.link?.startsWith('/library/ai-suggestions')) return '去确认'
+  return '查看'
+}
+
+function timeLabel(raw: string): string {
+  return formatServerTime(raw)
+}
+
+function openTask(n: TaskNotice) {
+  void noticeStore.markTaskRead(n.id)
+  close()
+  emit('navigate')
+  if (n.link) router.push(n.link)
+}
+
+async function resumeFill(n: TaskNotice) {
+  resuming.value = true
+  try {
+    await scanStore.startAiFill()
+    void noticeStore.markTaskRead(n.id)
+    ElMessage.success('已继续 AI 填充，进度见页面顶部')
+    close()
+  } catch (e) {
+    const code = (e as { response?: { data?: { code?: string } } }).response?.data?.code
+    ElMessage.error(code === 'TASK_RUNNING' ? '已有扫描 / 填充任务在运行' : code === 'AI_NOT_CONFIGURED' ? '未配置 AI 插件' : '启动失败')
+  } finally {
+    resuming.value = false
+  }
+}
 
 const containerProps = computed(() =>
   isNarrow.value
@@ -180,6 +246,17 @@ function goSettings(tab: 'ai' | 'system' = 'ai') {
   border: 1px solid color-mix(in srgb, var(--notice-color) 32%, transparent);
 }
 .nb-notice--warning { --notice-color: var(--warning); }
+.nb-notice--success { --notice-color: var(--success); }
+.nb-notice.is-read { background: var(--bg-1); border-color: var(--card-border); }
+.nb-notice.is-read .nb-notice-icon { color: var(--text-2); }
+
+.nb-task-head { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.nb-link { padding: 0; border: none; background: transparent; font-size: 12px; color: var(--accent); cursor: pointer; }
+.nb-unread { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--danger); vertical-align: middle; }
+.nb-task-msg { margin-top: 2px; font-size: 12.5px; color: var(--text-1); }
+.nb-task-time { margin-top: 2px; font-size: 11.5px; color: var(--text-2); }
+.nb-task-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.nb-task-actions .el-button + .el-button { margin-left: 0; }
 .nb-notice-icon { flex: none; margin-top: 2px; color: var(--notice-color); }
 .nb-notice-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .nb-notice-text { line-height: 1.55; word-break: break-word; }

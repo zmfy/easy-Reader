@@ -183,7 +183,10 @@ const PAGE_SIZE = 20
 const route = useRoute()
 const router = useRouter()
 const batchId = route.params.id as string
-const batchIdShort = computed(() => batchId.slice(0, 8))
+const batchIdShort = computed(() => {
+  const part = batch.value && (batch.value.part_count ?? 1) > 1 ? `（第 ${batch.value.part_index} / ${batch.value.part_count} 批）` : ''
+  return batchId.slice(0, 8) + part
+})
 
 const batch = ref<ScanBatch | null>(null)
 const items = ref<ScanBatchItem[]>([])

@@ -155,7 +155,7 @@ export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai
 
 export interface ScanTask {
   id: string;
-  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed' | 'paused';  // paused：AI 额度用完等，error 存原因
   stage: ScanStage | null;
   total_files: number;
   processed_files: number;
@@ -192,6 +192,8 @@ export interface ScanBatch {
   applied_at?: string | null;
   applied_by?: string | null;
   apply_summary?: string | null;  // JSON of ApplyResult (audit trail)
+  part_index?: number | null;     // 同一次扫描拆成多批时：第几批 / 共几批
+  part_count?: number | null;
 }
 
 export type ScanBatchItemType =

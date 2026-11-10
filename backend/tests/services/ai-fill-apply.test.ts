@@ -32,7 +32,7 @@ function setupDb(overrides: Record<string, unknown> = {}): void {
       ai_fill_version INTEGER, ai_fill_status TEXT
     );
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
     CREATE TABLE book_ai_metadata (
       book_id TEXT PRIMARY KEY, recommended_tags TEXT, similar_works TEXT, adaptations TEXT,
       generated_by TEXT, generated_at DATETIME DEFAULT CURRENT_TIMESTAMP

@@ -139,7 +139,8 @@ export type ScanStage = 'walking' | 'fingerprinting' | 'dedup' | 'staging' | 'ai
 
 export interface ScanTask {
   id: string
-  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
+  /** paused：AI 额度用完 / 连续失败自动暂停，error 为原因；再次启动填充即接着处理 */
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed' | 'paused'
   stage: ScanStage | null
   total_files: number
   processed_files: number
@@ -162,6 +163,9 @@ export interface ScanBatch {
   applied_at?: string | null
   applied_by?: string | null
   apply_summary?: string | null
+  /** 同一次扫描拆成多批（每批最多 500 本）时：第几批 / 共几批 */
+  part_index?: number | null
+  part_count?: number | null
 }
 
 export interface ScanBatchItem {
@@ -460,6 +464,8 @@ export interface AiSuggestion {
   author: string | null
   cover_url: string | null
   created_at: string
+  /** 填充批次号（每 500 本一批） */
+  batch_no: number | null
   content_mismatch: ContentMismatch | null
   current: { recommended_tags: string[]; similar_works: SimilarWork[]; adaptations: BookAdaptation[] }
   data: {
@@ -478,3 +484,48 @@ export interface AiSuggestionSelection {
   adaptations: boolean
 }
 
+
+/** 待确认建议按填充批次的汇总 */
+export interface AiSuggestionBatch {
+  batch_no: number | null
+  count: number
+  mismatch_count: number
+  /** 已交给后台采纳、处理中的本数 */
+  applying: number
+}
+
+/** 后台采纳任务 */
+export interface AiApplyJob {
+  id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  batch_no: number | null
+  total: number
+  done: number
+  failed: number
+  created_at: string
+  finished_at: string | null
+  error: string | null
+}
+
+/** 全书库 AI 填充进度 */
+export interface AiFillStatus {
+  total: number
+  done: number
+  remaining: number
+  last_task: ScanTask | null
+}
+
+/** 后台任务通知（铃铛） */
+export interface TaskNotice {
+  id: string
+  kind: string
+  level: 'info' | 'success' | 'warning'
+  title: string
+  message: string | null
+  /** 前端路由 */
+  link: string | null
+  /** resume_fill：显示「继续填充」 */
+  action: 'resume_fill' | null
+  created_at: string
+  read_at: string | null
+}

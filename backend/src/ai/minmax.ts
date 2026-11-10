@@ -29,6 +29,15 @@ async function apiError(resp: { status: number; text(): Promise<string> }, confi
   return new Error(`MiniMax API error: ${resp.status} - ${errText}`);
 }
 
+// HTTP 200 但 base_resp 里带错误码（如 1008 余额不足、2056 用量超限）：按出错处理，
+// 否则会被当成「AI 什么都没查到」，书被标为已填充
+function throwOnBaseRespError(data: Record<string, unknown>): void {
+  const base = data.base_resp as { status_code?: number; status_msg?: string } | undefined;
+  if (base && typeof base.status_code === 'number' && base.status_code !== 0) {
+    throw new Error(`MiniMax API error: status_code=${base.status_code} - ${base.status_msg ?? ''}`);
+  }
+}
+
 const minmaxPlugin: AiPlugin = {
   name: 'minmax',
   label: 'MiniMax',
@@ -97,6 +106,7 @@ const minmaxPlugin: AiPlugin = {
     if (!resp.ok) throw await apiError(resp, config);
 
     const data = await resp.json() as Record<string, unknown>;
+    throwOnBaseRespError(data);
     const choices = data.choices as Array<{ message: { content: string } }> | null | undefined;
     const content = choices?.[0]?.message?.content || '{}';
 

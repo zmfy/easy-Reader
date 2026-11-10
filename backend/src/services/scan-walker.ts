@@ -20,7 +20,9 @@ import {
 } from '../types';
 import { buildCandidateGroups, applyNotDuplicateOverrides, mergeDuplicateGroups, ScannedBook } from './dedup-grouper';
 import { listOverrides } from './manual-override';
-import { buildBatchFromScan, ScanResult } from './batch-builder';
+import { buildBatchesFromScan, ScanResult, SCAN_BATCH_SIZE } from './batch-builder';
+import { addNotice } from './notices';
+import { ScanBatch } from '../types';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { deleteBookRelations } from './relation-cleanup';
 
@@ -136,7 +138,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         garbled,
         encoding_fixed: encodingFixed,
       };
-      buildBatchFromScan(taskId, partial);
+      notifyReviewBatches(buildBatchesFromScan(taskId, partial));
       return;
     }
 
@@ -234,16 +236,15 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     setScanProgress(taskId, { stage: 'staging' });
     if (options.mode === 'auto') {
       if (!isEmpty(result)) {
-        const batch = buildBatchFromScan(taskId, result);
         const { applyBatch } = await import('./batch-applier');
-        applyBatch(batch.id, 'system-auto');
+        for (const batch of buildBatchesFromScan(taskId, result)) applyBatch(batch.id, 'system-auto');
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
     } else {
       // mode === 'review' — skip batch creation when result has nothing to review
       if (!isEmpty(result)) {
-        buildBatchFromScan(taskId, result);
+        notifyReviewBatches(buildBatchesFromScan(taskId, result));
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
@@ -256,14 +257,9 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // scan_batch_items, not books table — they'll be eligible for AI fill only
     // after the admin applies the batch and runs another scan with ai_fill on.)
     if (options.ai_fill) {
-      setScanProgress(taskId, { stage: 'ai_fill' });
-      const { batchFill, selectFillCandidates } = await import('./ai-batch-fill');
-      const toFill = selectFillCandidates(db, false);
-      console.log(`[scan ${taskId}] AI fill candidates: ${toFill.length}`);
-      if (toFill.length > 0) {
-        const r = await batchFill({ taskId, books: toFill });
-        console.log(`[scan ${taskId}] AI fill done: ${r.succeeded.length} ok, ${r.failed.length} failed`);
-      }
+      const { runAiFill } = await import('./ai-fill-task');
+      const r = await runAiFill(taskId, 'system-scan');
+      if (r) console.log(`[scan ${taskId}] AI fill done: ${r.succeeded.length} ok, ${r.failed.length} failed${r.paused ? `, paused: ${r.paused.message}` : ''}`);
     }
 
     finishScanTask(taskId, 'completed');
@@ -272,6 +268,21 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     finishScanTask(taskId, 'failed', msg);
     console.error('Scan task failed:', err);
   }
+}
+
+/** 审核模式：扫描生成了待审核批次，铃铛提醒去审核 */
+function notifyReviewBatches(batches: ScanBatch[]): void {
+  const total = batches.reduce((n, b) => {
+    try { return n + (JSON.parse(b.summary_counts).new ?? 0); } catch { return n; }
+  }, 0);
+  addNotice({
+    kind: 'scan_review', level: 'info',
+    title: '扫描完成，有待审核的书',
+    message: batches.length > 1
+      ? `新书 ${total} 本，分成 ${batches.length} 批（每批最多 ${SCAN_BATCH_SIZE} 本），可逐批审核`
+      : `新书 ${total} 本，请审核后入库`,
+    link: '/library/scan-batches',
+  });
 }
 
 interface ScannedBookEx extends ScannedBook {

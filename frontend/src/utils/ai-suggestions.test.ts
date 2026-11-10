@@ -3,7 +3,7 @@ import { defaultChoice, toSelection, hasSelection, parseContentMismatch } from '
 import type { AiSuggestion } from '@/types'
 
 const s: AiSuggestion = {
-  book_id: 'b1', title: '西游记', author: '佚名', cover_url: null, created_at: '', content_mismatch: null,
+  book_id: 'b1', title: '西游记', author: '佚名', cover_url: null, created_at: '', batch_no: 1, content_mismatch: null,
   current: { recommended_tags: [], similar_works: [], adaptations: [] },
   data: {
     fields: {

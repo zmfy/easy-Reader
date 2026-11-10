@@ -125,7 +125,8 @@ const noticeStore = useSystemNoticeStore()
 const router = useRouter()
 
 // 铃铛只对管理员显示；「系统提醒」关闭（含环境变量关闭）时整个隐藏
-const showBell = computed(() => authStore.isAdmin && noticeStore.enabled)
+// 关闭了「系统提醒」时，有后台任务通知也照样显示铃铛
+const showBell = computed(() => authStore.isAdmin && (noticeStore.enabled || noticeStore.taskNotices.length > 0))
 
 const siteName = ref('简单书房')
 const sidebarOpen = ref(false)
@@ -175,7 +176,10 @@ function toggleKeepAlive() {
 }
 
 onMounted(async () => {
-  if (authStore.isAdmin) void noticeStore.load()
+  if (authStore.isAdmin) {
+    void noticeStore.load()
+    noticeStore.startTaskPolling()
+  }
   try {
     const resp = await settingsApi.getPublic()
     if (resp.data.data?.site_name) siteName.value = resp.data.data.site_name
@@ -185,6 +189,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopKeepAlive()
+  noticeStore.stopTaskPolling()
 })
 
 const navItems = [

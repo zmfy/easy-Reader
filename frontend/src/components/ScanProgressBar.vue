@@ -3,13 +3,16 @@
     <div class="progress-content">
       <div class="progress-label">
         <span class="stage-text">{{ stageLabel }}</span>
-        <span class="progress-text">{{ store.activeTask?.processed_files ?? 0 }} / {{ store.activeTask?.total_files ?? 0 }}</span>
+        <span class="progress-text">
+          {{ store.activeTask?.processed_files ?? 0 }} / {{ store.activeTask?.total_files ?? 0 }}
+          <template v-if="fillExtra"> · {{ fillExtra }}</template>
+        </span>
       </div>
       <el-progress
         :percentage="store.progress"
         :stroke-width="6"
         :show-text="false"
-        :status="store.activeTask?.status === 'failed' ? 'exception' : undefined"
+        :status="store.activeTask?.status === 'failed' ? 'exception' : store.activeTask?.status === 'paused' ? 'warning' : undefined"
       />
     </div>
     <div class="progress-actions">
@@ -25,9 +28,13 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useScanTaskStore } from '@/stores/scan-task'
 import { useAuthStore } from '@/stores/auth'
+import { useSystemNoticeStore } from '@/stores/system-notice'
+import { libraryApi } from '@/api/library'
+import type { AiFillStatus } from '@/types'
 
 const store = useScanTaskStore()
 const authStore = useAuthStore()
+const noticeStore = useSystemNoticeStore()
 
 const recentlyDone = ref(false)
 let doneTimer: ReturnType<typeof setTimeout> | null = null
@@ -44,6 +51,7 @@ const stageLabel = computed(() => {
   if (t.status === 'completed') return '扫描完成'
   if (t.status === 'failed') return '扫描失败'
   if (t.status === 'cancelled') return '已取消'
+  if (t.status === 'paused') return `已暂停：${t.error || 'AI 额度用完'}`
   const stageMap: Record<string, string> = {
     walking: '遍历文件中…',
     fingerprinting: '计算指纹中…',
@@ -52,6 +60,25 @@ const stageLabel = computed(() => {
     ai_fill: 'AI 补充书籍信息…',
   }
   return stageMap[t.stage ?? ''] ?? '处理中…'
+})
+
+// AI 填充阶段：本次第几批（每 500 本一批）+ 全书库进度
+const FILL_BATCH_SIZE = 500
+const fillStatus = ref<AiFillStatus | null>(null)
+let lastFillFetch = 0
+const fillExtra = computed(() => {
+  const t = store.activeTask
+  if (!t || t.stage !== 'ai_fill' || t.status !== 'running' || t.total_files === 0) return ''
+  const batch = Math.min(Math.floor(t.processed_files / FILL_BATCH_SIZE) + 1, Math.ceil(t.total_files / FILL_BATCH_SIZE))
+  const parts = [`本次第 ${batch} 批`]
+  if (fillStatus.value) parts.push(`全书库已填充 ${fillStatus.value.done} / ${fillStatus.value.total}`)
+  return parts.join(' · ')
+})
+watch(() => store.activeTask?.processed_files, () => {
+  const t = store.activeTask
+  if (!t || t.stage !== 'ai_fill' || !authStore.isAdmin || Date.now() - lastFillFetch < 10_000) return
+  lastFillFetch = Date.now()
+  libraryApi.aiFillStatus().then(r => { fillStatus.value = r.data.data ?? null }).catch(() => {})
 })
 
 async function onCancel(): Promise<void> {
@@ -82,7 +109,10 @@ watch(() => store.activeTask?.status, (s, old) => {
 
 // Desktop notification when scan finishes (regardless of which page user is on)
 watch(() => store.activeTask?.status, (newStatus, oldStatus) => {
-  if (oldStatus === 'running' && (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled')) {
+  if (oldStatus === 'running' && newStatus && newStatus !== 'running') {
+    if (authStore.isAdmin) void noticeStore.loadTasks()   // 铃铛立即显示完成 / 暂停通知
+  }
+  if (oldStatus === 'running' && (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled' || newStatus === 'paused')) {
     void notifyOnFinish(newStatus)
   }
 })
@@ -97,6 +127,7 @@ async function notifyOnFinish(status: string): Promise<void> {
     completed: '扫描完成',
     failed: '扫描失败',
     cancelled: '扫描已取消',
+    paused: 'AI 填充已暂停',
   }
   const t = store.activeTask
   const bodyParts: string[] = []
