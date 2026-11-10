@@ -104,6 +104,20 @@ interface DoubanSuggest {
   title?: string;
   author_name?: string;
   year?: string;
+  /** b = 书，a = 作者（联想结果里会混入作者条目，图片是作者照片） */
+  type?: string;
+}
+
+/** 联想结果里只要书：去掉作者条目（type 为 a），否则作者照片会被当成封面 */
+function isBookItem(s: DoubanSuggest | null | undefined): s is DoubanSuggest {
+  return !!s && s.type !== 'a';
+}
+
+/** Pure: pick the best book item from a douban suggest response (prefers one with a real cover). */
+export function pickDoubanBook(items: unknown): DoubanSuggest | undefined {
+  if (!Array.isArray(items)) return undefined;
+  const books = (items as DoubanSuggest[]).filter(isBookItem);
+  return books.find(s => s.pic && !s.pic.includes('book-default')) ?? books[0];
 }
 
 /** One suggest request; returns the best book item (prefers one with a real cover), or undefined. */
@@ -114,9 +128,7 @@ export async function doubanSuggest(title: string): Promise<DoubanSuggest | unde
       'Accept': 'application/json, text/javascript, */*',
       'Referer': 'https://book.douban.com/',
     });
-    const suggestions = JSON.parse(buf.toString('utf-8')) as DoubanSuggest[];
-    if (!Array.isArray(suggestions) || suggestions.length === 0) return undefined;
-    return suggestions.find(s => s.pic && !s.pic.includes('book-default')) ?? suggestions[0];
+    return pickDoubanBook(JSON.parse(buf.toString('utf-8')));
   } catch {
     return undefined;
   }
@@ -128,7 +140,7 @@ export function parseDoubanSuggestList(json: string, limit = 6): DoubanCandidate
   try { items = JSON.parse(json); } catch { return []; }
   if (!Array.isArray(items)) return [];
   return (items as DoubanSuggest[])
-    .filter(s => s && typeof s.pic === 'string' && s.pic && !s.pic.includes('book-default'))
+    .filter(s => isBookItem(s) && typeof s.pic === 'string' && s.pic && !s.pic.includes('book-default'))
     .slice(0, limit)
     .map(s => ({
       title: s.title || '',

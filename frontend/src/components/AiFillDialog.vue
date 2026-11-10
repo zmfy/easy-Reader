@@ -29,6 +29,11 @@
             <el-button size="small" type="warning" plain @click="onResetAll">重置全部填充记录</el-button>
           </div>
         </template>
+        <!-- 不需要 AI：没配置 AI 也能用 -->
+        <div v-if="(fillStatus?.no_cover ?? 0) > 0" class="cover-block">
+          <el-button size="small" :loading="makingCovers" @click="onDefaultCovers">为 {{ fillStatus!.no_cover }} 本没有封面的书生成默认封面</el-button>
+          <div class="hint">豆瓣上找不到封面的书（套装、合集等）用书名和作者生成一张。以后可在书籍详情页点「AI 填充」换成别的封面。</div>
+        </div>
       </div>
 
       <template #footer>
@@ -85,10 +90,9 @@ async function refresh(): Promise<void> {
   } catch {
     aiConfigured.value = false
   }
-  if (!aiConfigured.value) return
   const [status, est] = await Promise.allSettled([
     libraryApi.aiFillStatus(),
-    libraryApi.estimate({ ai_fill: true, full_rescan: false }),
+    aiConfigured.value ? libraryApi.estimate({ ai_fill: true, full_rescan: false }) : Promise.reject(new Error('AI 未配置')),
   ])
   fillStatus.value = status.status === 'fulfilled' ? status.value.data.data ?? null : null
   estimate.value = est.status === 'fulfilled' ? est.value.data.data ?? null : null
@@ -121,6 +125,24 @@ async function startFill(): Promise<void> {
     ElMessage.error(code === 'TASK_RUNNING' ? '已有扫描 / 填充任务在运行' : '启动失败')
   } finally {
     startingFill.value = false
+  }
+}
+
+const makingCovers = ref(false)
+async function onDefaultCovers(): Promise<void> {
+  const n = fillStatus.value?.no_cover ?? 0
+  try {
+    await ElMessageBox.confirm(`为 ${n} 本没有封面的书生成默认封面（印书名和作者）？已有封面的书不受影响。`, '生成默认封面', { type: 'info', confirmButtonText: '生成', cancelButtonText: '取消' })
+  } catch { return }
+  makingCovers.value = true
+  try {
+    const resp = await libraryApi.generateDefaultCovers()
+    ElMessage.success(`已为 ${resp.data.data?.generated ?? 0} 本书生成默认封面`)
+    void refresh()
+  } catch {
+    ElMessage.error('生成失败')
+  } finally {
+    makingCovers.value = false
   }
 }
 
@@ -166,5 +188,6 @@ async function onResetAll(): Promise<void> {
 .tier-icon { vertical-align: -2px; margin-right: 2px; color: var(--warning); }
 .hint { font-size: 12px; color: var(--text-2); line-height: 1.6; }
 .reset-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.cover-block { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-top: 10px; border-top: 1px dashed var(--card-border); }
 .reset-row .el-button + .el-button { margin-left: 0; }
 </style>

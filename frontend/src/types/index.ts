@@ -579,6 +579,8 @@ export interface AiFillStatus {
   total: number
   done: number
   remaining: number
+  /** 没有封面的书（正常、非重复），可一键生成默认封面 */
+  no_cover: number
   last_task: ScanTask | null
 }
 

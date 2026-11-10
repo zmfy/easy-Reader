@@ -26,6 +26,11 @@ jest.mock('../../src/utils/cover', () => ({
   fetchRating: jest.fn().mockResolvedValue(undefined),
 }));
 
+// 默认封面只生成文件：测试里不写盘，返回固定地址
+jest.mock('../../src/services/default-cover-file', () => ({
+  createDefaultCover: jest.fn(() => '/covers/b1-default.svg'),
+}));
+
 // No-op scan-task progress – avoids needing scan_tasks table.
 // isCancelled defaults to false (not cancelled) so existing tests run fully.
 jest.mock('../../src/services/scan-task', () => ({
@@ -521,6 +526,60 @@ describe('batchFill suggestions and content mismatch', () => {
     expect(suggestion().fields.title).toBeUndefined();
     // 按正文实际的书名查改编作品
     expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '诡秘之主', author: '爱潜水的乌贼' });
+  });
+
+  describe('封面', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const cover = require('../../src/utils/cover');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createDefaultCover } = require('../../src/services/default-cover-file');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { writeAudit } = require('../../src/services/audit-log');
+    const coverUrl = () => (_testDb!.prepare('SELECT cover_url FROM books WHERE id = ?').get('b1') as { cover_url: string | null }).cover_url;
+    beforeEach(() => {
+      (cover.doubanSuggest as jest.Mock).mockReset().mockResolvedValue(undefined);
+      (cover.downloadCover as jest.Mock).mockReset().mockResolvedValue(undefined);
+      (createDefaultCover as jest.Mock).mockClear();
+      (writeAudit as jest.Mock).mockClear();
+    });
+
+    it('豆瓣找不到封面时生成默认封面，书名用 AI 认出的，作者用这次写入后的', async () => {
+      book({ title: '0079. 吴思历史经典三部曲（套装）' });
+      fillSpy.mockResolvedValueOnce({ title: '吴思历史经典三部曲', author: '吴思', confidence: { author: 'high' } });
+      await run();
+      expect(coverUrl()).toBe('/covers/b1-default.svg');
+      expect(createDefaultCover).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'b1', author: '吴思' }), { title: '吴思历史经典三部曲' });
+      expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'ai_fetch_cover', details: expect.objectContaining({ source: 'default' }),
+      }));
+    });
+
+    it('豆瓣有封面就用豆瓣的，不生成默认封面', async () => {
+      book();
+      (cover.doubanSuggest as jest.Mock).mockResolvedValueOnce({ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' });
+      (cover.downloadCover as jest.Mock).mockResolvedValueOnce('/covers/b1-douban.jpg');
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      expect(coverUrl()).toBe('/covers/b1-douban.jpg');
+      expect(createDefaultCover).not.toHaveBeenCalled();
+    });
+
+    it('豆瓣封面下载失败也用默认封面', async () => {
+      book();
+      (cover.doubanSuggest as jest.Mock).mockResolvedValueOnce({ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' });
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      expect(coverUrl()).toBe('/covers/b1-default.svg');
+    });
+
+    it('已有封面的书不动', async () => {
+      book({ cover_url: '/covers/mine.jpg' });
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      expect(coverUrl()).toBe('/covers/mine.jpg');
+      expect(createDefaultCover).not.toHaveBeenCalled();
+    });
   });
 
   it('stores no suggestion when everything already matches', async () => {

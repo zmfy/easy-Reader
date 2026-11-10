@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { getDb } from '../db';
 import { Book } from '../types';
-import { renderDefaultCoverSvg } from '../utils/default-cover';
+import { createDefaultCover } from './default-cover-file';
 import {
-  downloadCoverFromPic, fetchRating, isAllowedCoverImageUrl, isAllowedDoubanSubjectUrl, saveCoverFile,
+  downloadCoverFromPic, fetchRating, isAllowedCoverImageUrl, isAllowedDoubanSubjectUrl,
 } from '../utils/cover';
 import { replaceAdaptations, replaceMetadata } from './book-ai-metadata';
 import { Adaptation, ADAPTATION_TYPES } from './adaptations';
@@ -11,7 +11,7 @@ import { isAllowedAdaptationUrl } from '../utils/adaptation-sources';
 import { getCategoryTree, isValidCategoryPath } from '../utils/category-tree';
 import { markCategoriesReviewed } from './category-migrate';
 import { markFieldsAsEdited, stampFillVersion, unmarkFieldsAsEdited } from './ai-batch-fill';
-import { BookNotFoundError, cleanBookTitle, LockableField, SimilarWork } from './ai-fill-preview';
+import { BookNotFoundError, LockableField, SimilarWork } from './ai-fill-preview';
 
 /**
  * 应用用户在 AI 填充预览中确认的结果。
@@ -105,12 +105,7 @@ async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string
     if (!url) throw new AiFillApplyError('封面下载失败，请重试或选择其他封面', 502);
     return url;
   }
-  const svg = renderDefaultCoverSvg({
-    title: input.coverTitle?.trim() || cleanBookTitle(book.title),
-    author: input.author ?? book.author,
-    category: input.category ?? book.category,
-  });
-  return saveCoverFile(book.id, svg, 'svg');
+  return createDefaultCover(book, { title: input.coverTitle, author: input.author ?? book.author, category: input.category ?? book.category });
 }
 
 export async function applyAiFill(bookId: string, input: AiFillApplyInput, generatedBy?: string): Promise<Book> {

@@ -6,6 +6,7 @@ import { aiManager } from '../ai/ai-manager';
 import { setScanProgress, isCancelled } from './scan-task';
 import { writeAudit } from './audit-log';
 import { doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
+import { createDefaultCover } from './default-cover-file';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
@@ -307,28 +308,17 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
       saveSuggestion(db, b.id, suggestion, currentBatchNo());
 
-      // Cover + rating from douban: one suggest request shared by both, best-effort.
+      // 封面 + 评分：共用一次豆瓣联想请求，尽力而为；豆瓣找不到封面（套装、合集常见）就生成默认封面
       const titleForCover = ((info.title && info.title.trim()) || knownTitle || filledFields.title || current.title || '').trim();
       const needCover = !current.cover_url;
       const needRating = current.rating == null;
+      let coverUrl: string | undefined;
+      let coverSource: 'douban' | 'default' = 'douban';
       if ((needCover || needRating) && titleForCover.length > 0) {
         try {
           const item = await doubanSuggest(titleForCover);
           if (item) {
-            if (needCover) {
-              const coverUrl = await downloadCover(item, b.id);
-              if (coverUrl) {
-                db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
-                result.covers_fetched++;
-                writeAudit({
-                  user_id: userId,
-                  action: 'ai_fetch_cover',
-                  resource_id: b.id,
-                  file_path: b.file_path,
-                  details: { cover_url: coverUrl, title_used: titleForCover },
-                });
-              }
-            }
+            if (needCover) coverUrl = await downloadCover(item, b.id);
             if (needRating) {
               const rating = await fetchRating(item);
               if (rating != null) db.prepare('UPDATE books SET rating = ? WHERE id = ?').run(rating, b.id);
@@ -337,6 +327,27 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         } catch {
           // best-effort; never fail the book on cover/rating
         }
+      }
+      if (needCover && !coverUrl) {
+        try {
+          // 作者、分类用这次写入之后的值；书名优先用 AI 认出的书名
+          const after = db.prepare('SELECT id, title, author, category FROM books WHERE id = ?').get(b.id) as { id: string; title: string; author: string | null; category: string | null };
+          coverUrl = createDefaultCover(after, { title: (info.title && info.title.trim()) || undefined });
+          coverSource = 'default';
+        } catch {
+          // 默认封面写文件失败也不影响这本书
+        }
+      }
+      if (coverUrl) {
+        db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
+        result.covers_fetched++;
+        writeAudit({
+          user_id: userId,
+          action: 'ai_fetch_cover',
+          resource_id: b.id,
+          file_path: b.file_path,
+          details: { cover_url: coverUrl, title_used: titleForCover, source: coverSource },
+        });
       }
 
       db.prepare("UPDATE books SET ai_fill_status = 'filled' WHERE id = ?").run(b.id);

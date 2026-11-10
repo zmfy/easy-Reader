@@ -401,6 +401,23 @@ html[data-theme="cool"] {
   --el-dialog-title-font-size: 16px;
 }
 .el-dialog__title { font-weight: 600; }
+/* 手机：对话框多写固定宽度（480–880px），一律收进屏幕内；对话框里左侧标签的表单改为标签在上 */
+@media (max-width: 640px) {
+  .el-dialog:not(.is-fullscreen) {
+    max-width: calc(100vw - 24px);
+    --el-dialog-margin-top: 8vh;
+    --el-dialog-padding-primary: 16px;
+  }
+  .el-dialog .el-form:not(.el-form--inline) .el-form-item:not(.is-inline) { display: block; }
+  .el-dialog .el-form:not(.el-form--inline) .el-form-item__label {
+    width: auto !important;
+    justify-content: flex-start;
+    margin-bottom: 6px;
+    line-height: 1.5;
+    height: auto;
+  }
+  .el-dialog .el-form:not(.el-form--inline) .el-form-item__content { margin-left: 0 !important; }
+}
 .el-message-box {
   --el-messagebox-border-radius: var(--radius-lg);
   --el-messagebox-padding-primary: 20px;
