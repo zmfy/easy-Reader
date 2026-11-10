@@ -3,7 +3,7 @@ import { getDb } from '../db';
 import { AI_FILL_VERSION } from './scan-versions';
 import { batchFill, BatchFillResult, FillBatchSummary, resetAllFills, selectFillCandidates } from './ai-batch-fill';
 import { isCancelled, pauseScanTask, setScanProgress } from './scan-task';
-import { addNotice } from './notices';
+import { addNotice, notifyFillBatch } from './notices';
 import { ScanTask } from '../types';
 
 /**
@@ -37,10 +37,11 @@ export function getLastFillTask(db: Database.Database = getDb()): ScanTask | nul
   return row ?? null;
 }
 
-export function batchNoticeText(s: FillBatchSummary): { title: string; message: string } {
+/** 一批的结果，如「第 3 批 500 本：自动写入 320 本，待确认 180 本」 */
+export function batchLine(s: FillBatchSummary): string {
   const parts = [`自动写入 ${s.auto_filled} 本`, `待确认 ${s.suggested} 本`];
   if (s.failed > 0) parts.push(`失败 ${s.failed} 本`);
-  return { title: `第 ${s.batch_no} 批 AI 填充完成`, message: `本批 ${s.processed} 本：${parts.join('，')}` };
+  return `第 ${s.batch_no} 批 ${s.processed} 本：${parts.join('，')}`;
 }
 
 export async function runAiFill(
@@ -58,13 +59,8 @@ export async function runAiFill(
 
   const result = await batchFill({
     taskId, user_id: userId, books: toFill, batchSize: opts.batchSize,
-    onBatchDone: (s) => {
-      const { title, message } = batchNoticeText(s);
-      addNotice({
-        kind: 'ai_fill_batch', level: 'success', title, message,
-        link: s.suggested > 0 ? `/library/ai-suggestions?batch=${s.batch_no}` : undefined,
-      });
-    },
+    // 前面的批还没确认完时，合并进同一条「去确认」提醒
+    onBatchDone: (s) => notifyFillBatch(batchLine(s), 'success', db),
   });
 
   const p = getFillProgress(db);

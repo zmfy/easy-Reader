@@ -176,12 +176,14 @@ import DuplicateGroupCard from '@/components/DuplicateGroupCard.vue'
 import SeriesGroupCard from '@/components/SeriesGroupCard.vue'
 import BatchItemPreview from '@/components/BatchItemPreview.vue'
 import { scanBatchesApi } from '@/api/scan-batches'
+import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { ScanBatch, ScanBatchItem } from '@/types'
 
 const PAGE_SIZE = 20
 
 const route = useRoute()
 const router = useRouter()
+const noticeStore = useSystemNoticeStore()
 const batchId = route.params.id as string
 const batchIdShort = computed(() => {
   const part = batch.value && (batch.value.part_count ?? 1) > 1 ? `（第 ${batch.value.part_index} / ${batch.value.part_count} 批）` : ''
@@ -293,12 +295,14 @@ async function onApply(): Promise<void> {
     message: `已应用：新增 ${r.inserted} · 更新 ${r.updated} · 关联重复 ${r.duplicates_linked} · 创建系列 ${r.series_created} · 标乱码 ${r.garbled_marked}${r.errors.length > 0 ? ` · 错误 ${r.errors.length}` : ''}`,
     duration: 6000,
   })
+  void noticeStore.loadTasks()   // 铃铛里的待审核提醒随之更新（全部审完则消失）
   await fetchBatch() // stay on page, now in read-only mode showing audit
 }
 async function onDiscard(): Promise<void> {
   await ElMessageBox.confirm('确认废弃整个批次？AI 判定结果将丢弃，但已修复编码的文件不会还原。', '废弃确认', { type: 'warning' })
   await scanBatchesApi.discard(batchId)
   ElMessage.success('已废弃')
+  void noticeStore.loadTasks()
   router.push('/library/scan-batches')
 }
 
