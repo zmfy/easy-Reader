@@ -44,7 +44,7 @@
         </div>
 
         <p v-if="s.content_mismatch" class="note note--warning sg-mismatch">
-          正文看起来是《{{ s.content_mismatch.title }}》<template v-if="s.content_mismatch.author">（{{ s.content_mismatch.author }}）</template>，与文件名不符，文件可能标错了。
+          正文看起来是《{{ s.content_mismatch.title }}》<template v-if="s.content_mismatch.author">（{{ s.content_mismatch.author }}）</template>，与文件名不符，文件可能标错了。认可的话连同下面的「书名」一起勾选，采纳后书名改为正文书名。
           <template v-if="s.content_mismatch.reason">{{ s.content_mismatch.reason }}</template>
           <el-button link type="primary" size="small" @click="dismissMismatch(s)">不是错标</el-button>
         </p>

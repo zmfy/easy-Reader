@@ -517,6 +517,8 @@ describe('batchFill suggestions and content mismatch', () => {
     expect(row().author).toBeNull();
     expect(JSON.parse(row().content_mismatch!)).toEqual({ title: '诡秘之主', author: '爱潜水的乌贼', reason: '正文是诡秘之主' });
     expect(suggestion().fields.author).toMatchObject({ value: '爱潜水的乌贼', current: null });
+    // 书名建议不存进建议数据：由错标判定在列出 / 采纳时生成
+    expect(suggestion().fields.title).toBeUndefined();
     // 按正文实际的书名查改编作品
     expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '诡秘之主', author: '爱潜水的乌贼' });
   });

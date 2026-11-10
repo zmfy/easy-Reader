@@ -109,6 +109,7 @@
             <p v-if="authStore.isAdmin && contentMismatch" class="note note--warning mismatch-note">
               AI 读到的正文是《{{ contentMismatch.title }}》<template v-if="contentMismatch.author">（{{ contentMismatch.author }}）</template>，与文件名不符，文件可能标错了。
               <template v-if="contentMismatch.reason">{{ contentMismatch.reason }}</template>
+              <el-button link type="primary" size="small" @click="acceptMismatch">改书名为《{{ contentMismatch.title }}》</el-button>
               <el-button link type="primary" size="small" @click="dismissMismatch">不是错标</el-button>
             </p>
 
@@ -206,7 +207,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IconChevronLeft, IconPlayerPlay, IconPlus, IconCheck, IconWand, IconLock } from '@tabler/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { IconNotebook, IconSitemap } from '@tabler/icons-vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
@@ -230,6 +231,22 @@ const book = ref<Book | null>(null)
 const aiMeta = ref<BookAiMetadata | null>(null)
 const categoryOptions = ref<CategoryOption[]>([])
 const contentMismatch = computed(() => parseContentMismatch(book.value?.content_mismatch))
+
+/** 认可错标判定：书名改为正文书名（只改书库里的书名，不动文件） */
+async function acceptMismatch() {
+  const m = contentMismatch.value
+  if (!book.value || !m) return
+  try {
+    await ElMessageBox.confirm(`把书名从《${book.value.title}》改为《${m.title}》？只改书库里显示的书名，文件不变。`, '改书名', { type: 'warning', confirmButtonText: '改书名', cancelButtonText: '取消' })
+  } catch { return }
+  try {
+    await libraryApi.acceptContentMismatch(book.value.id)
+    ElMessage.success('书名已改为正文书名')
+    await fetchBook()
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
 
 async function dismissMismatch() {
   if (!book.value) return

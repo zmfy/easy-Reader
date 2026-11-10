@@ -1,7 +1,7 @@
 import type { AiSuggestion, AiSuggestionSelection, ContentMismatch, SuggestField } from '@/types'
 
-export const SUGGEST_FIELDS: SuggestField[] = ['author', 'summary', 'category']
-export const SUGGEST_FIELD_LABELS: Record<SuggestField, string> = { author: '作者', summary: '简介', category: '分类' }
+export const SUGGEST_FIELDS: SuggestField[] = ['title', 'author', 'summary', 'category']
+export const SUGGEST_FIELD_LABELS: Record<SuggestField, string> = { title: '书名', author: '作者', summary: '简介', category: '分类' }
 
 /** 每本书在页面上的勾选状态 */
 export interface SuggestionChoice {
@@ -13,10 +13,11 @@ export interface SuggestionChoice {
 
 /**
  * 默认勾选：依据明确 / 推断的字段勾上；低置信、手动改过（锁定）的不勾；标签、类似作品、改编作品有就勾。
- * 文件名与正文不符（错标）的书一律不勾：可能更想先改文件，而不是把信息换成正文那本书的
+ * 文件名与正文不符（错标）的书一律不勾：可能更想先改文件，而不是把信息换成正文那本书的；
+ * 认可 AI 判定时连同「书名」一起勾选，采纳后书名改为正文书名
  */
 export function defaultChoice(s: AiSuggestion): SuggestionChoice {
-  const fields = { author: false, summary: false, category: false }
+  const fields = { title: false, author: false, summary: false, category: false }
   if (s.content_mismatch) return { fields, tags: false, similar: false, adaptations: false }
   for (const f of SUGGEST_FIELDS) {
     const x = s.data.fields[f]

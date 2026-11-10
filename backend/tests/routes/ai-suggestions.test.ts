@@ -115,4 +115,47 @@ describe('AI suggestion routes', () => {
     expect(await titles()).toEqual([]);
     expect((await call('POST', '/b1/content-mismatch/dismiss')).status).toBe(404);
   });
+
+  describe('错标的书：书名改为正文书名', () => {
+    const titleOf = (id: string) => (getDb().prepare('SELECT title, content_mismatch, manually_edited_fields FROM books WHERE id = ?').get(id));
+
+    it('列表里错标的书带「书名」建议，正常的书没有', async () => {
+      const list = await json(await call('GET', '/ai-suggestions'));
+      expect(list[0].data.fields.title).toEqual({ value: '诡秘之主', current: '三国演义', confidence: 'medium' });
+      expect(list[1].data.fields.title).toBeUndefined();
+    });
+
+    it('勾选书名采纳：书名改为正文书名、错标提示清除、记为手动改过、日志里有 title', async () => {
+      const res = await json(await call('POST', '/ai-suggestions/apply', {
+        items: [{ book_id: 'b2', fields: ['title', 'summary'], tags: false, similar: false, adaptations: false }],
+      }));
+      expect(res).toEqual({ applied: ['b2'], failed: [] });
+      expect(titleOf('b2')).toEqual({ title: '诡秘之主', content_mismatch: null, manually_edited_fields: '["title"]' });
+      const audit = getDb().prepare("SELECT details FROM audit_log WHERE action = 'ai_suggestion_apply' AND resource_id = 'b2' ORDER BY created_at DESC").get();
+      expect(JSON.parse(audit.details).applied).toEqual(['title', 'summary']);
+    });
+
+    it('不勾书名：书名不变，错标提示保留', async () => {
+      await call('POST', '/ai-suggestions/apply', { items: [{ book_id: 'b2', fields: ['summary'], tags: false, similar: false, adaptations: false }] });
+      expect(titleOf('b2')).toMatchObject({ title: '三国演义' });
+      expect(titleOf('b2').content_mismatch).not.toBeNull();
+    });
+
+    it('点「不是错标」后书名建议消失，勾了书名也不改', async () => {
+      await call('POST', '/b2/content-mismatch/dismiss');
+      expect((await json(await call('GET', '/ai-suggestions')))[0].data.fields.title).toBeUndefined();
+      await call('POST', '/ai-suggestions/apply', { items: [{ book_id: 'b2', fields: ['title'], tags: false, similar: false, adaptations: false }] });
+      expect(titleOf('b2')).toMatchObject({ title: '三国演义' });
+    });
+
+    it('书详情页「改书名」：已采纳过的书也能改正；没有错标时 404，非管理员 403', async () => {
+      expect((await call('POST', '/b2/content-mismatch/accept', undefined, 'user')).status).toBe(403);
+      const r = await call('POST', '/b2/content-mismatch/accept');
+      expect(r.status).toBe(200);
+      expect((await json(r)).title).toBe('诡秘之主');
+      expect(titleOf('b2')).toMatchObject({ title: '诡秘之主', content_mismatch: null });
+      expect((await call('POST', '/b2/content-mismatch/accept')).status).toBe(404);
+      expect((await call('POST', '/b1/content-mismatch/accept')).status).toBe(404);
+    });
+  });
 });

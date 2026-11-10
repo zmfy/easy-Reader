@@ -98,6 +98,9 @@ export const libraryApi = {
     http.post<ApiResponse<{ dismissed: number }>>('/library/ai-suggestions/dismiss', { book_ids: bookIds }),
   dismissContentMismatch: (id: string) =>
     http.post<ApiResponse<null>>(`/library/${id}/content-mismatch/dismiss`, {}),
+  /** 认可错标判定：书名改为 AI 读到的正文书名 */
+  acceptContentMismatch: (id: string) =>
+    http.post<ApiResponse<Book>>(`/library/${id}/content-mismatch/accept`, {}),
 
   getAiMetadata: (id: string) =>
     http.get<ApiResponse<import('@/types').BookAiMetadata | null>>(`/library/${id}/ai-metadata`),

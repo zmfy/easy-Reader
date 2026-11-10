@@ -6,6 +6,7 @@ import { Adaptation } from './adaptations';
 import { getMetadata } from './book-ai-metadata';
 import { applyAiFill, AiFillApplyInput } from './ai-fill-apply';
 import { writeAudit } from './audit-log';
+import { markFieldsAsEdited } from './ai-batch-fill';
 
 /**
  * 后台 AI 丰富的「待确认」建议：批量填充时，空字段 + 非低置信的结果直接写入，
@@ -13,8 +14,12 @@ import { writeAudit } from './audit-log';
  * 由管理员在「待确认」页批量采纳或忽略。一本书只保留最新一条。
  */
 
-export type SuggestField = 'author' | 'summary' | 'category';
-export const SUGGEST_FIELDS: SuggestField[] = ['author', 'summary', 'category'];
+export type SuggestField = 'title' | 'author' | 'summary' | 'category';
+/** 可勾选采纳的字段。书名只来自错标判定（见 mismatchTitleSuggestion），不由批量填充生成 */
+export const SUGGEST_FIELDS: SuggestField[] = ['title', 'author', 'summary', 'category'];
+/** 批量填充比对生成建议的字段（不含书名：文件名清洗出的书名与 AI 书名常有无关紧要的差别） */
+export type FillSuggestField = Exclude<SuggestField, 'title'>;
+export const FILL_SUGGEST_FIELDS: FillSuggestField[] = ['author', 'summary', 'category'];
 
 export interface FieldSuggestion {
   value: string;
@@ -95,6 +100,30 @@ export function recordContentMismatch(
   db.prepare('UPDATE books SET content_mismatch = ? WHERE id = ?').run(next ? JSON.stringify(next) : null, bookId);
 }
 
+/**
+ * 错标的书：把「书名改为正文书名」作为一项建议。不单独保存，由错标判定临时生成——
+ * 以前生成的建议也会带上；点「不是错标」后判定被忽略，这一项随之消失。
+ */
+export function mismatchTitleSuggestion(currentTitle: string, rawMismatch: string | null | undefined): FieldSuggestion | null {
+  const m = activeContentMismatch(rawMismatch);
+  const value = m?.title.trim();
+  if (!m || !value || value === currentTitle.trim()) return null;
+  return { value, current: currentTitle, confidence: 'medium', ...(m.reason ? { evidence: m.reason } : {}) };
+}
+
+/**
+ * 认可 AI 的错标判定：书名改为正文书名（只改书库里的书名，不动文件），清除错标提示，
+ * 并把书名记为手动改过，之后不会被覆盖。没有未忽略的错标时返回 false。
+ */
+export function acceptContentMismatch(db: Database.Database, bookId: string): boolean {
+  const row = db.prepare('SELECT title, content_mismatch FROM books WHERE id = ?').get(bookId) as { title?: string; content_mismatch?: string | null } | undefined;
+  const m = activeContentMismatch(row?.content_mismatch);
+  if (!row || !m || !m.title.trim()) return false;
+  db.prepare('UPDATE books SET title = ?, content_mismatch = NULL WHERE id = ?').run(m.title.trim(), bookId);
+  markFieldsAsEdited(bookId, ['title']);
+  return true;
+}
+
 export function dismissContentMismatch(db: Database.Database, bookId: string): boolean {
   const row = db.prepare('SELECT content_mismatch FROM books WHERE id = ?').get(bookId) as { content_mismatch?: string | null } | undefined;
   const prev = parseMismatch(row?.content_mismatch);
@@ -157,6 +186,8 @@ export function listSuggestions(db: Database.Database, batchNo?: number | null):
   return rows.flatMap((r) => {
     let data: SuggestionData;
     try { data = JSON.parse(r.data); } catch { return []; }
+    const title = mismatchTitleSuggestion(r.title, r.content_mismatch);
+    if (title) data = { ...data, fields: { title, ...data.fields } };
     const meta = getMetadata(r.book_id);
     return [{
       book_id: r.book_id, title: r.title, author: r.author, cover_url: r.cover_url, created_at: r.created_at, batch_no: r.batch_no,
@@ -195,13 +226,15 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
   const data = JSON.parse(row.data) as SuggestionData;
   const meta = getMetadata(sel.book_id);
 
-  const pick = (f: SuggestField): string | undefined => {
+  const pick = (f: FillSuggestField): string | undefined => {
     const s = data.fields[f];
     return sel.fields.includes(f) && s ? s.value : undefined;
   };
-  const applied: string[] = [];
+  // 书名：勾选且书仍判定为错标时，改为正文书名
+  const acceptTitle = sel.fields.includes('title') && !!mismatchTitleSuggestion(book.title, (book as Book & { content_mismatch?: string | null }).content_mismatch);
+  const applied: string[] = acceptTitle ? ['title'] : [];
   const input = {
-    ...Object.fromEntries(SUGGEST_FIELDS.map((f) => {
+    ...Object.fromEntries(FILL_SUGGEST_FIELDS.map((f) => {
       const v = pick(f);
       if (v !== undefined) applied.push(f);
       return [f, v ?? ((book[f] as string | undefined) ?? '')];
@@ -210,10 +243,13 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
     similar_works: sel.similar && data.similar_works ? (applied.push('similar_works'), data.similar_works) : (meta?.similar_works ?? []),
     ...(sel.adaptations && data.adaptations ? (applied.push('adaptations'), { adaptations: data.adaptations }) : {}),
     cover: { type: 'keep' as const },
-    suggested: Object.fromEntries(SUGGEST_FIELDS.map(f => [f, pick(f)])),
+    suggested: Object.fromEntries(FILL_SUGGEST_FIELDS.map(f => [f, pick(f)])),
   } as AiFillApplyInput;
 
-  const updated = await applyAiFill(sel.book_id, input, generatedBy);
+  let updated = await applyAiFill(sel.book_id, input, generatedBy);
+  if (acceptTitle && acceptContentMismatch(db, sel.book_id)) {
+    updated = db.prepare('SELECT * FROM books WHERE id = ?').get(sel.book_id) as Book;
+  }
   deleteSuggestion(db, sel.book_id);
   writeAudit({
     user_id: userId,
