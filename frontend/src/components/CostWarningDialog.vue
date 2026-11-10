@@ -16,7 +16,7 @@
         <div class="total">合计：约 <strong>{{ estimate.total }}</strong> 次 API 调用</div>
       </div>
       <div class="confirm-text">
-        本次扫描将产生上述 AI 调用。<span v-if="tier === 'high'"><IconAlertTriangle :size="16" class="inline-icon" />当前使用的是<strong>高费用</strong> AI 模型，请评估成本后再继续。</span>
+        本次 AI 填充将产生上述 AI 调用。<span v-if="tier === 'high'"><IconAlertTriangle :size="16" class="inline-icon" />当前使用的是<strong>高费用</strong> AI 模型，请评估成本后再继续。</span>
       </div>
     </div>
     <template #footer>

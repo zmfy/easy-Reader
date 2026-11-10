@@ -18,18 +18,10 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="AI 功能">
+        <el-form-item label="AI 填充">
           <div class="ai-toggles">
             <div v-if="!aiConfigured" class="note note--warning ai-disabled-hint">
-              未配置 AI 插件，AI 功能已禁用。请先在「AI 插件设置」中配置后使用。
-            </div>
-            <el-checkbox v-model="form.ai_fill" :disabled="!aiConfigured">
-              AI 批量填充
-              <span v-if="estimate && aiConfigured" class="toggle-meta">（预估 {{ estimate.fill }} 次）</span>
-            </el-checkbox>
-            <div v-if="estimate && aiConfigured" class="estimate-summary">
-              当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
-              （<IconAlertTriangle v-if="estimate.tier === 'high'" :size="14" class="tier-icon" />{{ tierLabel }}）· 总调用 <strong>{{ estimate.total }}</strong> 次
+              未配置 AI 插件，AI 填充已禁用。请先在「AI 插件设置」中配置后使用。
             </div>
             <div v-if="aiConfigured && fillStatus && fillStatus.total > 0" class="fill-progress">
               <div>
@@ -37,15 +29,19 @@
               </div>
               <div v-if="fillStatus.last_task?.status === 'paused'" class="fill-paused">上次已暂停：{{ fillStatus.last_task.error }}</div>
               <div v-if="fillStatus.remaining > 0" class="reset-hint">
-                底部「{{ fillLabel }}」不重新扫描文件，从没填充过的书接着处理；每 500 本一批，完成一批即可去确认
+                点底部「{{ fillLabel }}」在后台处理没填充过的书，不扫描文件；每 500 本一批，完成一批即可去确认
               </div>
+            </div>
+            <div v-if="canFill && estimate" class="estimate-summary">
+              当前 AI：<strong>{{ estimate.active_plugin ?? '未配置' }}</strong>
+              （<IconAlertTriangle v-if="estimate.tier === 'high'" :size="14" class="tier-icon" />{{ tierLabel }}）· 预估调用 <strong>{{ estimate.fill }}</strong> 次
             </div>
             <div class="reset-row">
               <el-button size="small" :disabled="!aiConfigured" @click="onResetFailed">重置「填充失败」记录</el-button>
               <el-button size="small" type="warning" plain :disabled="!aiConfigured" @click="onResetAll">重置全部填充记录</el-button>
             </div>
             <div class="reset-hint">空字段且依据明确的结果直接写入；其余结果（改已有内容、低置信、标签、改编作品）和「文件名与正文不符」提示进书库的「AI 建议待确认」</div>
-            <div class="reset-hint">重置后,勾选「AI 批量填充」开始扫描即会重填对应书籍。审核过的书(待确认页采纳 / 忽略、单本书页确认填充)批量填充会跳过,「重置全部填充记录」后才会重填</div>
+            <div class="reset-hint">重置后点「AI 填充」即会重填对应书籍。审核过的书(待确认页采纳 / 忽略、单本书页确认填充)批量填充会跳过,「重置全部填充记录」后才会重填</div>
           </div>
         </el-form-item>
 
@@ -62,10 +58,7 @@
 
       <template #footer>
         <el-button @click="visible = false">取消</el-button>
-        <el-button
-          v-if="aiConfigured && fillStatus && fillStatus.remaining > 0"
-          type="primary" plain :loading="startingFill" @click="onContinueFill"
-        >{{ fillLabel }}</el-button>
+        <el-button v-if="canFill" type="primary" plain :loading="startingFill" @click="onFillClick">{{ fillLabel }}</el-button>
         <el-button type="primary" @click="onStartScan">开始扫描</el-button>
       </template>
     </el-dialog>
@@ -118,25 +111,25 @@ async function refreshAiStatus(): Promise<void> {
   } catch {
     aiConfigured.value = false
   }
-  if (!aiConfigured.value) form.ai_fill = false
 }
 
 async function refreshEstimate(): Promise<void> {
   try {
-    const resp = await libraryApi.estimate({ ai_fill: form.ai_fill, full_rescan: form.full_rescan })
+    // 只有 AI 填充会调用 AI；扫描本身不调用
+    const resp = await libraryApi.estimate({ ai_fill: true, full_rescan: false })
     estimate.value = resp.data.data ?? null
   } catch {
     estimate.value = null
   }
 }
 
-watch([() => form.ai_fill, () => form.full_rescan], () => { void refreshEstimate() })
 watch(visible, (v) => { if (v) { void refreshAiStatus(); void refreshEstimate(); void refreshFillStatus() } })
 
 const scanStore = useScanTaskStore()
 const fillStatus = ref<AiFillStatus | null>(null)
 const startingFill = ref(false)
-const fillLabel = computed(() => fillStatus.value?.last_task?.status === 'paused' ? '继续填充' : '只做 AI 填充')
+const fillLabel = computed(() => fillStatus.value?.last_task?.status === 'paused' ? '继续填充' : 'AI 填充')
+const canFill = computed(() => aiConfigured.value && (fillStatus.value?.remaining ?? 0) > 0)
 
 async function refreshFillStatus(): Promise<void> {
   try {
@@ -146,7 +139,16 @@ async function refreshFillStatus(): Promise<void> {
   }
 }
 
-async function onContinueFill(): Promise<void> {
+/** 费用高的 AI 先弹费用提醒，确认后再开始 */
+function onFillClick(): void {
+  if (estimate.value?.tier === 'high') {
+    showCostWarning.value = true
+    return
+  }
+  void startFill()
+}
+
+async function startFill(): Promise<void> {
   startingFill.value = true
   try {
     await scanStore.startAiFill()
@@ -168,40 +170,41 @@ const tierLabel = computed(() => {
 function onClose(): void { visible.value = false }
 
 function onStartScan(): void {
-  if (form.ai_fill && estimate.value?.tier === 'high') {
-    showCostWarning.value = true
-    return
-  }
-  emitConfirm()
-}
-
-function onCostConfirmed(): void {
-  showCostWarning.value = false
-  emitConfirm()
-}
-
-function emitConfirm(): void {
+  // 扫描只管文件；AI 填充由底部「AI 填充」单独启动
   emit('confirm', { ...form })
   visible.value = false
 }
 
+function onCostConfirmed(): void {
+  showCostWarning.value = false
+  void startFill()
+}
+
+/** 重置后刷新进度，「AI 填充」按钮随之出现 */
+function afterReset(): void {
+  void refreshFillStatus()
+  void refreshEstimate()
+}
+
 async function onResetFailed(): Promise<void> {
   try {
-    await ElMessageBox.confirm('将把所有「填充失败」的书重置为未尝试,下次带 AI 填充的扫描会自动重试。继续?', '重置填充失败', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+    await ElMessageBox.confirm('将把所有「填充失败」的书重置为未尝试,之后点「AI 填充」会重试。继续?', '重置填充失败', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
   } catch { return }
   try {
     const resp = await libraryApi.aiFillResetFailed()
     ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的失败记录`)
+    afterReset()
   } catch { ElMessage.error('重置失败') }
 }
 
 async function onResetAll(): Promise<void> {
   try {
-    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败),审核过的书也会清掉审核标记、重新参与批量填充。下次带 AI 填充的扫描会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败),审核过的书也会清掉审核标记、重新参与批量填充。之后点「AI 填充」会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
   } catch { return }
   try {
     const resp = await libraryApi.aiFillResetAll()
     ElMessage.success(`已重置 ${resp.data.data?.reset ?? 0} 本书的填充记录`)
+    afterReset()
   } catch { ElMessage.error('重置失败') }
 }
 </script>
@@ -209,7 +212,6 @@ async function onResetAll(): Promise<void> {
 <style scoped>
 .mode-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
 .ai-toggles { display: flex; flex-direction: column; gap: 4px; }
-.toggle-meta { font-size: 12px; color: var(--text-2); margin-left: 4px; }
 .estimate-summary {
   margin-top: 8px;
   padding: 6px 10px;
