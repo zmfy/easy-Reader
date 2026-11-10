@@ -9,3 +9,16 @@ export function cleanBookTitle(raw: string): string {
     .replace(/\s+/g, ' ')
     .trim() || raw;
 }
+
+/**
+ * 印在默认封面上的书名：在 cleanBookTitle 基础上再去掉开头的编号（如「0361. 」）和任意长度的括号说明
+ * （套装册数、宣传语等），只留书名本身。只用于封面显示，不影响检索与去重。
+ */
+export function coverTitle(raw: string): string {
+  const t = cleanBookTitle(raw.replace(/^\s*\d{1,5}\s*[.．、]\s*/, ''))
+    .replace(/[(（][^)）]*[)）]/g, '')
+    .replace(/[[【][^\]】]*[\]】]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t || cleanBookTitle(raw);
+}
