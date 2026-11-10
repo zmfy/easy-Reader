@@ -105,17 +105,27 @@
             </div>
           </el-popover>
         </div>
-        <el-button
-          v-if="authStore.isAdmin"
-          type="primary"
-          class="scan-btn"
-          :loading="scanStore.isRunning"
-          title="扫描导入"
-          @click="handleScan"
-        >
-          <IconRefresh v-if="!scanStore.isRunning" class="scan-icon" :size="16" :stroke-width="1.75" />
-          <span class="btn-text">扫描导入</span>
-        </el-button>
+        <div v-if="authStore.isAdmin" class="header-buttons">
+          <el-button
+            class="scan-btn fill-btn"
+            :disabled="scanStore.isRunning"
+            title="AI 填充"
+            @click="showFillDialog = true"
+          >
+            <IconSparkles class="scan-icon" :size="16" :stroke-width="1.75" />
+            <span class="btn-text">AI 填充</span>
+          </el-button>
+          <el-button
+            type="primary"
+            class="scan-btn"
+            :loading="scanStore.isRunning"
+            title="扫描导入"
+            @click="handleScan"
+          >
+            <IconRefresh v-if="!scanStore.isRunning" class="scan-icon" :size="16" :stroke-width="1.75" />
+            <span class="btn-text">扫描导入</span>
+          </el-button>
+        </div>
       </div>
 
       <div v-if="loading" class="loading-grid">
@@ -158,6 +168,7 @@
       </div>
 
       <ScanOptionsDialog v-model="showScanDialog" @confirm="onScanConfirm" />
+      <AiFillDialog v-if="authStore.isAdmin" v-model="showFillDialog" />
 
     </div>
   </DefaultLayout>
@@ -165,12 +176,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive, watch } from 'vue'
-import { IconSearch, IconHelpCircle, IconFilter, IconRefresh, IconBooks } from '@tabler/icons-vue'
+import { IconSearch, IconHelpCircle, IconFilter, IconRefresh, IconBooks, IconSparkles } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
 import ScanOptionsDialog from '@/components/ScanOptionsDialog.vue'
+import AiFillDialog from '@/components/AiFillDialog.vue'
 import { libraryApi } from '@/api/library'
 import { scanBatchesApi } from '@/api/scan-batches'
 import { useAuthStore } from '@/stores/auth'
@@ -185,6 +197,7 @@ const authStore = useAuthStore()
 const scanStore = useScanTaskStore()
 
 const showScanDialog = ref(false)
+const showFillDialog = ref(false)
 const pendingBatch = ref<ScanBatch | null>(null)
 
 const suggestionCount = ref(0)
@@ -415,6 +428,9 @@ onMounted(refreshSuggestionCount)
   margin-left: auto;   /* 宽屏：搜索与筛选靠右，紧挨扫描按钮 */
 }
 
+.header-buttons { display: flex; align-items: center; gap: 8px; }
+.header-buttons .el-button + .el-button { margin-left: 0; }
+
 .scan-btn > :deep(span) {
   display: inline-flex;
   align-items: center;
@@ -497,11 +513,11 @@ onMounted(refreshSuggestionCount)
     margin-bottom: 20px;
   }
   .header-left { order: 1; }
-  .scan-btn {
+  .header-buttons {
     order: 2;
     margin-left: auto;
-    padding: 8px 10px;
   }
+  .scan-btn { padding: 8px 10px; }
   .scan-btn .btn-text { display: none; }
   .scan-btn .scan-icon { width: 18px; height: 18px; }
   .header-actions {
