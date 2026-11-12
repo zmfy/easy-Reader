@@ -30,7 +30,7 @@ export interface AiFillApplyInput {
   /** 用户确认的改编作品；未提供时保留原有 */
   adaptations?: Adaptation[];
   cover: CoverChoice;
-  /** 选中豆瓣封面时为该候选的书目页，否则为第一个候选的；用于在书没有评分时抓取评分 */
+  /** 选中豆瓣封面时为该候选的书目页（改编海报没有书目页时退回第一个书封候选）；用于取评分，评分随封面一起替换 */
   ratingSubjectUrl?: string;
   /** 默认封面上印的书名（预览返回的 coverTitle）；未提供时用清洗后的书名 */
   coverTitle?: string;
@@ -115,9 +115,14 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
 
   const coverUrl = await resolveCover(book, input);
 
-  let rating: number | undefined;
-  if (book.rating == null && input.ratingSubjectUrl && isAllowedDoubanSubjectUrl(input.ratingSubjectUrl)) {
-    rating = await fetchRating({ url: input.ratingSubjectUrl }).catch(() => undefined);
+  // 评分跟着封面走：换成豆瓣封面就取那本书目的评分（取不到清空），换成默认封面就清空；保持当前封面不动评分
+  let rating: number | null | undefined;
+  if (input.cover.type === 'douban') {
+    rating = input.ratingSubjectUrl && isAllowedDoubanSubjectUrl(input.ratingSubjectUrl)
+      ? (await fetchRating({ url: input.ratingSubjectUrl }).catch(() => undefined)) ?? null
+      : null;
+  } else if (input.cover.type === 'default') {
+    rating = null;
   }
 
   const updates: string[] = [];

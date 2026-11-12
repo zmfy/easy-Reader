@@ -22,7 +22,6 @@
           :book="b"
           @click="router.push(`/book/${b.id}`)"
           @read="router.push(`/reader/${b.id}`)"
-          @detail="router.push(`/book/${b.id}`)"
         />
       </div>
     </div>

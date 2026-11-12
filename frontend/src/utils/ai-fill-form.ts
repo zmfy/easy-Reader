@@ -68,8 +68,8 @@ export function initialForm(p: AiFillPreview): AiFillForm {
 
 export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApplyInput {
   const chosen = typeof form.cover === 'number' ? p.coverCandidates[form.cover] : undefined
-  // 评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
-  const ratingSubjectUrl = chosen?.subjectUrl ?? p.coverCandidates.find(c => c.subjectUrl)?.subjectUrl
+  // 评分跟着封面走，只在换成豆瓣封面时取；评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
+  const ratingSubjectUrl = chosen ? chosen.subjectUrl ?? p.coverCandidates.find(c => c.subjectUrl)?.subjectUrl : undefined
   return {
     author: form.author,
     summary: form.summary,

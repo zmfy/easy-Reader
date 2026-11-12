@@ -114,14 +114,16 @@ describe('buildApplyPayload', () => {
     expect(body.ratingSubjectUrl).toBe('https://book.douban.com/subject/2/')
   })
 
-  it('maps current / default covers and falls back to the first candidate for the rating', () => {
+  it('maps current / default covers without a rating subject (rating follows the cover)', () => {
     const p = preview()
     const f = initialForm(p)
-    expect(buildApplyPayload(f, p).cover).toEqual({ type: 'keep' })
+    const keep = buildApplyPayload(f, p)
+    expect(keep.cover).toEqual({ type: 'keep' })
+    expect(keep.ratingSubjectUrl).toBeUndefined()
     f.cover = 'default'
     const body = buildApplyPayload(f, p)
     expect(body.cover).toEqual({ type: 'default' })
-    expect(body.ratingSubjectUrl).toBe('https://book.douban.com/subject/1/')
+    expect(body.ratingSubjectUrl).toBeUndefined()
   })
 
   it('echoes the AI suggestions and sends the edited values and lists', () => {
