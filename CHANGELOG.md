@@ -18,6 +18,8 @@ Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-11-12
+
 ### 修复
 
 - **EPUB**：部分制作工具（如 epubBuilder）生成的 EPUB 打不开（zip 目录里的条目数写错）；现在读取时自动修正，原文件不动
