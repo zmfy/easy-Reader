@@ -195,22 +195,42 @@ describe('applyAiFill covers', () => {
   });
 });
 
-describe('applyAiFill rating', () => {
-  it('fetches the rating from an allowed subject url when the book has none', async () => {
+describe('applyAiFill rating follows the cover', () => {
+  const douban = { type: 'douban' as const, pic: 'https://img1.doubanio.com/a.jpg' };
+  beforeEach(() => download.mockResolvedValue('/covers/b1-new.jpg'));
+
+  it('replaces an existing rating with the chosen douban subject\'s rating', async () => {
+    setupDb({ rating: 8.1 });
     rating.mockResolvedValue(9.3);
-    await applyAiFill('b1', input({ ratingSubjectUrl: 'https://book.douban.com/subject/1019568/' }));
+    await applyAiFill('b1', input({ cover: douban, ratingSubjectUrl: 'https://book.douban.com/subject/1019568/' }));
     expect(rating).toHaveBeenCalledWith({ url: 'https://book.douban.com/subject/1019568/' });
     expect(row().rating).toBe(9.3);
   });
 
-  it('ignores a subject url outside the allowlist', async () => {
-    await applyAiFill('b1', input({ ratingSubjectUrl: 'https://evil.com/subject/1/' }));
-    expect(rating).not.toHaveBeenCalled();
+  it('clears the rating when the chosen douban subject has none', async () => {
+    setupDb({ rating: 8.1 });
+    rating.mockResolvedValue(undefined);
+    await applyAiFill('b1', input({ cover: douban, ratingSubjectUrl: 'https://book.douban.com/subject/1/' }));
+    expect(row().rating).toBeNull();
   });
 
-  it('does not refetch when the book already has a rating', async () => {
+  it('ignores a subject url outside the allowlist and clears the old rating', async () => {
     setupDb({ rating: 8.1 });
-    await applyAiFill('b1', input({ ratingSubjectUrl: 'https://book.douban.com/subject/1/' }));
+    await applyAiFill('b1', input({ cover: douban, ratingSubjectUrl: 'https://evil.com/subject/1/' }));
+    expect(rating).not.toHaveBeenCalled();
+    expect(row().rating).toBeNull();
+  });
+
+  it('clears the rating when switching to the default cover', async () => {
+    setupDb({ rating: 8.1 });
+    await applyAiFill('b1', input({ cover: { type: 'default' }, ratingSubjectUrl: 'https://book.douban.com/subject/1/' }));
+    expect(rating).not.toHaveBeenCalled();
+    expect(row().rating).toBeNull();
+  });
+
+  it('keeps the rating (and does not fetch) when the cover is kept', async () => {
+    setupDb({ rating: 8.1 });
+    await applyAiFill('b1', input({ cover: { type: 'keep' }, ratingSubjectUrl: 'https://book.douban.com/subject/1/' }));
     expect(rating).not.toHaveBeenCalled();
     expect(row().rating).toBe(8.1);
   });

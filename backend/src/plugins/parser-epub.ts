@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { BookFileMetadata, ReaderPlugin } from '../types';
 
@@ -13,6 +14,22 @@ function extractBodyContent(html: string): string {
     .replace(/<!DOCTYPE[^>]*>/gi, '')
     .replace(/<\?xml[^?]*\?>/gi, '')
     .trim();
+}
+
+/**
+ * 有的制作工具（如 epubBuilder）把 zip 尾部目录记录里的「本盘条目数」写错（大于总条目数），
+ * unzip 等工具只看总数能打开，adm-zip 却按它校验直接报错。把它改成总条目数；无需修正时返回 null。
+ */
+export function repairZipEndRecord(buf: Buffer): Buffer | null {
+  const sig = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  const at = buf.lastIndexOf(sig);
+  if (at < 0 || at + 22 > buf.length) return null;
+  const diskEntries = buf.readUInt16LE(at + 8);
+  const totalEntries = buf.readUInt16LE(at + 10);
+  if (diskEntries === totalEntries) return null;
+  const fixed = Buffer.from(buf);
+  fixed.writeUInt16LE(totalEntries, at + 8);
+  return fixed;
 }
 
 interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
@@ -81,7 +98,14 @@ export class EpubParser implements ReaderPlugin {
   async load(filePath: string): Promise<void> {
     // epub2 v3: class is at require('epub2').EPub
     const { EPub } = require('epub2');
-    this.epub = await EPub.createAsync(filePath);
+    try {
+      this.epub = await EPub.createAsync(filePath);
+    } catch (err) {
+      // zip 结构有小毛病（如尾部目录条目数写错）时，在内存里修正后再试一次；原文件不动
+      const fixed = repairZipEndRecord(fs.readFileSync(filePath));
+      if (!fixed) throw err;
+      this.epub = await EPub.createAsync(fixed);
+    }
     this.buildManifestMap();
     this.buildChapterList();
     await this.applyIndexPageGroups();

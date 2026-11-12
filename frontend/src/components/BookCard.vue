@@ -32,25 +32,12 @@
         :aria-label="aiFillBadge.label"
         role="img"
       />
-      <!-- 悬停操作层 -->
-      <!-- 悬停操作：封面底部渐变区，主操作「阅读」单独一行，详情 / 删除并排 -->
+      <!-- 悬停操作（仅鼠标设备）：封面底部渐变区放「阅读」；点卡片其他位置进书页。触屏上不显示，避免误触 -->
       <div class="cover-overlay">
         <el-button type="primary" size="small" class="overlay-read" @click.stop="$emit('read')">
           <el-icon><IconPlayerPlay /></el-icon>
           阅读
         </el-button>
-        <div class="overlay-row">
-          <el-button size="small" @click.stop="$emit('detail')">详情</el-button>
-          <el-button
-            v-if="authStore.isAdmin"
-            type="danger"
-            size="small"
-            plain
-            @click.stop="$emit('delete', book)"
-          >
-            删除
-          </el-button>
-        </div>
       </div>
       <!-- 底部渐变（有封面时增加层次感） -->
       <div v-if="!imgError && book.cover_url" class="cover-bottom-fade" />
@@ -71,13 +58,10 @@
 import { ref, computed } from 'vue'
 import { IconPlayerPlay } from '@tabler/icons-vue'
 import type { Book } from '@/types'
-import { useAuthStore } from '@/stores/auth'
 import { categoryLabel, categoryLeaf } from '@/utils/category'
 
 const props = defineProps<{ book: Book }>()
-defineEmits<{ click: []; read: []; detail: []; delete: [Book] }>()
-
-const authStore = useAuthStore()
+defineEmits<{ click: []; read: [] }>()
 
 const badge = computed<{ type: 'danger' | 'warning'; label: string } | null>(() => {
   if (props.book.status === 'duplicate') return { type: 'danger', label: '重复' }
@@ -129,6 +113,7 @@ const placeholderGradient = computed(() => {
 
 .book-card:hover .cover-overlay {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .book-card:hover .book-cover img {
@@ -228,25 +213,17 @@ const placeholderGradient = computed(() => {
   /* 只压暗下半部分，上半部分封面仍清晰可见 */
   background: linear-gradient(to top, rgba(11, 16, 32, 0.92) 0%, rgba(11, 16, 32, 0.65) 40%, rgba(11, 16, 32, 0) 72%);
   opacity: 0;
+  pointer-events: none;        /* 隐藏时不拦截点击：点封面就是进书页 */
   transition: opacity 0.22s ease;
 }
 
-.cover-overlay .el-button {
-  margin-left: 0;              /* 去掉 Element Plus 相邻按钮的默认左间距 */
+/* 触屏没有悬停：不显示浮层，点卡片任何位置都进书页 */
+@media (hover: none) {
+  .cover-overlay { display: none; }
 }
 
 .overlay-read {
   width: 100%;
-}
-
-.overlay-row {
-  display: flex;
-  gap: 6px;
-}
-
-.overlay-row .el-button {
-  flex: 1;
-  min-width: 0;
 }
 
 /* 悬停时隐藏 AI 填充圆点，避免压在按钮上 */

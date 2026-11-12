@@ -112,8 +112,6 @@
           :book="book"
           @click="onBookClick(book)"
           @read="router.push(`/reader/${book.id}`)"
-          @detail="router.push(`/book/${book.id}`)"
-          @delete="onBookDelete(book)"
         />
       </div>
 
@@ -137,13 +135,11 @@
 import { ref, computed, onMounted, reactive } from 'vue'
 import { IconSearch, IconHelpCircle, IconFilter, IconBooks } from '@tabler/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import BookCard from '@/components/BookCard.vue'
 import LibraryManageCard from '@/components/LibraryManageCard.vue'
 import { libraryApi } from '@/api/library'
 import { useAuthStore } from '@/stores/auth'
-import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import type { Book } from '@/types'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
@@ -251,21 +247,6 @@ function onBookClick(book: Book): void {
   } else {
     router.push(`/book/${book.id}`)
   }
-}
-
-async function onBookDelete(book: Book): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      `确认删除「${book.title}」？\n\n将删除磁盘文件和数据库记录，且不可恢复。`,
-      '删除确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
-    )
-  } catch { return }
-
-  const result = await deleteBookWithPrompts(book.id)
-  if (!result) return
-  ElMessage.success('已删除')
-  await fetchBooks()
 }
 
 let searchTimer: ReturnType<typeof setTimeout>

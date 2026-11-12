@@ -22,7 +22,7 @@
       </p>
       <!-- 封面 -->
       <section class="block">
-        <div class="block-title">封面 <span class="hint">左右滑动，点选一张</span></div>
+        <div class="block-title">封面 <span class="hint">左右滑动，点选一张；豆瓣评分随封面一起更换</span></div>
         <div class="cover-strip">
           <button
             v-if="preview.current.cover_url"

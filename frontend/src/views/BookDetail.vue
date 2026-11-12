@@ -83,6 +83,10 @@
                         AI 填充
                       </el-button>
                     </el-tooltip>
+                    <el-button v-if="!editing" type="danger" plain :loading="deleting" @click="handleDelete">
+                      <IconTrash v-if="!deleting" :size="16" :stroke-width="1.75" />
+                      删除
+                    </el-button>
                   </template>
                 </div>
                 <el-tooltip
@@ -198,12 +202,13 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconChevronLeft, IconPlayerPlay, IconPlus, IconCheck, IconWand, IconLock } from '@tabler/icons-vue'
+import { IconChevronLeft, IconPlayerPlay, IconPlus, IconCheck, IconWand, IconLock, IconTrash } from '@tabler/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import AiFillPreviewDialog from '@/components/AiFillPreviewDialog.vue'
 import { libraryApi } from '@/api/library'
 import { useShelfToggle } from '@/composables/useShelfToggle'
+import { deleteBookWithPrompts } from '@/composables/useBookDelete'
 import { readerApi } from '@/api/reader'
 import { readButtonLabel } from '@/utils/reading-label'
 import { resolveBack } from '@/utils/page-back'
@@ -281,6 +286,28 @@ const editedFieldsList = computed<string[]>(() => {
     return arr.map(f => FIELD_LABELS[f as string] ?? String(f))
   } catch { return [] }
 })
+
+const deleting = ref(false)
+
+async function handleDelete() {
+  if (!book.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确认删除「${book.value.title}」？\n\n将删除磁盘文件和数据库记录，且不可恢复。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  deleting.value = true
+  try {
+    const result = await deleteBookWithPrompts(book.value.id)
+    if (!result) return
+    ElMessage.success('已删除')
+    router.replace('/library')
+  } finally {
+    deleting.value = false
+  }
+}
 
 // 与 PageHeader 一致：有站内历史则回退，直接打开 / 新标签页时回书库
 function goBack() {
