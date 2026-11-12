@@ -24,11 +24,11 @@
                 <IconPlayerPlay :size="16" :stroke-width="1.75" />
                 <span class="btn-label">{{ readLabel }}</span>
               </el-button>
-              <el-button @click="router.push(`/book/${book.id}/map`)">
+              <el-button class="study-btn" @click="router.push(`/book/${book.id}/map`)">
                 <IconSitemap :size="16" :stroke-width="1.75" />
                 学习导图
               </el-button>
-              <el-button @click="router.push(`/book/${book.id}/summary`)">
+              <el-button class="study-btn" @click="router.push(`/book/${book.id}/summary`)">
                 <IconNotebook :size="16" :stroke-width="1.75" />
                 笔记整理
               </el-button>
@@ -527,10 +527,24 @@ watch(() => route.params.bookId, () => { fetchBook() })
     overflow: hidden;
   }
 
-  .cover-actions {
+  /* 两列：阅读、书架占整行，学习导图 / 笔记整理并排，按钮区不高过封面
+     （选择器加上 .cover-section：下方基础样式 .cover-actions 写在后面，同级会被它盖掉） */
+  .cover-section .cover-actions {
     margin-top: 0;
     align-self: end;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
+  }
+
+  .cover-actions > .el-button {
+    grid-column: 1 / -1;
+  }
+
+  .cover-actions > .study-btn {
+    grid-column: auto;
+    padding-left: 6px;
+    padding-right: 6px;
   }
 
   .cover-actions :deep(.el-button) {
@@ -578,6 +592,13 @@ watch(() => route.params.bookId, () => { fetchBook() })
   .summary-text {
     font-size: 14px;
     line-height: 1.9;
+  }
+}
+
+/* 很窄的屏幕（≤360px）半宽按钮放不下「图标 + 四个字」，只留文字 */
+@media (max-width: 360px) {
+  .cover-actions > .study-btn svg {
+    display: none;
   }
 }
 
