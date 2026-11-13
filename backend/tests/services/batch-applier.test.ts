@@ -306,6 +306,13 @@ describe('applyBatch 损坏 EPUB', () => {
     expect(bookByPath('/x.epub')).toMatchObject({ id: 'b1', status: 'damaged', file_size: 1234, health_check_version: 1 });
   });
 
+  it('accept 且同路径的书是主书 → 指向它的重复书提升为 normal', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('b1', '原书', '/x.epub', 'epub', 1, 'normal')").run();
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status, duplicate_of) VALUES ('b2', '副本', '/y.epub', 'epub', 1, 'duplicate', 'b1')").run();
+    applyBatch(makeBatch([damagedItem('/x.epub', 'accept')]), 'admin1', db);
+    expect(db.prepare('SELECT status, duplicate_of FROM books WHERE id = ?').get('b2')).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
   it('reject → 写跳过记录，书库无此书', () => {
     const result = applyBatch(makeBatch([damagedItem('/x.epub', 'reject')]), 'admin1', db);
     expect(result.damaged_skipped).toBe(1);

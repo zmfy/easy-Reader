@@ -10,7 +10,7 @@ import {
   isCancelled,
 } from './scan-task';
 import { FINGERPRINT_VERSION, shouldReuseFingerprint } from './scan-versions';
-import { checkEpubHealth, HEALTH_CHECK_VERSION } from './epub-health';
+import { checkEpubHealth, HEALTH_CHECK_VERSION, EpubHealth } from './epub-health';
 import { isSkippedUnchanged } from './scan-skips';
 import {
   ScanOptions,
@@ -26,7 +26,7 @@ import { listOverrides } from './manual-override';
 import { buildBatchesFromScan, ScanResult } from './batch-builder';
 import { notifyScanReview, notifyScanHealth } from './notices';
 import { extractAuthorFromName } from '../utils/title-normalizer';
-import { deleteBookRelations } from './relation-cleanup';
+import { deleteBookRelations, promoteDuplicatesOf } from './relation-cleanup';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
@@ -103,14 +103,24 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // EPUB 健康检查结果直接写库（已入库的书不生成审核项）
     const bookByPathStmt = getDb().prepare('SELECT id, status FROM books WHERE file_path = ?');
     const markDamagedStmt = getDb().prepare(
-      "UPDATE books SET status = 'damaged', damage_reason = ?, file_size = ?, file_mtime = ?, health_check_version = ? WHERE id = ?"
+      "UPDATE books SET status = 'damaged', damage_reason = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, health_check_version = ? WHERE id = ?"
     );
+    // 损坏的书不再当主书：清掉自己的 duplicate_of，指向它的重复书提升为普通书（同 removeOrphanBooks）
+    const markDamaged = (id: string, reason: string, st: fs.Stats): void => {
+      getDb().transaction(() => {
+        markDamagedStmt.run(reason, st.size, st.mtimeMs, HEALTH_CHECK_VERSION, id);
+        promoteDuplicatesOf(getDb(), [id]);
+      })();
+    };
     const markRecoveredStmt = getDb().prepare(
       "UPDATE books SET status = 'normal', damage_reason = NULL, health_check_version = ? WHERE id = ?"
     );
     const healthVersionStmt = getDb().prepare(
       'UPDATE books SET health_check_version = ? WHERE id = ?'
     );
+    const warnUnchecked = (h: EpubHealth, file: string): void => {
+      console.warn(`[scan ${taskId}] EPUB 健康检查未完成（${h.status === 'unreadable' ? '读取失败' : '解析超时'}），下次扫描再查:`, file);
+    };
     const bumpProgress = (every: number): void => {
       processed++;
       if (processed % every === 0 || processed === allFiles.length) {
@@ -147,17 +157,21 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         // 检查规则更新后，已入库的 EPUB 按新规则重查一次，结果直接写库
         if (pre && isEpub && pre.health_check_version !== HEALTH_CHECK_VERSION) {
           const h = await checkEpubHealth(fullPath);
-          if (h.status === 'damaged') {
-            markDamagedStmt.run(h.reason, st.size, st.mtimeMs, HEALTH_CHECK_VERSION, pre.id);
+          if (isUncheckedForExisting(h)) {
+            // 这次没读成或超时，状态和检查版本都不动，下次扫描再查
+            warnUnchecked(h, fullPath);
+          } else if (h.status === 'damaged') {
+            markDamaged(pre.id, h.reason, st);
             if (pre.status !== 'damaged') health.damaged_existing++;
-          } else if (h.status === 'unreadable') {
-            // 这次没读成，状态和检查版本都不动，下次扫描再查
           } else if (pre.status === 'damaged') {
             markRecoveredStmt.run(HEALTH_CHECK_VERSION, pre.id);
             health.recovered++;
           } else {
             healthVersionStmt.run(HEALTH_CHECK_VERSION, pre.id);
           }
+          // 每查一本都更新进度：升级后第一次扫描要逐本打开，进度条不能停住
+          bumpProgress(1);
+          continue;
         }
         bumpProgress(50);
         continue;
@@ -167,9 +181,13 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       if (isEpub) {
         const h = await checkEpubHealth(fullPath);
         const existingBook = bookByPathStmt.get(fullPath) as { id: string; status: string | null } | undefined;
-        if (h.status === 'damaged') {
+        // 读不了，或已入库的书解析超时：当作这次没检查，照常走原来的新书流程，不写检查版本
+        healthUnchecked = h.status === 'unreadable' || (!!existingBook && isUncheckedForExisting(h));
+        if (healthUnchecked) {
+          warnUnchecked(h, fullPath);
+        } else if (h.status === 'damaged') {
           if (existingBook) {
-            markDamagedStmt.run(h.reason, st.size, st.mtimeMs, HEALTH_CHECK_VERSION, existingBook.id);
+            markDamaged(existingBook.id, h.reason, st);
             if (existingBook.status !== 'damaged') health.damaged_existing++;
           } else if (!isSkippedUnchanged(getDb(), fullPath, st.size, st.mtimeMs)) {
             damaged.push({ file_path: fullPath, file_size: st.size, file_mtime: st.mtimeMs, reason: h.reason });
@@ -177,8 +195,6 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           bumpProgress(5);
           continue;
         }
-        // 读不了：当作这次没检查，照常走原来的新书流程，不写检查版本
-        healthUnchecked = h.status === 'unreadable';
         // 损坏书换成了完整文件：先恢复状态，新内容仍走新书审核项
         if (!healthUnchecked && existingBook && existingBook.status === 'damaged') {
           markRecoveredStmt.run(HEALTH_CHECK_VERSION, existingBook.id);
@@ -360,6 +376,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
   }
 }
 
+/** 已入库的书：读不了或解析超时都只算这次没检查成（超时可能只是书大、盘慢，不能据此判损坏） */
+function isUncheckedForExisting(h: EpubHealth): boolean {
+  return h.status === 'unreadable' || (h.status === 'damaged' && h.timedOut === true);
+}
+
 interface ScannedBookEx extends ScannedBook {
   file_format: string;
   file_size: number;
@@ -444,9 +465,7 @@ export function removeOrphanBooks(db: Database.Database, orphanIds: string[]): v
       const chunk = orphanIds.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => '?').join(',');
       deleteBookRelations(db, chunk);
-      const dependants = db.prepare(`SELECT id FROM books WHERE duplicate_of IN (${placeholders})`).all(...chunk) as { id: string }[];
-      const promote = db.prepare("UPDATE books SET status = 'normal', duplicate_of = NULL WHERE id = ?");
-      for (const d of dependants) if (!orphanSet.has(d.id)) promote.run(d.id);
+      promoteDuplicatesOf(db, chunk, orphanSet);
       db.prepare(`DELETE FROM books WHERE id IN (${placeholders})`).run(...chunk);
     }
   })();

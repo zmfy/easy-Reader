@@ -9,7 +9,8 @@ export const EPUB_CHECK_TIMEOUT_MS = 15000;
 export type EpubHealth =
   | { status: 'ok' }
   | { status: 'repaired' }
-  | { status: 'damaged'; reason: string }
+  // timedOut：解析超时（可能只是书太大、NAS 太慢），已入库的书不据此判损坏
+  | { status: 'damaged'; reason: string; timedOut?: true }
   // 文件系统错误（权限、被占用、IO 等），这次没检查成，不算损坏
   | { status: 'unreadable' };
 
@@ -68,7 +69,7 @@ export async function checkEpubHealth(
   const parser: HealthParser = opts.createParser ? opts.createParser() : new EpubParser();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<EpubHealth>(resolve => {
-    timer = setTimeout(() => resolve({ status: 'damaged', reason: REASON_TIMEOUT }), timeoutMs);
+    timer = setTimeout(() => resolve({ status: 'damaged', reason: REASON_TIMEOUT, timedOut: true }), timeoutMs);
   });
   const run = (async (): Promise<EpubHealth> => {
     try {

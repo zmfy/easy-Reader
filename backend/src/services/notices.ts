@@ -126,7 +126,7 @@ export function notifyScanReview(db: Database.Database = getDb()): void {
   }, db);
 }
 
-/** 扫描时 EPUB 健康检查的结果：三项都为 0 不提醒 */
+/** 扫描时 EPUB 健康检查的结果：替换上一条；三项都为 0 不提醒（保留上一条） */
 export function notifyScanHealth(
   counts: { damaged_existing: number; recovered: number; repaired: number },
   db: Database.Database = getDb()
@@ -137,6 +137,8 @@ export function notifyScanHealth(
   if (counts.repaired > 0) parts.push(`${counts.repaired} 本已自动修正`);
   if (parts.length === 0) return;
   const hasDamaged = counts.damaged_existing > 0;
+  // 只留最新一次扫描的结果，否则审核模式下每次扫描都会叠一条
+  db.prepare("DELETE FROM notices WHERE kind = 'scan_health'").run();
   addNotice({
     kind: 'scan_health', level: hasDamaged ? 'warning' : 'info',
     title: `扫描发现 ${parts.join('，')}`,

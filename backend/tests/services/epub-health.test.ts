@@ -92,7 +92,7 @@ describe('checkEpubHealth', () => {
       timeoutMs: 50,
       createParser: () => ({ load: () => new Promise<void>(() => {}), getChapters: async () => [], dispose }),
     });
-    expect(r).toEqual({ status: 'damaged', reason: '解析超时' });
+    expect(r).toEqual({ status: 'damaged', reason: '解析超时', timedOut: true });
     expect(dispose).toHaveBeenCalled();
   });
 

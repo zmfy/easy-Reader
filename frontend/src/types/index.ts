@@ -248,7 +248,7 @@ export interface GarbledPayload {
 export interface DamagedPayload {
   file_path: string
   file_size: number
-  file_mtime: number
+  file_mtime: number | null
   reason: string
 }
 

@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { createOverride, isNotDuplicate } from './manual-override';
 import { recordSkip, clearSkip } from './scan-skips';
+import { promoteDuplicatesOf } from './relation-cleanup';
 import { FINGERPRINT_VERSION } from './scan-versions';
 import { HEALTH_CHECK_VERSION } from './epub-health';
 import { computeGenericFingerprintSync } from '../utils/fingerprint';
@@ -359,6 +360,8 @@ export function applyBatch(
           db.prepare(
             `UPDATE books SET status = 'damaged', damage_reason = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, fingerprint = ?, fingerprint_version = ?, health_check_version = ? WHERE id = ?`
           ).run(payload.reason, payload.file_size, payload.file_mtime, fingerprint, FINGERPRINT_VERSION, HEALTH_CHECK_VERSION, existing);
+          // 损坏的书不再当主书：指向它的重复书提升为普通书
+          promoteDuplicatesOf(db, [existing]);
         } else {
           const base = path.basename(payload.file_path);
           db.prepare(

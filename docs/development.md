@@ -163,7 +163,7 @@ easyReader/
 - `damaged` 条目必须逐本决定：PATCH 条目 `accept` = 导入（书入库，`status = 'damaged'`、`damage_reason` 为原因），`reject` = 跳过（记入 `scan_skipped_files`，路径、大小、修改时间都没变时以后扫描不再提示）。还有没决定的条目时，`POST /:id/apply` 返回 422 `VALIDATION_ERROR`「请先为每本损坏的书选择导入或跳过」；自动模式下这类批次保持 pending，并发铃铛提醒。
 - 应用结果新增 `damaged_imported`、`damaged_skipped`；批次 `summary_counts` 新增 `damaged`。
 - 读取时自动修正过的 EPUB（如 zip 目录条目数写错），新书条目 payload 带 `repaired: true`，审核页显示「已自动修正」。
-- 已入库的书：变成损坏的直接改为 `damaged`，损坏的换成完整文件后改回 `normal`；有这类变化或有自动修正的书时，扫描结束发一条 `kind = 'scan_health'` 的提醒（链接到问题书籍页）。
+- 已入库的书：变成损坏的直接改为 `damaged`（同时清掉它的 `duplicate_of`，指向它的重复书提升为普通书），损坏的换成完整文件后改回 `normal`；解析超时可能只是书大、盘慢，已入库的书超时和读不了一样不改状态、不写检查版本，下次扫描再查（新文件超时仍生成「解析超时」的 `damaged` 条目）。有这类变化或有自动修正的书时，扫描结束发一条 `kind = 'scan_health'` 的提醒，替换上一条；有新损坏或恢复正常的书时才链接到问题书籍页（只有自动修正时不带链接）。
 
 ### 人工覆盖 `/api/library/manual-overrides` — 全部 admin
 

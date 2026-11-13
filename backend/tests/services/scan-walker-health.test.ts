@@ -25,7 +25,9 @@ const { getDb } = require('../../src/db');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { runScanTask } = require('../../src/services/scan-walker');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { createScanTask } = require('../../src/services/scan-task');
+const { createScanTask, cancelScanTask, getActiveScanTask, getScanTaskById } = require('../../src/services/scan-task');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { notifyScanHealth } = require('../../src/services/notices');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { recordSkip } = require('../../src/services/scan-skips');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -35,6 +37,7 @@ const { buildBatchesFromScan } = require('../../src/services/batch-builder');
 
 const check = checkEpubHealth as jest.Mock;
 const build = buildBatchesFromScan as jest.Mock;
+const notifyHealth = notifyScanHealth as jest.Mock;
 let db: Database.Database;
 
 function writeBook(name: string, content = `content of ${name}`): { file: string; size: number; mtime: number } {
@@ -54,9 +57,9 @@ function insertBook(id: string, b: { file: string; size: number; mtime: number }
   db.prepare(`INSERT INTO books (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => row[c]));
 }
 
-async function scan(): Promise<{ result: any; health: any }> {
-  const task = createScanTask('u', { mode: 'review', ai_fill: false, full_rescan: false });
-  const health = await runScanTask(task.id, { mode: 'review', ai_fill: false, full_rescan: false });
+async function scan(fullRescan = false): Promise<{ result: any; health: any }> {
+  const task = createScanTask('u', { mode: 'review', ai_fill: false, full_rescan: fullRescan });
+  const health = await runScanTask(task.id, { mode: 'review', ai_fill: false, full_rescan: fullRescan });
   const calls = build.mock.calls;
   return { result: calls.length ? calls[calls.length - 1][1] : null, health };
 }
@@ -65,6 +68,12 @@ function bookRow(id: string): any {
   return db.prepare('SELECT status, damage_reason, health_check_version, file_size, file_mtime FROM books WHERE id = ?').get(id);
 }
 
+function dupRow(id: string): any {
+  return db.prepare('SELECT status, duplicate_of FROM books WHERE id = ?').get(id);
+}
+
+const TIMEOUT = { status: 'damaged', reason: '解析超时', timedOut: true };
+
 beforeEach(() => {
   db = getDb();
   db.exec('DELETE FROM books; DELETE FROM scan_tasks; DELETE FROM scan_skipped_files;');
@@ -72,6 +81,7 @@ beforeEach(() => {
   check.mockReset();
   check.mockResolvedValue({ status: 'ok' });
   build.mockClear();
+  notifyHealth.mockClear();
 });
 
 afterAll(() => {
@@ -216,5 +226,108 @@ describe('扫描接入 EPUB 健康检查', () => {
     expect(check).not.toHaveBeenCalled();
     expect(result.new_books).toHaveLength(1);
     expect(result.new_books[0].health_check_version).toBeUndefined();
+  });
+
+  it('已入库书检查版本过期、解析超时 → 不判损坏，不写检查版本（下次再查）', async () => {
+    const b = writeBook('big.epub');
+    insertBook('b1', b);
+    check.mockResolvedValue(TIMEOUT);
+    const { result, health } = await scan();
+    expect(result).toBeNull();
+    expect(bookRow('b1')).toMatchObject({ status: 'normal', damage_reason: null, health_check_version: null });
+    expect(health.damaged_existing).toBe(0);
+  });
+
+  it('已入库书文件变化、解析超时 → 状态不变，不写检查版本', async () => {
+    const b = writeBook('big.epub');
+    insertBook('b1', { ...b, size: b.size + 1 }, { health_check_version: 1 });
+    check.mockResolvedValue(TIMEOUT);
+    const { health } = await scan();
+    expect(bookRow('b1')).toMatchObject({ status: 'normal', damage_reason: null });
+    expect(health.damaged_existing).toBe(0);
+  });
+
+  it('新文件解析超时 → 仍是 damaged 审核项「解析超时」', async () => {
+    const b = writeBook('slow.epub');
+    check.mockResolvedValue(TIMEOUT);
+    const { result } = await scan();
+    expect(result.damaged).toEqual([{ file_path: b.file, file_size: b.size, file_mtime: b.mtime, reason: '解析超时' }]);
+  });
+
+  it('重复书变损坏 → 清掉 duplicate_of；之后恢复 → normal 且 duplicate_of 为空', async () => {
+    const p = writeBook('p.epub');
+    const d = writeBook('d.epub');
+    insertBook('p', p, { health_check_version: 1 });
+    insertBook('d', d, { status: 'duplicate', duplicate_of: 'p' });
+    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    await scan();
+    expect(dupRow('d')).toEqual({ status: 'damaged', duplicate_of: null });
+
+    db.prepare('UPDATE books SET health_check_version = NULL WHERE id = ?').run('d');
+    check.mockResolvedValue({ status: 'ok' });
+    await scan();
+    expect(dupRow('d')).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
+  it('主书变损坏 → 指向它的重复书提升为 normal', async () => {
+    const p = writeBook('p.epub');
+    const d = writeBook('d.txt', 'duplicate text body\n');
+    insertBook('p', p);
+    insertBook('d', d, { status: 'duplicate', duplicate_of: 'p' });
+    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    await scan();
+    expect(dupRow('p')).toEqual({ status: 'damaged', duplicate_of: null });
+    expect(dupRow('d')).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
+  it('文件变化的主书变损坏 → 重复书也提升为 normal', async () => {
+    const p = writeBook('p.epub');
+    const d = writeBook('d.txt', 'duplicate text body\n');
+    insertBook('p', { ...p, size: p.size + 1 }, { health_check_version: 1 });
+    insertBook('d', d, { status: 'duplicate', duplicate_of: 'p' });
+    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    await scan();
+    expect(dupRow('d')).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
+  it('扫描结束调用 notifyScanHealth 并带上计数', async () => {
+    const b = writeBook('book.epub');
+    insertBook('b1', b);
+    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    await scan();
+    expect(notifyHealth).toHaveBeenCalledTimes(1);
+    expect(notifyHealth).toHaveBeenCalledWith({ damaged_existing: 1, recovered: 0, repaired: 0 });
+  });
+
+  it('扫描中途取消 → 部分结果带 damaged，仍发健康提醒', async () => {
+    const b = writeBook('broken.epub');
+    check.mockImplementation(async () => {
+      cancelScanTask(getActiveScanTask().id);
+      return { status: 'damaged', reason: '没有可读的章节' };
+    });
+    const { result } = await scan();
+    expect(result.damaged.map((x: any) => x.file_path)).toEqual([b.file]);
+    expect(notifyHealth).toHaveBeenCalledTimes(1);
+  });
+
+  it('全量重扫：已是 damaged 的书仍损坏 → 保持 damaged，不重复计数、不生成审核项', async () => {
+    const b = writeBook('book.epub');
+    insertBook('b1', b, { status: 'damaged', damage_reason: '解析超时', health_check_version: 1, fingerprint: null });
+    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    const { result, health } = await scan(true);
+    expect(result).toBeNull();
+    expect(bookRow('b1')).toMatchObject({ status: 'damaged', damage_reason: '没有可读的章节' });
+    expect(health).toEqual({ damaged_existing: 0, recovered: 0, repaired: 0 });
+  });
+
+  it('检查版本过期的重查每本都更新进度', async () => {
+    for (const n of ['a', 'b', 'c']) insertBook(n, writeBook(`${n}.epub`));
+    const seen: number[] = [];
+    check.mockImplementation(async () => {
+      seen.push(getScanTaskById(getActiveScanTask().id).processed_files);
+      return { status: 'ok' };
+    });
+    await scan();
+    expect(seen).toEqual([0, 1, 2]);
   });
 });
