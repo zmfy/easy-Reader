@@ -136,6 +136,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         series_groups: [],
         garbled,
         encoding_fixed: encodingFixed,
+        damaged: [],
       };
       buildBatchesFromScan(taskId, partial);
       notifyScanReview();
@@ -221,6 +222,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       soft_duplicate_groups: softDupPayloads,
       garbled,
       encoding_fixed: encodingFixed,
+      damaged: [],
     };
 
     // Phase 4: dispatch by mode

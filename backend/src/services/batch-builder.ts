@@ -8,6 +8,7 @@ import {
   SeriesGroupPayload,
   GarbledPayload,
   EncodingFixedPayload,
+  DamagedPayload,
 } from '../types';
 
 export interface ScanResult {
@@ -18,6 +19,7 @@ export interface ScanResult {
   series_groups: SeriesGroupPayload[];
   garbled: GarbledPayload[];
   encoding_fixed: EncodingFixedPayload[];
+  damaged: DamagedPayload[];
 }
 
 /** 扫描审核每批最多这么多本书（同一本书的新书 / 重复组 / 系列组条目总在同一批） */

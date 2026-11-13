@@ -54,6 +54,7 @@ describe('buildBatchFromScan', () => {
       ],
       garbled: [{ file_path: '/g', reason: 'random bytes' }],
       encoding_fixed: [{ file_path: '/e', from_encoding: 'gbk', to_encoding: 'utf-8' }],
+      damaged: [],
     };
 
     const batch = buildBatchFromScan(taskId, scan, db);
@@ -85,7 +86,7 @@ describe('buildBatchFromScan', () => {
           { file_path: '/b.txt', fingerprint: 'fpB', decision_type: 'soft' as const },
         ],
       }],
-      series_groups: [], garbled: [], encoding_fixed: [],
+      series_groups: [], garbled: [], encoding_fixed: [], damaged: [],
     };
     const batch = buildBatchFromScan('task-soft', scan, db);
     const items = db.prepare("SELECT type FROM scan_batch_items WHERE batch_id = ?").all(batch.id) as Array<{ type: string }>;
@@ -99,7 +100,7 @@ describe('buildBatchesFromScan 按书数拆批', () => {
   const nb = (p: string) => ({ file_path: p, title: p, file_format: 'txt', file_size: 1, fingerprint: 'f' + p, status: 'normal' as const });
   const empty = (): ScanResult => ({
     new_books: [], hard_duplicate_groups: [], ai_duplicate_groups: [], soft_duplicate_groups: [],
-    series_groups: [], garbled: [], encoding_fixed: [],
+    series_groups: [], garbled: [], encoding_fixed: [], damaged: [],
   });
   const itemsOf = (batchId: string) =>
     (db.prepare('SELECT type, payload FROM scan_batch_items WHERE batch_id = ?').all(batchId) as Array<{ type: string; payload: string }>)
