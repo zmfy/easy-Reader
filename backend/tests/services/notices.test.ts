@@ -107,6 +107,15 @@ describe('扫描待审核提醒', () => {
     db.prepare("UPDATE scan_batches SET status = 'discarded' WHERE id = 's2'").run();
     expect(listNotices()).toEqual({ items: [], unread: 0 });
   });
+
+  it('有损坏的书待选择时写出本数', () => {
+    db.prepare('INSERT INTO scan_batches (id, summary_counts) VALUES (?, ?)').run('d1', JSON.stringify({ new: 0, damaged: 2 }));
+    notifyScanReview();
+    expect(listNotices().items[0].message).toBe('新书 0 本、损坏 2 本，请审核后入库');
+    batch('s3', 5);
+    notifyScanReview();
+    expect(listNotices().items[0].message).toBe('共 2 批待审核，新书 5 本、损坏 2 本，可逐批审核');
+  });
 });
 
 describe('扫描健康提醒', () => {

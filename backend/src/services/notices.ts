@@ -79,17 +79,23 @@ function fillPendingTitle(p: PendingFill): string {
   return `AI 填充${range}有 ${p.count} 本待确认`;
 }
 
-function scanPendingMessage(db: Database.Database): { batches: number; books: number } {
+function scanPendingMessage(db: Database.Database): { batches: number; books: number; damaged: number } {
   const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending'").all() as Array<{ summary_counts: string | null }>;
   let books = 0;
+  let damaged = 0;
   for (const r of rows) {
-    try { books += JSON.parse(r.summary_counts ?? '{}').new ?? 0; } catch { /* 忽略 */ }
+    try {
+      const c = JSON.parse(r.summary_counts ?? '{}');
+      books += c.new ?? 0;
+      damaged += c.damaged ?? 0;
+    } catch { /* 忽略 */ }
   }
-  return { batches: rows.length, books };
+  return { batches: rows.length, books, damaged };
 }
 
-function scanPendingText(s: { batches: number; books: number }): string {
-  return s.batches > 1 ? `共 ${s.batches} 批待审核，新书 ${s.books} 本，可逐批审核` : `新书 ${s.books} 本，请审核后入库`;
+function scanPendingText(s: { batches: number; books: number; damaged: number }): string {
+  const counts = s.damaged > 0 ? `新书 ${s.books} 本、损坏 ${s.damaged} 本` : `新书 ${s.books} 本`;
+  return s.batches > 1 ? `共 ${s.batches} 批待审核，${counts}，可逐批审核` : `${counts}，请审核后入库`;
 }
 
 /**
