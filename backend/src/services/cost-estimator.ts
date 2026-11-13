@@ -25,7 +25,7 @@ export function getActivePluginName(): string | null {
 }
 
 // AI 查证每本书额外的 AI 调用次数（多轮搜索豆瓣，实测后可调，变动写进 CHANGELOG）
-export const LOOKUP_CALLS_PER_BOOK = 4;
+export const LOOKUP_CALLS_PER_BOOK = 6;
 
 export interface EstimateInput {
   ai_fill: boolean;

@@ -29,8 +29,8 @@ describe('estimateCalls (fill-only)', () => {
 
 describe('estimateCalls (lookup)', () => {
   it('multiplies by (1 + LOOKUP_CALLS_PER_BOOK) when lookup on', () => {
-    expect(LOOKUP_CALLS_PER_BOOK).toBe(4);
-    expect(estimateCalls({ ai_fill: true, books_to_fill: 10, lookup: true }).fill).toBe(50);
+    expect(LOOKUP_CALLS_PER_BOOK).toBe(6);
+    expect(estimateCalls({ ai_fill: true, books_to_fill: 10, lookup: true }).fill).toBe(70);
   });
   it('one call per book when lookup off', () => {
     expect(estimateCalls({ ai_fill: true, books_to_fill: 10, lookup: false }).fill).toBe(10);

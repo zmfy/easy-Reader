@@ -96,6 +96,7 @@ describe('prompt rules', () => {
     expect(p).toContain('不要加作者名');
     expect(p).toContain('原样');
     expect(p).toContain('整套');
+    expect(p).toContain('保留文件里的整套名');
     expect(p).not.toContain('加上作者名');
   });
   it('adapt rules: one search per source, no repeated query, pick (may be empty) when done searching', async () => {
@@ -103,6 +104,7 @@ describe('prompt rules', () => {
     await runBookLookup(INPUT, deps);
     const p = deps.chat.mock.calls[1][0] as string;
     expect(p).toContain('每个来源最多搜一次');
+    expect(p).toContain('不要加作者名');
     expect(p).toContain('不要重复');
     expect(p).toContain('空数组');
   });
