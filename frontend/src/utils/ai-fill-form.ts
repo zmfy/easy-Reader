@@ -2,6 +2,7 @@ import type { AiFillApplyInput, AiFillLockableField, AiFillPreview, BookAdaptati
 
 /** AI 填充预览弹窗的表单状态 */
 export interface AiFillForm {
+  title: string
   author: string
   summary: string
   category: string
@@ -23,7 +24,7 @@ export const ADAPTATION_SOURCE_LABELS: Record<BookAdaptation['source'], string> 
   missevan: '猫耳FM',
 }
 
-const FIELDS: AiFillLockableField[] = ['author', 'summary', 'category']
+const FIELDS: AiFillLockableField[] = ['title', 'author', 'summary', 'category']
 
 /** AI 只凭书名和自身知识给出的建议（低置信）：默认不采用，由用户点「采用」 */
 export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boolean {
@@ -40,8 +41,8 @@ export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boole
  */
 export function initialForm(p: AiFillPreview): AiFillForm {
   const locked = new Set(p.lockedFields)
-  const useAi = { author: false, summary: false, category: false }
-  const values = { author: '', summary: '', category: '' }
+  const useAi = { title: false, author: false, summary: false, category: false }
+  const values = { title: '', author: '', summary: '', category: '' }
   for (const f of FIELDS) {
     const current = p.current[f] || ''
     const suggestion = isLowConfidence(p, f) ? '' : p.suggested[f] || ''
@@ -71,6 +72,7 @@ export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApp
   // 评分跟着封面走，只在换成豆瓣封面时取；评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
   const ratingSubjectUrl = chosen ? chosen.subjectUrl ?? p.coverCandidates.find(c => c.subjectUrl)?.subjectUrl : undefined
   return {
+    title: form.title,
     author: form.author,
     summary: form.summary,
     category: form.category || '',  // 分类选择器清空时为 null
@@ -80,7 +82,8 @@ export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApp
     adaptations: form.adaptations.map(a => ({ ...a })),
     cover: chosen ? { type: 'douban', pic: chosen.pic } : form.cover === 'default' ? { type: 'default' } : { type: 'keep' },
     ...(ratingSubjectUrl ? { ratingSubjectUrl } : {}),
-    coverTitle: p.coverTitle,
-    suggested: { author: p.suggested.author, summary: p.suggested.summary, category: p.suggested.category },
+    // 默认封面印的是书名：书名改了（采用建议或手改）就跟着改
+    coverTitle: form.title !== p.current.title ? form.title : p.coverTitle,
+    suggested: { title: p.suggested.title, author: p.suggested.author, summary: p.suggested.summary, category: p.suggested.category },
   }
 }

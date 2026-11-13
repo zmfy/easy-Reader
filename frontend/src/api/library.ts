@@ -58,9 +58,13 @@ export const libraryApi = {
     http.put<ApiResponse<Book>>(`/library/${id}`, payload),
 
 
-  // AI 填充预览：AI 与豆瓣检索可能需要一分多钟，超时单独放宽到 3 分钟
+  // AI 填充预览：AI 查证与豆瓣检索可能需要好几分钟，超时单独放宽到 5 分钟
   aiFillPreview: (id: string, signal?: AbortSignal) =>
-    http.post<ApiResponse<import('@/types').AiFillPreview>>(`/library/${id}/ai-fill/preview`, {}, { timeout: 180000, signal }),
+    http.post<ApiResponse<import('@/types').AiFillPreview>>(`/library/${id}/ai-fill/preview`, {}, { timeout: 300000, signal }),
+
+  // AI 填充预览进行中的查证进度（轮询）
+  aiFillProgress: (id: string) =>
+    http.get<ApiResponse<import('@/types').AiFillProgress>>(`/library/${id}/ai-fill/progress`),
 
   aiFillApply: (id: string, payload: import('@/types').AiFillApplyInput) =>
     http.post<ApiResponse<Book>>(`/library/${id}/ai-fill/apply`, payload),

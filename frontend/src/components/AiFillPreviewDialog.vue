@@ -12,7 +12,7 @@
     <!-- 检索中：明显的加载状态 + 已用时间，可随时取消 -->
     <div v-if="loading" class="preview-loading">
       <el-icon class="is-loading loading-icon"><IconLoader2 /></el-icon>
-      <div class="loading-title">AI 正在查找书籍信息…</div>
+      <div class="loading-title">{{ progress && progress.length > 0 ? lookupStepText(progress[progress.length - 1]) : 'AI 正在查找书籍信息…' }}</div>
       <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要几秒到一分钟，可随时取消</div>
     </div>
     <div v-else-if="preview && form" class="preview-body">
@@ -62,9 +62,9 @@
       </section>
 
       <!-- 宽屏两栏：左侧 作者 / 分类 / 连载 / 标签，右侧 简介 / 类似作品 -->
-      <div class="preview-grid">
-      <!-- 作者 / 分类 / 简介（锁定字段可切换为 AI 结果） -->
-      <section v-for="f in textFields" :key="f.key" class="block" :class="`area-${f.key}`">
+      <div class="preview-grid" :class="{ 'has-title': showTitle }">
+      <!-- 书名（只在 AI 给出建议时显示）/ 作者 / 分类 / 简介（锁定字段可切换为 AI 结果） -->
+      <section v-for="f in visibleFields" :key="f.key" class="block" :class="`area-${f.key}`">
         <div class="block-title">
           {{ f.label }}
           <el-tag
@@ -177,6 +177,16 @@
         <div v-if="form.adaptations.length === 0" class="hint">没有找到改编作品</div>
       </section>
       </div>
+
+      <!-- 查证过程：AI 逐步检索豆瓣 / 猫耳的记录，便于核对依据 -->
+      <el-collapse v-if="preview.lookupTrace.length > 0 || preview.lookupUsedFallback" class="lookup-trace">
+        <el-collapse-item name="trace">
+          <template #title>查证过程<span v-if="preview.lookupUsedFallback" class="hint">（未查证，按书名直接搜索）</span></template>
+          <ol class="trace-list">
+            <li v-for="(step, i) in preview.lookupTrace" :key="i">{{ lookupStepText(step) }}</li>
+          </ol>
+        </el-collapse-item>
+      </el-collapse>
     </div>
 
     <template #footer>
@@ -187,16 +197,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
 import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
-import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book } from '@/types'
+import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book, LookupStep } from '@/types'
+import { lookupStepText } from '@/utils/lookup-step-text'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
 
-const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean }>()
+const props = defineProps<{ modelValue: boolean; preview: AiFillPreview | null; bookId: string; loading?: boolean; progress?: LookupStep[] }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; applied: [book: Book] }>()
 
 const isNarrow = useMediaQuery('(max-width: 768px)')
@@ -217,10 +228,15 @@ watch(() => props.loading, (loading) => {
 
 // 长度上限与后端 parseAiFillApplyBody 一致
 const textFields: Array<{ key: AiFillLockableField; label: string; max: number }> = [
+  { key: 'title', label: '书名', max: 200 },
   { key: 'author', label: '作者', max: 200 },
   { key: 'category', label: '分类', max: 50 },
   { key: 'summary', label: '简介', max: 20000 },
 ]
+
+// 书名行只在 AI 给出书名建议时显示
+const showTitle = computed(() => !!props.preview?.suggested.title)
+const visibleFields = computed(() => textFields.filter(f => f.key !== 'title' || showTitle.value))
 
 const categoryOptions = ref<CategoryOption[]>([])
 async function loadCategoryOptions() {
@@ -287,7 +303,7 @@ function setDefaultCoverUrl(url: string) {
   defaultCoverUrl.value = url
 }
 watch(
-  () => [props.preview?.coverTitle, form.value?.author, form.value?.category] as const,
+  () => [form.value?.title !== props.preview?.current.title ? form.value?.title : props.preview?.coverTitle, form.value?.author, form.value?.category] as const,
   ([title, author, category]) => {
     clearTimeout(coverTimer)
     if (!title) return
@@ -362,6 +378,16 @@ onBeforeUnmount(() => {
   row-gap: 16px;
   align-items: start;
 }
+.preview-grid.has-title {
+  grid-template-areas:
+    "title summary"
+    "author summary"
+    "category summary"
+    "status summary"
+    "tags similar"
+    "adapt adapt";
+}
+.area-title { grid-area: title; }
 .area-author { grid-area: author; }
 .area-category { grid-area: category; }
 .area-summary { grid-area: summary; }
@@ -375,6 +401,9 @@ onBeforeUnmount(() => {
   .preview-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "author" "category" "summary" "status" "tags" "similar" "adapt";
+  }
+  .preview-grid.has-title {
+    grid-template-areas: "title" "author" "category" "summary" "status" "tags" "similar" "adapt";
   }
 }
 
@@ -498,6 +527,17 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 .adapt-link:hover { text-decoration: underline; }
+
+.lookup-trace {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.trace-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.trace-list li { padding: 2px 0; }
 
 .similar-add {
   display: flex;

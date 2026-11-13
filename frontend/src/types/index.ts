@@ -303,7 +303,16 @@ export interface BookAdaptation {
 
 // ── 单本 AI 填充预览（与 backend/src/services/ai-fill-preview.ts / ai-fill-apply.ts 对应）──
 export type SimilarWork = { title: string; author?: string; reason?: string }
-export type AiFillLockableField = 'author' | 'summary' | 'category'
+export type AiFillLockableField = 'title' | 'author' | 'summary' | 'category'
+
+/** AI 查证过程中的一步（与后端 LookupStep 一致） */
+export type LookupStep =
+  | { kind: 'search_book' | 'search_movie' | 'search_drama'; query: string; count: number; error?: boolean }
+  | { kind: 'open_book'; id: string; label: string }
+  | { kind: 'confirm_book'; id: string; label: string; why?: string }
+  | { kind: 'no_book'; why?: string }
+  | { kind: 'pick_adaptations'; count: number }
+  | { kind: 'invalid' }
 
 export interface AiFillCoverCandidate {
   title: string
@@ -326,7 +335,7 @@ export interface AiFillPreview {
     adaptations: BookAdaptation[]
   }
   suggested: {
-    author?: string; summary?: string; category?: string; is_finished?: boolean
+    title?: string; author?: string; summary?: string; category?: string; is_finished?: boolean
     recommended_tags: string[]; similar_works: SimilarWork[]
     /** 改编作品：外部平台候选经 AI 筛选，每条有来源链接 */
     adaptations: BookAdaptation[]
@@ -340,11 +349,16 @@ export interface AiFillPreview {
   coverCandidates: AiFillCoverCandidate[]
   /** AI 判定正文与文件名不是同一部作品 */
   contentMismatch?: ContentMismatch
+  /** 查证过程（按顺序）；未启用查证时为空 */
+  lookupTrace: LookupStep[]
+  /** 查证未能完成，改按书名直接搜索 */
+  lookupUsedFallback: boolean
 }
 
 export type AiFillCoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' }
 
 export interface AiFillApplyInput {
+  title?: string
   author?: string
   summary?: string
   category?: string
@@ -355,7 +369,12 @@ export interface AiFillApplyInput {
   cover: AiFillCoverChoice
   ratingSubjectUrl?: string
   coverTitle?: string
-  suggested: { author?: string; summary?: string; category?: string }
+  suggested: { title?: string; author?: string; summary?: string; category?: string }
+}
+
+export interface AiFillProgress {
+  steps: LookupStep[]
+  done: boolean
 }
 
 export interface CostEstimate {

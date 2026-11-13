@@ -15,6 +15,8 @@ function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
       adaptations: [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }],
     },
     lockedFields: [],
+    lookupTrace: [],
+    lookupUsedFallback: false,
     coverTitle: '三国演义',
     coverCandidates: [
       { title: 'a', pic: 'https://img1.doubanio.com/a.jpg', subjectUrl: 'https://book.douban.com/subject/1/', thumbnail: 'data:a' },
@@ -140,6 +142,20 @@ describe('buildApplyPayload', () => {
   it('echoes the cover title used for the default cover', () => {
     const p = preview()
     expect(buildApplyPayload(initialForm(p), p).coverTitle).toBe('三国演义')
+  })
+
+  it('sends the adopted title and uses it for the default cover; otherwise keeps the current title', () => {
+    const p = preview({ coverTitle: '三国演义（旧）' })
+    p.suggested.title = '三国演义（毛宗岗评本）'
+    const f = initialForm(p)
+    const adopted = buildApplyPayload(f, p)
+    expect(adopted.title).toBe('三国演义（毛宗岗评本）')
+    expect(adopted.coverTitle).toBe('三国演义（毛宗岗评本）')
+    expect(adopted.suggested.title).toBe('三国演义（毛宗岗评本）')
+    f.title = p.current.title
+    const kept = buildApplyPayload(f, p)
+    expect(kept.title).toBe('三国演义')
+    expect(kept.coverTitle).toBe('三国演义（旧）')
   })
 
   it('omits is_finished when unknown', () => {
