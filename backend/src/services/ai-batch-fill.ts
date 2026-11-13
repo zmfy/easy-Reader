@@ -264,11 +264,13 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
       const edited = new Set<string>(parseEditedFields(current.manually_edited_fields));
 
-      // 查证确认的书：错标时改写错标信息；否则作者以豆瓣为准（视为高置信），依据写豆瓣
+      // 查证确认的书：错标时改写错标信息；否则作者以豆瓣为准（视为高置信），依据写豆瓣。
+      // 确认的作者与文件名作者对不上时不采用，保留 AI 的作者与置信度（与作者不一致不写入的保护一致）
       const confirmedNote = confirmed ? doubanNote(confirmed) : '';
+      const adoptAuthor = !mismatch && !!confirmed?.author && (!knownAuthor || authorsMatch(confirmed.author, knownAuthor));
       if (confirmed && mismatch) {
         mismatch = confirmedMismatch(mismatch, confirmed);
-      } else if (confirmed?.author) {
+      } else if (confirmed?.author && adoptAuthor) {
         info.author = confirmed.author;
         const conf = infoRec.confidence && typeof infoRec.confidence === 'object' ? infoRec.confidence as Record<string, unknown> : {};
         infoRec.confidence = { ...conf, author: 'high' };
@@ -311,7 +313,7 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       // 其余结果进「待确认」：与当前不同、且没有自动写入的字段，以及标签、类似作品、改编作品
       const evidence = infoRec.evidence && typeof infoRec.evidence === 'object' ? infoRec.evidence as Record<string, unknown> : {};
-      if (confirmed && !mismatch) evidence.author = confirmedNote;
+      if (confirmed && !mismatch && (adoptAuthor || !confirmed.author)) evidence.author = confirmedNote;
       const suggestion: SuggestionData = { fields: {} };
       // 书名只进待确认：查证确认的书名与当前实质不同（忽略空白、书名号）时才给
       if (confirmed && !mismatch && !sameTitle(confirmed.title, current.title ?? '')) {

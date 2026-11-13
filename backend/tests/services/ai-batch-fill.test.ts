@@ -665,6 +665,17 @@ describe('batchFill 接入查证', () => {
     expect(s.fields.author).toBeUndefined();   // 已自动写入
   });
 
+  it('Pass A 作者与文件名一致，但查证确认的作者不同 → 不用确认的作者自动写入', async () => {
+    const b = fileBook('lr', '魔戒');
+    fillSpy.mockResolvedValueOnce({ author: '托尔金', summary: '中土世界', confidence: { author: 'medium' }, evidence: { author: '正文署名' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ title: '魔戒', author: '金庸', doubanAuthor: '金庸' }));
+    const r = await batchFill({ books: [b] });
+    expect(r.succeeded).toContain('lr');
+    expect(row('lr').author).toBe('托尔金');
+    const s = suggestion('lr');
+    expect(s?.fields.author).toBeUndefined();
+  });
+
   it('书名只差书名号 / 空白时不给书名建议；作者已有时建议带豆瓣依据', async () => {
     insBook(_testDb!, { id: 'b1', title: '《西游 记》', author: '吴承恩', file_path: '/nonexistent/b1.txt' });
     fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' }, evidence: { author: '正文署名' } });
