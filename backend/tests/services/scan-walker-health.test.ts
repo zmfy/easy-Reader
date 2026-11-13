@@ -179,6 +179,37 @@ describe('扫描接入 EPUB 健康检查', () => {
     expect(bookRow('c').status).toBe('damaged');
   });
 
+  it('已入库正常书检查版本过期、文件暂时读不了 → 保持 normal，不写检查版本', async () => {
+    const b = writeBook('book.epub');
+    insertBook('b1', b);
+    check.mockResolvedValue({ status: 'unreadable' });
+    const { result, health } = await scan();
+    expect(result).toBeNull();
+    expect(bookRow('b1')).toMatchObject({ status: 'normal', damage_reason: null, health_check_version: null });
+    expect(health.damaged_existing).toBe(0);
+  });
+
+  it('已入库书文件变化、暂时读不了 → 状态不变，不写检查版本', async () => {
+    const b = writeBook('book.epub');
+    insertBook('b1', { ...b, size: b.size + 1 }, { health_check_version: 1 });
+    insertBook('b2', { ...writeBook('d.epub'), size: 1 }, { status: 'damaged', damage_reason: '解析超时' });
+    check.mockResolvedValue({ status: 'unreadable' });
+    const { health } = await scan();
+    expect(bookRow('b1')).toMatchObject({ status: 'normal', damage_reason: null });
+    expect(bookRow('b2')).toMatchObject({ status: 'damaged', damage_reason: '解析超时', health_check_version: null });
+    expect(health).toEqual({ damaged_existing: 0, recovered: 0, repaired: 0 });
+  });
+
+  it('新文件暂时读不了 → 不进 damaged 列表，照常走新书流程且不带检查版本', async () => {
+    const b = writeBook('new.epub');
+    check.mockResolvedValue({ status: 'unreadable' });
+    const { result } = await scan();
+    expect(result.damaged).toEqual([]);
+    const nb = result.new_books.find((n: any) => n.file_path === b.file);
+    expect(nb).toBeDefined();
+    expect(nb.health_check_version).toBeUndefined();
+  });
+
   it('TXT 文件不调用检查', async () => {
     writeBook('plain.txt', 'hello world, this is a plain text book.\n');
     const { result } = await scan();

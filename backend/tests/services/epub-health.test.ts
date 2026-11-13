@@ -96,6 +96,27 @@ describe('checkEpubHealth', () => {
     expect(dispose).toHaveBeenCalled();
   });
 
+  it('unreadable when loading fails with a filesystem error (not damaged)', async () => {
+    const fsErr = (code: string) => Object.assign(new Error(`${code}: oops, open '/x.epub'`), { code, syscall: 'open', errno: -13 });
+    for (const code of ['EACCES', 'EIO', 'EBUSY']) {
+      const r = await checkEpubHealth(write('locked.epub', makeEpub()), {
+        createParser: () => ({ load: async () => { throw fsErr(code); }, getChapters: async () => [] }),
+      });
+      expect(r).toEqual({ status: 'unreadable' });
+    }
+  });
+
+  it('unreadable for a real file without read permission', async () => {
+    if (process.getuid && process.getuid() === 0) return; // root 无视权限
+    const file = write('noperm.epub', makeEpub());
+    fs.chmodSync(file, 0o000);
+    try {
+      expect(await checkEpubHealth(file)).toEqual({ status: 'unreadable' });
+    } finally {
+      fs.chmodSync(file, 0o644);
+    }
+  });
+
   it('strips absolute paths and caps the reason at 80 chars', async () => {
     const r = await checkEpubHealth(write('weird.epub', makeEpub()), {
       createParser: () => ({

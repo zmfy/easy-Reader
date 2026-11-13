@@ -159,7 +159,7 @@ easyReader/
 
 扫描时会检查每个 EPUB 能不能打开（单本 15 秒超时，健康检查版本 `HEALTH_CHECK_VERSION` 记在 `books.health_check_version`，已检查过且文件没变的不再打开）：
 
-- 打不开或没有可读章节的新文件生成 `type = 'damaged'` 的条目，payload 为 `{ file_path, file_size, file_mtime, reason }`，单独成批（不和新书混在一批）。`reason` 为固定文案：「文件不完整（可能下载或复制中断）」「缺少书籍目录（content.opf）」「没有可读的章节」「解析超时」「无法解析：<简短错误>」。
+- 打不开或没有可读章节的新文件生成 `type = 'damaged'` 的条目，payload 为 `{ file_path, file_size, file_mtime, reason }`，单独成批（不和新书混在一批）。`reason` 为固定文案：「文件不完整（可能下载或复制中断）」「缺少书籍目录（content.opf）」「没有可读的章节」「解析超时」「无法解析：<简短错误>」。文件系统错误（权限不足、被占用、IO 错误等）不算损坏，当作这次没检查：不改状态、不写检查版本，下次扫描再查。
 - `damaged` 条目必须逐本决定：PATCH 条目 `accept` = 导入（书入库，`status = 'damaged'`、`damage_reason` 为原因），`reject` = 跳过（记入 `scan_skipped_files`，路径、大小、修改时间都没变时以后扫描不再提示）。还有没决定的条目时，`POST /:id/apply` 返回 422 `VALIDATION_ERROR`「请先为每本损坏的书选择导入或跳过」；自动模式下这类批次保持 pending，并发铃铛提醒。
 - 应用结果新增 `damaged_imported`、`damaged_skipped`；批次 `summary_counts` 新增 `damaged`。
 - 读取时自动修正过的 EPUB（如 zip 目录条目数写错），新书条目 payload 带 `repaired: true`，审核页显示「已自动修正」。

@@ -119,6 +119,11 @@ describe('扫描待审核提醒', () => {
 });
 
 describe('扫描健康提醒', () => {
+  it('只有恢复正常时也带问题书籍链接', () => {
+    notifyScanHealth({ damaged_existing: 0, recovered: 1, repaired: 0 });
+    expect(listNotices().items[0]).toMatchObject({ level: 'info', link: '/library/problems' });
+  });
+
   it('三项全零不发提醒', () => {
     notifyScanHealth({ damaged_existing: 0, recovered: 0, repaired: 0 });
     expect(listNotices().items).toHaveLength(0);
@@ -129,7 +134,7 @@ describe('扫描健康提醒', () => {
     notifyScanHealth({ damaged_existing: 0, recovered: 0, repaired: 4 });
     const { items } = listNotices();
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ kind: 'scan_health', title: '扫描发现 4 本已自动修正', link: '/library/problems' });
-    expect(items[1].title).toBe('扫描发现 2 本 EPUB 已损坏，1 本恢复正常，3 本已自动修正');
+    expect(items[0]).toMatchObject({ kind: 'scan_health', title: '扫描发现 4 本已自动修正', link: null });
+    expect(items[1]).toMatchObject({ title: '扫描发现 2 本 EPUB 已损坏，1 本恢复正常，3 本已自动修正', link: '/library/problems' });
   });
 });

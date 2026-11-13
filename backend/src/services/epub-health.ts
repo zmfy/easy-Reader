@@ -9,7 +9,9 @@ export const EPUB_CHECK_TIMEOUT_MS = 15000;
 export type EpubHealth =
   | { status: 'ok' }
   | { status: 'repaired' }
-  | { status: 'damaged'; reason: string };
+  | { status: 'damaged'; reason: string }
+  // 文件系统错误（权限、被占用、IO 等），这次没检查成，不算损坏
+  | { status: 'unreadable' };
 
 interface HealthParser {
   load(p: string): Promise<void>;
@@ -42,6 +44,12 @@ function describeError(err: unknown, filePath: string): string {
   return prefix + (cleaned || '未知错误').slice(0, REASON_MAX_LEN - prefix.length);
 }
 
+/** Node 文件系统错误（带 syscall 与 E 开头的 code），不是 zip / 解析错误 */
+function isFsError(err: unknown): boolean {
+  const e = err as { code?: unknown; syscall?: unknown } | null;
+  return !!e && typeof e.code === 'string' && /^E[A-Z]+$/.test(e.code) && typeof e.syscall === 'string';
+}
+
 function classifyLoadError(err: unknown, filePath: string): string {
   let buf: Buffer | null = null;
   try { buf = fs.readFileSync(filePath); } catch { /* 读不出来按错误信息判断 */ }
@@ -69,6 +77,7 @@ export async function checkEpubHealth(
       if (!chapters || chapters.length === 0) return { status: 'damaged', reason: REASON_NO_CHAPTERS };
       return parser.repaired ? { status: 'repaired' } : { status: 'ok' };
     } catch (err) {
+      if (isFsError(err)) return { status: 'unreadable' };
       return { status: 'damaged', reason: classifyLoadError(err, filePath) };
     }
   })();

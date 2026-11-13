@@ -150,6 +150,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           if (h.status === 'damaged') {
             markDamagedStmt.run(h.reason, st.size, st.mtimeMs, HEALTH_CHECK_VERSION, pre.id);
             if (pre.status !== 'damaged') health.damaged_existing++;
+          } else if (h.status === 'unreadable') {
+            // 这次没读成，状态和检查版本都不动，下次扫描再查
           } else if (pre.status === 'damaged') {
             markRecoveredStmt.run(HEALTH_CHECK_VERSION, pre.id);
             health.recovered++;
@@ -161,6 +163,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         continue;
       }
       let repaired = false;
+      let healthUnchecked = false;
       if (isEpub) {
         const h = await checkEpubHealth(fullPath);
         const existingBook = bookByPathStmt.get(fullPath) as { id: string; status: string | null } | undefined;
@@ -174,8 +177,10 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           bumpProgress(5);
           continue;
         }
+        // 读不了：当作这次没检查，照常走原来的新书流程，不写检查版本
+        healthUnchecked = h.status === 'unreadable';
         // 损坏书换成了完整文件：先恢复状态，新内容仍走新书审核项
-        if (existingBook && existingBook.status === 'damaged') {
+        if (!healthUnchecked && existingBook && existingBook.status === 'damaged') {
           markRecoveredStmt.run(HEALTH_CHECK_VERSION, existingBook.id);
           health.recovered++;
         }
@@ -187,6 +192,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           result.scanned.repaired = true;
           health.repaired++;
         }
+        if (healthUnchecked) result.scanned.health_unchecked = true;
         scanned.push(result.scanned);
       }
       // 已标记为乱码的书仍会重新检测（检测改进后可被「救回」为新书），但仍是乱码时
@@ -361,6 +367,7 @@ interface ScannedBookEx extends ScannedBook {
   encoding_detected: string;
   status: 'normal' | 'encoding_fixed';
   repaired?: boolean;
+  health_unchecked?: boolean;
 }
 
 function toNewPayload(b: ScannedBookEx): NewBookPayload {
@@ -377,7 +384,7 @@ function toNewPayload(b: ScannedBookEx): NewBookPayload {
     encoding_detected: b.encoding_detected,
     status: b.status,
     ...(b.repaired ? { repaired: true } : {}),
-    ...(b.file_format === 'epub' ? { health_check_version: HEALTH_CHECK_VERSION } : {}),
+    ...(b.file_format === 'epub' && !b.health_unchecked ? { health_check_version: HEALTH_CHECK_VERSION } : {}),
   };
 }
 

@@ -139,7 +139,9 @@ export function notifyScanHealth(
   const hasDamaged = counts.damaged_existing > 0;
   addNotice({
     kind: 'scan_health', level: hasDamaged ? 'warning' : 'info',
-    title: `扫描发现 ${parts.join('，')}`, link: '/library/problems',
+    title: `扫描发现 ${parts.join('，')}`,
+    // 只有自动修正时，问题书籍页里没有这些书，不带链接
+    link: hasDamaged || counts.recovered > 0 ? '/library/problems' : undefined,
   }, db);
 }
 
