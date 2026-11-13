@@ -67,6 +67,12 @@ export function initialForm(p: AiFillPreview): AiFillForm {
   }
 }
 
+/** 默认封面上印的书名：书名改了（采用建议或手改）就用新书名，书名为空或没改则沿用预览的 coverTitle */
+export function effectiveCoverTitle(form: Pick<AiFillForm, 'title'>, p: AiFillPreview): string {
+  const title = form.title.trim()
+  return title && title !== p.current.title ? title : p.coverTitle
+}
+
 export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApplyInput {
   const chosen = typeof form.cover === 'number' ? p.coverCandidates[form.cover] : undefined
   // 评分跟着封面走，只在换成豆瓣封面时取；评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
@@ -83,7 +89,7 @@ export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApp
     cover: chosen ? { type: 'douban', pic: chosen.pic } : form.cover === 'default' ? { type: 'default' } : { type: 'keep' },
     ...(ratingSubjectUrl ? { ratingSubjectUrl } : {}),
     // 默认封面印的是书名：书名改了（采用建议或手改）就跟着改
-    coverTitle: form.title !== p.current.title ? form.title : p.coverTitle,
+    coverTitle: effectiveCoverTitle(form, p),
     suggested: { title: p.suggested.title, author: p.suggested.author, summary: p.suggested.summary, category: p.suggested.category },
   }
 }

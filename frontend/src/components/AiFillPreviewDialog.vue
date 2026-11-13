@@ -202,7 +202,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
-import { initialForm, buildApplyPayload, isLowConfidence, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
+import { initialForm, buildApplyPayload, effectiveCoverTitle, isLowConfidence, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book, LookupStep } from '@/types'
 import { lookupStepText } from '@/utils/lookup-step-text'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
@@ -303,7 +303,7 @@ function setDefaultCoverUrl(url: string) {
   defaultCoverUrl.value = url
 }
 watch(
-  () => [form.value?.title !== props.preview?.current.title ? form.value?.title : props.preview?.coverTitle, form.value?.author, form.value?.category] as const,
+  () => [props.preview && form.value ? effectiveCoverTitle(form.value, props.preview) : props.preview?.coverTitle, form.value?.author, form.value?.category] as const,
   ([title, author, category]) => {
     clearTimeout(coverTimer)
     if (!title) return

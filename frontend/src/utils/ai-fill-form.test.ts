@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialForm, buildApplyPayload } from './ai-fill-form'
+import { initialForm, buildApplyPayload, effectiveCoverTitle } from './ai-fill-form'
 import type { AiFillPreview } from '@/types'
 
 function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
@@ -163,5 +163,19 @@ describe('buildApplyPayload', () => {
     p.current.is_finished = null
     p.suggested.is_finished = undefined
     expect(buildApplyPayload(initialForm(p), p)).not.toHaveProperty('is_finished')
+  })
+})
+
+describe('effectiveCoverTitle', () => {
+  it('follows a changed title, otherwise keeps the preview cover title', () => {
+    const p = preview({ coverTitle: '封面书名' })
+    expect(effectiveCoverTitle({ title: '新书名' }, p)).toBe('新书名')
+    expect(effectiveCoverTitle({ title: '三国演义' }, p)).toBe('封面书名')
+  })
+
+  it('falls back to the preview cover title when the title is blank', () => {
+    const p = preview({ coverTitle: '封面书名' })
+    expect(effectiveCoverTitle({ title: '' }, p)).toBe('封面书名')
+    expect(effectiveCoverTitle({ title: '   ' }, p)).toBe('封面书名')
   })
 })

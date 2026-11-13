@@ -76,7 +76,6 @@
                     >
                       <el-button
                         :loading="aiPreviewLoading"
-      :progress="aiProgress"
                         :disabled="!aiConfigured"
                         @click="handleAiFill"
                       >
