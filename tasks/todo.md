@@ -570,3 +570,15 @@
 - [ ] 4. （main）CHANGELOG；合并 study
 - [ ] 5. （study）手机书页按钮：导图 / 笔记并排，按钮区不高过封面
 - [ ] 6. 验证：jest / vue-tsc / vitest；容器实测（打开那本书、手机书库点卡片、书页删除、填充换封面后评分、手机书页截图）
+
+# 扫描时发现损坏 EPUB（feature/damaged-epub，2026-11-13）
+
+- [x] 1. EPUB 健康检查模块（ok / repaired / damaged / unreadable，15 秒超时）
+- [x] 2. 数据库字段 health_check_version / damage_reason、跳过记录表 scan_skipped_files
+- [x] 3. 扫描接入：新文件损坏单独待审核；已入库书状态变化直接写库；文件读不了 / 已入库书超时视为本次未检查
+- [x] 4. 损坏项单独成批、逐本导入或跳过（未选完 422）；自动模式损坏批次保持待审核
+- [x] 5. 问题书籍 ?status=damaged、阅读器 409 说明原因、scan_health 提醒（只留最新一条）
+- [x] 6. 前端：审核页「文件损坏」一栏、已自动修正标签、问题书籍「损坏」筛选、阅读器显示原因（瀑布流失败可重试）
+- [x] 7. 文档与 CHANGELOG；临时库实测 10 个场景通过
+- [x] 验证：jest 727 / vitest 166 / tsc / vue-tsc；终审修复（超时不误判好书、损坏书不当主书、提醒不堆积）
+- [ ] 合并 main / study（待用户确认）
