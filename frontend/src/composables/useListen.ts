@@ -204,8 +204,10 @@ export function useListen(src: ListenSource) {
     loading.value = true
     advancing = true
     let ok = false
-    try { ok = await src.nextChapter() } finally { advancing = false }
+    let failure = ''
+    try { ok = await src.nextChapter() } catch (e) { failure = e instanceof Error ? e.message : '下一章读取失败' } finally { advancing = false }
     if (g !== gen) return
+    if (failure) { loading.value = false; playing.value = false; error.value = failure; clearHighlight(); return }
     if (!ok) { loading.value = false; playing.value = false; error.value = '全书已经念完了'; clearHighlight(); return }
     if (!loadChapter(true)) { loading.value = false; error.value = '本章没有可朗读的文字'; return }
     playIndex(0)
