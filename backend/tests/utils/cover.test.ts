@@ -1,7 +1,7 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import {
-  parseDoubanRating, parseDoubanSuggestList, pickDoubanBook, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
+  parseDoubanRating, parseDoubanSuggestList, pickDoubanBook, doubanFallbackQuery, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
 } from '../../src/utils/cover';
 
 describe('parseDoubanRating', () => {
@@ -64,6 +64,24 @@ describe('豆瓣联想结果只取书，不取作者', () => {
   });
   it('没有 type 字段的条目照旧当作书', () => {
     expect(pickDoubanBook([{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s2.jpg' }])?.title).toBe('西游记');
+  });
+});
+
+describe('doubanFallbackQuery：搜不到时去掉合集后缀再搜', () => {
+  it('去掉全集 / 合集 / 套装 / 系列 / 三部曲 / 全 N 册', () => {
+    expect(doubanFallbackQuery('魔戒全集')).toBe('魔戒');
+    expect(doubanFallbackQuery('指环王 全集')).toBe('指环王');
+    expect(doubanFallbackQuery('冰与火之歌合集')).toBe('冰与火之歌');
+    expect(doubanFallbackQuery('哈利波特套装')).toBe('哈利波特');
+    expect(doubanFallbackQuery('三体系列')).toBe('三体');
+    expect(doubanFallbackQuery('魔戒三部曲')).toBe('魔戒');
+    expect(doubanFallbackQuery('明朝那些事儿（全7册）')).toBe('明朝那些事儿');
+    expect(doubanFallbackQuery('明朝那些事儿全九册')).toBe('明朝那些事儿');
+  });
+  it('没有合集后缀、或去掉后为空时不重搜', () => {
+    expect(doubanFallbackQuery('魔戒')).toBeUndefined();
+    expect(doubanFallbackQuery('全集')).toBeUndefined();
+    expect(doubanFallbackQuery('全集与选集之争')).toBeUndefined();
   });
 });
 
