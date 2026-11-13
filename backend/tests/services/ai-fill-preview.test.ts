@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3';
 import { buildAiFillPreview } from '../../src/services/ai-fill-preview';
 import { aiManager } from '../../src/ai/ai-manager';
-import { findAdaptations } from '../../src/services/adaptations';
-import { doubanSuggestList, fetchCoverThumbnailDataUri, downloadCover, fetchRating } from '../../src/utils/cover';
+import { lookupBook, LookupOutcome } from '../../src/services/book-lookup';
+import { fetchCoverThumbnailDataUri, downloadCover, fetchRating } from '../../src/utils/cover';
+import { getLookupProgress } from '../../src/services/lookup-progress';
 
 let testDb: Database.Database;
 jest.mock('../../src/db', () => ({ getDb: () => testDb }));
@@ -13,10 +14,7 @@ jest.mock('../../src/utils/cover', () => ({
   fetchRating: jest.fn(),
   saveCoverFile: jest.fn(),
 }));
-jest.mock('../../src/services/adaptations', () => ({
-  ...jest.requireActual('../../src/services/adaptations'),
-  findAdaptations: jest.fn().mockResolvedValue([]),
-}));
+jest.mock('../../src/services/book-lookup', () => ({ lookupBook: jest.fn() }));
 jest.mock('../../src/ai/ai-manager', () => ({
   aiManager: { fillBookInfo: jest.fn() },
   isAiConfigured: jest.fn().mockReturnValue(true),
@@ -24,7 +22,20 @@ jest.mock('../../src/ai/ai-manager', () => ({
 }));
 
 const fill = aiManager.fillBookInfo as jest.Mock;
-const suggest = doubanSuggestList as jest.Mock;
+const lookup = lookupBook as jest.Mock;
+
+const outcome = (o: Record<string, unknown> = {}) => ({
+  noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: false, ...o,
+}) as LookupOutcome;
+const covers = [
+  { title: '三国演义', pic: 'https://img1.doubanio.com/a.jpg', subjectUrl: 'https://book.douban.com/subject/1/' },
+  { title: '三国演义2', pic: 'https://img1.doubanio.com/b.jpg', subjectUrl: 'https://book.douban.com/subject/2/' },
+  { title: '三国演义3', pic: 'https://img1.doubanio.com/c.jpg' },
+];
+const lotr = {
+  hit: { title: '魔戒（全集）', author: '托尔金', year: '2009', url: 'https://book.douban.com/subject/9/', pic: 'https://img1.doubanio.com/m.jpg' },
+  title: '魔戒全集', author: '[英] J.R.R.托尔金', doubanAuthor: '[英] J.R.R.托尔金 / 丁棣 译', why: '作者与译本吻合',
+};
 const thumb = fetchCoverThumbnailDataUri as jest.Mock;
 
 function setupDb(): void {
@@ -57,23 +68,19 @@ beforeEach(() => {
   jest.clearAllMocks();
   setupDb();
   fill.mockResolvedValue({
-    title: '三国演义', author: '罗贯中', summary: '东汉末年', category: '历史', is_finished: true,
+    title: '三国演义', author: '罗贯中', summary: '东汉末年', category: '历史', is_finished: true, book_type: '小说',
     recommended_tags: ['历史', '权谋'], similar_works: [{ title: '东周列国志', author: '冯梦龙', reason: '同为历史演义' }],
   });
-  suggest.mockResolvedValue([
-    { title: '三国演义', pic: 'https://img1.doubanio.com/a.jpg', subjectUrl: 'https://book.douban.com/subject/1/' },
-    { title: '三国演义2', pic: 'https://img1.doubanio.com/b.jpg', subjectUrl: 'https://book.douban.com/subject/2/' },
-    { title: '三国演义3', pic: 'https://img1.doubanio.com/c.jpg' },
-  ]);
+  lookup.mockResolvedValue(outcome({ coverCandidates: covers }));
   thumb.mockImplementation(async (pic: string) => (pic.endsWith('b.jpg') ? undefined : `data:image/jpeg;base64,${pic}`));
 });
 
 describe('buildAiFillPreview', () => {
   it('appends adaptation posters after book covers, tagged with their kind, and strips pic from the list', async () => {
-    (findAdaptations as jest.Mock).mockResolvedValueOnce([
+    lookup.mockResolvedValueOnce(outcome({ coverCandidates: covers, adaptations: [
       { type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg' },
       { type: '广播剧', title: '三国演义', source: 'missevan', url: 'https://www.missevan.com/mdrama/9' },
-    ]);
+    ] }));
     const p = await buildAiFillPreview('b1');
     const last = p.coverCandidates[p.coverCandidates.length - 1];
     expect(last).toMatchObject({ title: '三国演义', year: '1994', kind: '电视剧', pic: 'https://img3.doubanio.com/view/photo/s_ratio_poster/public/p1.jpg' });
@@ -84,12 +91,13 @@ describe('buildAiFillPreview', () => {
 
   it('returns current and suggested adaptations, looked up with the AI title and author', async () => {
     const found = [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }];
-    (findAdaptations as jest.Mock).mockResolvedValueOnce(found);
+    lookup.mockResolvedValueOnce(outcome({ adaptations: found }));
     testDb.prepare(`UPDATE book_ai_metadata SET adaptations = '[{"type":"电影","title":"赤壁"}]'`).run();
     const p = await buildAiFillPreview('b1');
     expect(p.suggested.adaptations).toEqual(found);
     expect(p.current.adaptations).toEqual([{ type: '电影', title: '赤壁' }]);
-    expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '三国演义', author: '罗贯中', summary: '东汉末年' });
+    expect(lookup.mock.calls[0][0]).toMatchObject({ fileName: 'sg.epub', title: '三国演义', author: '罗贯中', summary: '东汉末年', bookType: '小说' });
+    expect(lookup.mock.calls[0][0].embedded).toBeUndefined();   // 测试文件不存在，没有内置信息
   });
 
   it('returns per-field confidence and evidence notes', async () => {
@@ -133,25 +141,24 @@ describe('buildAiFillPreview', () => {
     expect(fetchRating).not.toHaveBeenCalled();
   });
 
-  it('searches douban with the AI title and drops candidates whose thumbnail failed', async () => {
+  it('uses the lookup cover candidates and drops candidates whose thumbnail failed', async () => {
     const p = await buildAiFillPreview('b1');
-    expect(suggest).toHaveBeenCalledWith('三国演义');
     expect(p.coverCandidates.map(c => c.pic)).toEqual(['https://img1.doubanio.com/a.jpg', 'https://img1.doubanio.com/c.jpg']);
     expect(p.coverCandidates[0].thumbnail).toBe('data:image/jpeg;base64,https://img1.doubanio.com/a.jpg');
     expect(p.coverCandidates[0].subjectUrl).toBe('https://book.douban.com/subject/1/');
   });
 
   it('still returns a preview when douban finds nothing', async () => {
-    suggest.mockResolvedValue([]);
+    lookup.mockResolvedValue(outcome());
     const p = await buildAiFillPreview('b1');
     expect(p.coverCandidates).toEqual([]);
     expect(p.suggested.summary).toBe('东汉末年');
   });
 
-  it('falls back to the cleaned file title for the douban search when AI gives no title', async () => {
+  it('falls back to the cleaned file title for the lookup when AI gives no title', async () => {
     fill.mockResolvedValue({ summary: 'x' });
     await buildAiFillPreview('b1');
-    expect(suggest).toHaveBeenCalledWith('三国演义');
+    expect(lookup.mock.calls[0][0].title).toBe('三国演义');
   });
 
   it('infers is_finished from the file name when AI omits it', async () => {
@@ -168,5 +175,78 @@ describe('buildAiFillPreview', () => {
 
   it('throws a not-found error for an unknown book', async () => {
     await expect(buildAiFillPreview('nope')).rejects.toThrow(/不存在/);
+  });
+
+  describe('lookup', () => {
+    const setTitle = (t: string) => testDb.prepare('UPDATE books SET title = ? WHERE id = ?').run(t, 'b1');
+
+    it('suggests the confirmed title when it differs from the current one, with douban evidence', async () => {
+      setTitle('魔戒全集 精校版');
+      fill.mockResolvedValue({ title: '魔戒', author: '托尔金', summary: '中土', confidence: { author: 'low' } });
+      lookup.mockResolvedValue(outcome({ confirmed: lotr }));
+      const p = await buildAiFillPreview('b1');
+      expect(p.suggested.title).toBe('魔戒全集');
+      expect(p.suggested.confidence.title).toBe('high');
+      expect(p.suggested.author).toBe('[英] J.R.R.托尔金');
+      expect(p.suggested.confidence.author).toBe('high');
+      expect(p.suggested.evidence.author).toContain('豆瓣');
+      expect(p.suggested.evidence.title).toBe('豆瓣：《魔戒（全集）》[英] J.R.R.托尔金 / 丁棣 译 2009；作者与译本吻合');
+    });
+
+    it('does not suggest a title that only differs by spaces or book-title marks', async () => {
+      setTitle('《魔戒 全集》');
+      lookup.mockResolvedValue(outcome({ confirmed: lotr }));
+      const p = await buildAiFillPreview('b1');
+      expect(p.suggested.title).toBeUndefined();
+      expect(p.suggested.confidence.title).toBe('high');
+    });
+
+    it('looks up the book the content belongs to when mismatched, and puts the confirmed result in contentMismatch', async () => {
+      fill.mockResolvedValue({
+        title: '三国演义', filename_matches: false, content_title: '指环王', content_author: '托尔金',
+        mismatch_reason: '正文是魔戒', summary: '中土',
+      });
+      lookup.mockResolvedValue(outcome({ confirmed: lotr }));
+      const p = await buildAiFillPreview('b1');
+      expect(lookup.mock.calls[0][0]).toMatchObject({ title: '指环王', author: '托尔金', mismatchReason: '正文是魔戒' });
+      expect(p.suggested.title).toBeUndefined();
+      expect(p.contentMismatch).toEqual({
+        title: '魔戒全集', author: '[英] J.R.R.托尔金',
+        reason: '正文是魔戒；豆瓣：《魔戒（全集）》[英] J.R.R.托尔金 / 丁棣 译 2009；作者与译本吻合',
+      });
+    });
+
+    it('passes the lookup trace and fallback flag through', async () => {
+      const steps = [{ kind: 'search_book' as const, query: '三国演义', count: 3 }];
+      lookup.mockResolvedValue(outcome({ steps, usedFallback: true }));
+      const p = await buildAiFillPreview('b1');
+      expect(p.lookupTrace).toEqual(steps);
+      expect(p.lookupUsedFallback).toBe(true);
+    });
+
+    it('reports lookup steps as progress and marks it done afterwards', async () => {
+      const steps = [{ kind: 'search_book' as const, query: '三国演义', count: 3 }];
+      let during: unknown;
+      lookup.mockImplementation(async (_input, _db, opts) => {
+        opts.onStep(steps);
+        during = getLookupProgress('b1');
+        return outcome({ steps });
+      });
+      await buildAiFillPreview('b1');
+      expect(during).toEqual({ steps, done: false });
+      expect(getLookupProgress('b1')).toEqual({ steps, done: true });
+    });
+
+    it('marks progress done even when the lookup throws', async () => {
+      lookup.mockRejectedValue(new Error('boom'));
+      await expect(buildAiFillPreview('b1')).rejects.toThrow('boom');
+      expect(getLookupProgress('b1')?.done).toBe(true);
+    });
+
+    it('reports title as a locked field', async () => {
+      testDb.prepare(`UPDATE books SET manually_edited_fields = '["title","author"]'`).run();
+      const p = await buildAiFillPreview('b1');
+      expect(p.lockedFields).toEqual(['title', 'author']);
+    });
   });
 });

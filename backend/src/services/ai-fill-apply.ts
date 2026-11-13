@@ -94,7 +94,7 @@ export class AiFillApplyError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
-const LOCKABLE: LockableField[] = ['author', 'summary', 'category'];
+const LOCKABLE: Exclude<LockableField, 'title'>[] = ['author', 'summary', 'category'];
 
 async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string | undefined> {
   const cover = input.cover;
