@@ -240,12 +240,15 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         if (fatal(err)) throw err;
         return { noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: true };
       });
-      const confirmed = outcome.confirmed;
+      // 确认的作者与文件名作者对不上（非错标）时多半认错了书：当作没有确认，后续合并一律用 trusted
+      const authorConflict = !mismatch && !!outcome.confirmed?.author && !!knownAuthor
+        && !authorsMatch(outcome.confirmed.author, knownAuthor);
+      const trusted = authorConflict ? undefined : outcome.confirmed;
 
       // 文件名作者与 AI 作者对不上时，以查证确认的作者为准再判一次
-      if (fillStatus === 'failed' && confirmed?.author && authorsMatch(confirmed.author, knownAuthor)) {
+      if (fillStatus === 'failed' && trusted?.author && authorsMatch(trusted.author, knownAuthor)) {
         fillStatus = 'filled';
-        info.author = confirmed.author;
+        info.author = trusted.author;
       }
 
       if (fillStatus === 'failed') {
@@ -264,14 +267,12 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
       const edited = new Set<string>(parseEditedFields(current.manually_edited_fields));
 
-      // 查证确认的书：错标时改写错标信息；否则作者以豆瓣为准（视为高置信），依据写豆瓣。
-      // 确认的作者与文件名作者对不上时不采用，保留 AI 的作者与置信度（与作者不一致不写入的保护一致）
-      const confirmedNote = confirmed ? doubanNote(confirmed) : '';
-      const adoptAuthor = !mismatch && !!confirmed?.author && (!knownAuthor || authorsMatch(confirmed.author, knownAuthor));
-      if (confirmed && mismatch) {
-        mismatch = confirmedMismatch(mismatch, confirmed);
-      } else if (confirmed?.author && adoptAuthor) {
-        info.author = confirmed.author;
+      // 查证确认的书：错标时改写错标信息；否则作者以豆瓣为准（视为高置信），依据写豆瓣
+      const confirmedNote = trusted ? doubanNote(trusted) : '';
+      if (trusted && mismatch) {
+        mismatch = confirmedMismatch(mismatch, trusted);
+      } else if (trusted?.author) {
+        info.author = trusted.author;
         const conf = infoRec.confidence && typeof infoRec.confidence === 'object' ? infoRec.confidence as Record<string, unknown> : {};
         infoRec.confidence = { ...conf, author: 'high' };
       }
@@ -313,12 +314,12 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       // 其余结果进「待确认」：与当前不同、且没有自动写入的字段，以及标签、类似作品、改编作品
       const evidence = infoRec.evidence && typeof infoRec.evidence === 'object' ? infoRec.evidence as Record<string, unknown> : {};
-      if (confirmed && !mismatch && (adoptAuthor || !confirmed.author)) evidence.author = confirmedNote;
+      if (trusted && !mismatch) evidence.author = confirmedNote;
       const suggestion: SuggestionData = { fields: {} };
       // 书名只进待确认：查证确认的书名与当前实质不同（忽略空白、书名号）时才给
-      if (confirmed && !mismatch && !sameTitle(confirmed.title, current.title ?? '')) {
+      if (trusted && !mismatch && !sameTitle(trusted.title, current.title ?? '')) {
         suggestion.fields.title = {
-          value: confirmed.title, current: current.title || null, confidence: 'high', evidence: confirmedNote,
+          value: trusted.title, current: current.title || null, confidence: 'high', evidence: confirmedNote,
           ...(edited.has('title') ? { locked: true } : {}),
         };
       }
@@ -347,18 +348,21 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       // 封面 + 评分：取查证结果的第一个候选（已确认的书排第一），尽力而为；
       // 找不到封面（套装、合集常见）就生成默认封面
-      const titleForCover = confirmed?.title || lookupInput.title;
+      const titleForCover = trusted?.title || lookupInput.title;
       const needCover = !current.cover_url;
       const needRating = current.rating == null;
       let coverUrl: string | undefined;
       let coverSource: 'douban' | 'default' = 'douban';
-      const candidate = outcome.coverCandidates[0];
+      // 不可信的确认条目不拿来当封面
+      const candidate = authorConflict
+        ? outcome.coverCandidates.find(c => c.subjectUrl !== outcome.confirmed!.hit.url)
+        : outcome.coverCandidates[0];
       try {
         if (needCover && candidate) coverUrl = await downloadCoverFromPic(candidate.pic, b.id);
         if (needRating) {
           // 确认的条目已打开过详情时直接用其评分，否则抓条目页
-          const ratingUrl = confirmed ? confirmed.hit.url : candidate?.subjectUrl;
-          const rating = confirmed?.rating ?? (ratingUrl ? await fetchRating({ url: ratingUrl }) : undefined);
+          const ratingUrl = trusted ? trusted.hit.url : candidate?.subjectUrl;
+          const rating = trusted?.rating ?? (ratingUrl ? await fetchRating({ url: ratingUrl }) : undefined);
           if (rating != null) db.prepare('UPDATE books SET rating = ? WHERE id = ?').run(rating, b.id);
         }
       } catch {
