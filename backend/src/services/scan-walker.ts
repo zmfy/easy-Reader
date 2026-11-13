@@ -309,8 +309,14 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     setScanProgress(taskId, { stage: 'staging' });
     if (options.mode === 'auto') {
       if (!isEmpty(result)) {
-        const { applyBatch } = await import('./batch-applier');
-        for (const batch of buildBatchesFromScan(taskId, result)) applyBatch(batch.id, 'system-auto');
+        const { applyBatch, hasUndecidedDamaged } = await import('./batch-applier');
+        // 损坏 EPUB 要管理员逐本决定导入或跳过：含损坏项的批次留着待审核
+        let needsReview = false;
+        for (const batch of buildBatchesFromScan(taskId, result)) {
+          if (hasUndecidedDamaged(getDb(), batch.id)) needsReview = true;
+          else applyBatch(batch.id, 'system-auto');
+        }
+        if (needsReview) notifyScanReview();
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
