@@ -7,11 +7,13 @@ export function buildAiSettingsPayload(
   form: Record<string, string>,
   summaryLength: number,
   fillConcurrency: number,
+  lookupEnabled: boolean,
 ): Record<string, string> {
   const payload: Record<string, string> = {
     ai_plugin: pluginName,
     ai_summary_length: String(summaryLength),
     ai_fill_concurrency: String(fillConcurrency),
+    ai_lookup_enabled: lookupEnabled ? '1' : '0',
   }
   for (const field of fields) {
     const value = form[field] ?? ''
@@ -19,4 +21,9 @@ export function buildAiSettingsPayload(
     payload[`ai_${pluginName}_${field}`] = value
   }
   return payload
+}
+
+// 读取「AI 查证」开关：缺省或任何非 '0' 的值都视为开（与后端 isLookupEnabled 一致）
+export function parseLookupEnabled(value: string | undefined): boolean {
+  return value !== '0'
 }
