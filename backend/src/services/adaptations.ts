@@ -4,6 +4,7 @@ import {
   AdaptationCandidate, AdaptationSource, searchDoubanMovies, searchMissevanDramas,
 } from '../utils/adaptation-sources';
 import { extractJsonObject } from '../ai/json-extract';
+import { throttled, _resetExternalThrottle } from '../utils/external-throttle';
 
 /**
  * 改编作品：先从豆瓣电影、猫耳 FM 按书名搜出候选，再由 AI 结合书目信息挑出真正改编自这本书的。
@@ -99,28 +100,18 @@ export function parseAdaptationResponse(raw: string, candidates: AdaptationCandi
 /** 搜不到候选时不调用 AI；任何一步失败都返回 []（改编信息是锦上添花，不能让填充失败） */
 /** 后台批量时外部搜索的最小间隔：全局串行，避免短时间大量请求触发豆瓣 / 猫耳的反爬 */
 export const ADAPTATION_SEARCH_INTERVAL_MS = 3000;
-let searchChain: Promise<unknown> = Promise.resolve();
-let lastSearchAt = 0;
 
 function searchCandidates(title: string): Promise<AdaptationCandidate[]> {
   return Promise.all([searchDoubanMovies(title), searchMissevanDramas(title)]).then(([d, m]) => [...d, ...m]);
 }
 
 function throttledSearch(title: string): Promise<AdaptationCandidate[]> {
-  const run = searchChain.then(async () => {
-    const wait = lastSearchAt + ADAPTATION_SEARCH_INTERVAL_MS - Date.now();
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    lastSearchAt = Date.now();
-    return searchCandidates(title);
-  });
-  searchChain = run.catch(() => undefined);
-  return run;
+  return throttled(() => searchCandidates(title), ADAPTATION_SEARCH_INTERVAL_MS);
 }
 
 /** 测试用：重置限速状态 */
 export function _resetAdaptationThrottle(): void {
-  searchChain = Promise.resolve();
-  lastSearchAt = 0;
+  _resetExternalThrottle();
 }
 
 /** throttle：后台批量时为 true，外部搜索排队并保持间隔（AI 筛选不受限） */
