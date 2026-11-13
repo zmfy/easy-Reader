@@ -17,6 +17,7 @@ jest.mock('../../src/services/batch-builder', () => ({
 }));
 jest.mock('../../src/services/notices', () => ({
   notifyScanReview: jest.fn(),
+  notifyScanHealth: jest.fn(),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

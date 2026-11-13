@@ -24,7 +24,7 @@ import {
 import { buildCandidateGroups, applyNotDuplicateOverrides, mergeDuplicateGroups, ScannedBook } from './dedup-grouper';
 import { listOverrides } from './manual-override';
 import { buildBatchesFromScan, ScanResult } from './batch-builder';
-import { notifyScanReview } from './notices';
+import { notifyScanReview, notifyScanHealth } from './notices';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 import { deleteBookRelations } from './relation-cleanup';
 
@@ -210,6 +210,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       };
       buildBatchesFromScan(taskId, partial);
       notifyScanReview();
+      notifyScanHealth(health);
       return health;
     }
 
@@ -343,6 +344,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     }
 
     finishScanTask(taskId, 'completed');
+    notifyScanHealth(health);
     return health;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

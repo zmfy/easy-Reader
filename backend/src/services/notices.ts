@@ -120,6 +120,23 @@ export function notifyScanReview(db: Database.Database = getDb()): void {
   }, db);
 }
 
+/** 扫描时 EPUB 健康检查的结果：三项都为 0 不提醒 */
+export function notifyScanHealth(
+  counts: { damaged_existing: number; recovered: number; repaired: number },
+  db: Database.Database = getDb()
+): void {
+  const parts: string[] = [];
+  if (counts.damaged_existing > 0) parts.push(`${counts.damaged_existing} 本 EPUB 已损坏`);
+  if (counts.recovered > 0) parts.push(`${counts.recovered} 本恢复正常`);
+  if (counts.repaired > 0) parts.push(`${counts.repaired} 本已自动修正`);
+  if (parts.length === 0) return;
+  const hasDamaged = counts.damaged_existing > 0;
+  addNotice({
+    kind: 'scan_health', level: hasDamaged ? 'warning' : 'info',
+    title: `扫描发现 ${parts.join('，')}`, link: '/library/problems',
+  }, db);
+}
+
 /** 按现状校正待处理类提醒：处理完的删掉，没处理完的更新本数 */
 export function reconcilePendingNotices(db: Database.Database = getDb()): void {
   const p = pendingFill(db);

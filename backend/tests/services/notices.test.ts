@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { addNotice, listNotices, notifyFillBatch, notifyScanReview } from '../../src/services/notices';
+import { addNotice, listNotices, notifyFillBatch, notifyScanReview, notifyScanHealth } from '../../src/services/notices';
 
 let db: Database.Database;
 jest.mock('../../src/db', () => ({ getDb: () => db }));
@@ -106,5 +106,21 @@ describe('扫描待审核提醒', () => {
 
     db.prepare("UPDATE scan_batches SET status = 'discarded' WHERE id = 's2'").run();
     expect(listNotices()).toEqual({ items: [], unread: 0 });
+  });
+});
+
+describe('扫描健康提醒', () => {
+  it('三项全零不发提醒', () => {
+    notifyScanHealth({ damaged_existing: 0, recovered: 0, repaired: 0 });
+    expect(listNotices().items).toHaveLength(0);
+  });
+
+  it('只写非零的部分', () => {
+    notifyScanHealth({ damaged_existing: 2, recovered: 1, repaired: 3 });
+    notifyScanHealth({ damaged_existing: 0, recovered: 0, repaired: 4 });
+    const { items } = listNotices();
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: 'scan_health', title: '扫描发现 4 本已自动修正', link: '/library/problems' });
+    expect(items[1].title).toBe('扫描发现 2 本 EPUB 已损坏，1 本恢复正常，3 本已自动修正');
   });
 });
