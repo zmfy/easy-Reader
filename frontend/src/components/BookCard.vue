@@ -66,6 +66,7 @@ defineEmits<{ click: []; read: [] }>()
 const badge = computed<{ type: 'danger' | 'warning'; label: string } | null>(() => {
   if (props.book.status === 'duplicate') return { type: 'danger', label: '重复' }
   if (props.book.status === 'garbled') return { type: 'warning', label: '乱码' }
+  if (props.book.status === 'damaged') return { type: 'warning', label: '损坏' }
   return null
 })
 

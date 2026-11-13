@@ -3,6 +3,11 @@ import { readerApi } from '@/api/reader'
 import type { Chapter, Bookmark, ReadingProgress, ReadingAnchor } from '@/types'
 import { ElMessage } from 'element-plus'
 
+/** 接口错误优先显示后端的 message */
+export function errorMessage(err: unknown, fallback: string): string {
+  return (err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+}
+
 export function useReader(bookId: string) {
   const chapters = ref<Chapter[]>([])
   const currentChapterIndex = ref(0)
@@ -12,15 +17,24 @@ export function useReader(bookId: string) {
   const loading = ref(false)
   const bookFormat = ref('')
   const pdfUsePlugin = ref(false)
+  /** 目录或章节读取失败的原因（优先用后端返回的 message，如「文件不完整或已损坏：…」） */
+  const loadError = ref('')
 
   const currentChapter = computed(() => chapters.value[currentChapterIndex.value])
 
-  async function loadChapters() {
-    const resp = await readerApi.getChapters(bookId)
-    const data = resp.data.data
-    chapters.value = data?.chapters || []
-    bookFormat.value = data?.format || ''
-    pdfUsePlugin.value = !!data?.pdfUsePlugin
+  /** 返回 false 表示目录读取失败，原因见 loadError */
+  async function loadChapters(): Promise<boolean> {
+    try {
+      const resp = await readerApi.getChapters(bookId)
+      const data = resp.data.data
+      chapters.value = data?.chapters || []
+      bookFormat.value = data?.format || ''
+      pdfUsePlugin.value = !!data?.pdfUsePlugin
+      return true
+    } catch (err) {
+      loadError.value = errorMessage(err, '无法读取章节')
+      return false
+    }
   }
 
   // 章节请求序号：慢网下连续切章时，只采用最后一次请求的结果，避免旧响应覆盖新章节
@@ -35,7 +49,12 @@ export function useReader(bookId: string) {
       if (seq !== chapterRequestSeq) return false
       currentContent.value = resp.data.data?.content || ''
       currentChapterIndex.value = index
+      loadError.value = ''
       return true
+    } catch (err) {
+      if (seq !== chapterRequestSeq) return false
+      loadError.value = errorMessage(err, '无法读取章节内容')
+      return false
     } finally {
       if (seq === chapterRequestSeq) loading.value = false
     }
@@ -95,7 +114,7 @@ export function useReader(bookId: string) {
 
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
-    loading, currentChapter, bookFormat, pdfUsePlugin,
+    loading, currentChapter, bookFormat, pdfUsePlugin, loadError,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
   }

@@ -89,8 +89,14 @@
           </el-tooltip>
         </aside>
 
+        <!-- ── 读取失败（如文件损坏）：显示后端给出的原因 ── -->
+        <div v-if="reader.loadError.value" class="reader-load-error">
+          <IconAlertTriangle :size="28" :stroke-width="1.75" />
+          <p>{{ reader.loadError.value }}</p>
+        </div>
+
         <!-- ── 章节模式 ── -->
-        <template v-if="readerStore.settings.pageMode === 'scroll'">
+        <template v-else-if="readerStore.settings.pageMode === 'scroll'">
           <div v-if="loading" class="content-loading">
             <el-skeleton :rows="20" animated />
           </div>
@@ -463,7 +469,8 @@ import { formatServerTime } from '@/utils/time'
 import { resolveBack } from '@/utils/page-back'
 import { buildTocTree, visibleTocRows, tocAncestors } from '@/utils/toc-tree'
 import { useRoute, useRouter } from 'vue-router'
-import { useReader } from '@/composables/useReader'
+import { ElMessage } from 'element-plus'
+import { useReader, errorMessage } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
 import type { PDFDocumentProxy } from '@/utils/pdf'
@@ -477,7 +484,7 @@ import { historyApi } from '@/api/history'
 import { useShelfToggle } from '@/composables/useShelfToggle'
 import { shouldOfferRecap, daysSince, awayLabel, askHistory, type AskMessage } from '@/utils/reader-ai'
 import { useListen, LISTEN_RATES, type SleepMode } from '@/composables/useListen'
-import { IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconLoader2, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
+import { IconAlertTriangle, IconArrowsSort, IconBook2, IconBookmark, IconBooks, IconBookmarkPlus, IconChevronLeft, IconChevronRight, IconList, IconClock, IconHeadphones, IconHistory, IconLoader2, IconMoon, IconPlayerPauseFilled, IconPlayerPlayFilled, IconPlayerSkipBack, IconPlayerSkipForward, IconSend, IconSettings, IconSparkles, IconSun, IconTrash, IconX } from '@tabler/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -608,8 +615,10 @@ const hasImagePages = computed(() => readerStore.settings.pageMode === 'waterfal
   ? waterfallChapters.value.some(ch => isImagePage(ch.content))
   : isImagePage(reader.currentContent.value))
 const waterfallLoading = ref(false)
+// 后续章节读取失败：停止自动续载，避免滚动时反复请求、反复提示（跳章 / 跳书签会重置）
+const waterfallFailed = ref(false)
 const hasMoreChapters = computed(() => {
-  if (!waterfallChapters.value.length) return false
+  if (!waterfallChapters.value.length || waterfallFailed.value) return false
   return waterfallChapters.value[waterfallChapters.value.length - 1].index < reader.chapters.value.length - 1
 })
 
@@ -645,6 +654,7 @@ let waterfallGeneration = 0
 function resetWaterfall() {
   waterfallGeneration++
   waterfallChapters.value = []
+  waterfallFailed.value = false
   waterfallLoading.value = false  // 释放旧请求持有的加载锁，让新的加载立即开始
 }
 
@@ -661,6 +671,13 @@ async function loadWaterfallChapter(index: number) {
       title: reader.chapters.value[index]?.title || `第 ${index + 1} 章`,
       content,
     })
+    reader.loadError.value = ''
+  } catch (err) {
+    if (generation !== waterfallGeneration) return
+    // 第一章就读不出：整页显示原因；后续章节失败只提示，已读出的内容保留
+    const msg = errorMessage(err, '无法读取章节内容')
+    if (waterfallChapters.value.length === 0) reader.loadError.value = msg
+    else { waterfallFailed.value = true; ElMessage.error(msg) }
   } finally {
     if (generation === waterfallGeneration) waterfallLoading.value = false
   }
@@ -1396,7 +1413,7 @@ onMounted(async () => {
     ttsReady.value = !!r.data.data?.tts_enabled
   }).catch(() => {})
   await readerStore.loadPrefs()
-  await reader.loadChapters()
+  if (!await reader.loadChapters()) return
 
   if (isPdf.value) {
     await loadPdfBlob()
@@ -2265,6 +2282,19 @@ onUnmounted(() => {
 .progress-info { font-size: 13px; color: var(--text-2); }
 
 .content-loading { padding: 20px 0; }
+.reader-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 80px 24px;
+  color: var(--reader-text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+  text-align: center;
+}
+.reader-load-error svg { color: var(--danger); }
+.reader-load-error p { margin: 0; max-width: 520px; }
 
 /* ── PDF viewer ── */
 .pdf-topbar {

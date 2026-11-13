@@ -2,13 +2,14 @@
   <DefaultLayout>
     <div class="page page--narrow">
       <PageHeader title="问题书籍管理" back="/library" />
-      <p class="page-subtitle">查看并清理乱码 / 重复书籍。物理删除不可恢复。</p>
+      <p class="page-subtitle">查看并清理乱码 / 重复 / 损坏书籍。物理删除不可恢复。</p>
 
       <div class="filters">
         <el-radio-group v-model="filter" @change="onFilterChange">
           <el-radio-button value="problems">全部 ({{ totals.problems }})</el-radio-button>
           <el-radio-button value="garbled">乱码 ({{ totals.garbled }})</el-radio-button>
           <el-radio-button value="duplicate">重复 ({{ totals.duplicate }})</el-radio-button>
+          <el-radio-button value="damaged">损坏 ({{ totals.damaged }})</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -24,8 +25,8 @@
       <el-table v-loading="loading" :data="books" empty-text="没有问题书籍">
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'garbled' ? 'danger' : 'warning'" size="small">
-              {{ row.status === 'garbled' ? '乱码' : '重复' }}
+            <el-tag :type="row.status === 'garbled' || row.status === 'damaged' ? 'danger' : 'warning'" size="small">
+              {{ row.status === 'garbled' ? '乱码' : row.status === 'damaged' ? '损坏' : '重复' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -53,6 +54,9 @@
             <span v-if="row.status === 'duplicate' && !row.duplicate_of" class="orphan-hint">
               （正本缺失）
             </span>
+            <div v-if="row.status === 'damaged' && row.damage_reason" class="damage-reason">
+              {{ row.damage_reason }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="file_path" label="磁盘路径" min-width="280" show-overflow-tooltip>
@@ -111,9 +115,9 @@ function openReader(book: Book): void {
 
 const books = ref<Book[]>([])
 const loading = ref(false)
-const filter = ref<'problems' | 'garbled' | 'duplicate'>('problems')
+const filter = ref<'problems' | 'garbled' | 'duplicate' | 'damaged'>('problems')
 
-const totals = reactive({ problems: 0, garbled: 0, duplicate: 0 })
+const totals = reactive({ problems: 0, garbled: 0, duplicate: 0, damaged: 0 })
 
 const pagination = reactive({
   page: 1,
@@ -132,16 +136,18 @@ function formatSize(bytes?: number): string {
 }
 
 async function fetchTotals(): Promise<void> {
-  // Quick counts via 3 small list calls (could be a dedicated endpoint later)
+  // Quick counts via small list calls (could be a dedicated endpoint later)
   try {
-    const [p, g, d] = await Promise.all([
+    const [p, g, d, x] = await Promise.all([
       libraryApi.list({ page: 1, pageSize: 1, status: 'problems' }),
       libraryApi.list({ page: 1, pageSize: 1, status: 'garbled' }),
       libraryApi.list({ page: 1, pageSize: 1, status: 'duplicate' }),
+      libraryApi.list({ page: 1, pageSize: 1, status: 'damaged' }),
     ])
     totals.problems = p.data.pagination.total
     totals.garbled = g.data.pagination.total
     totals.duplicate = d.data.pagination.total
+    totals.damaged = x.data.pagination.total
   } catch { /* ignore */ }
 }
 
@@ -223,4 +229,5 @@ onMounted(async () => {
 .pagination { display: flex; justify-content: center; margin-top: 20px; }
 .title-link { padding: 0; font-weight: 500; }
 .orphan-hint { font-size: 12px; color: var(--text-2); margin-left: 6px; }
+.damage-reason { font-size: 12px; color: var(--danger); }
 </style>
