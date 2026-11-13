@@ -234,7 +234,7 @@ export interface DoubanSubjectDetail {
 const DOUBAN_INTRO_MAX = 150;
 
 function htmlToText(html: string): string {
-  return unescapeHtml(html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' '))
+  return unescapeHtml(html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ').trim();
 }
 
@@ -257,7 +257,8 @@ export function parseDoubanSubjectDetail(html: string): DoubanSubjectDetail {
     if (year) detail.year = year[0];
   }
 
-  const report = html.match(/id="link-report"[^>]*>([\s\S]*?)(?:<span class="all hidden">|$)/);
+  // 只取 #link-report 里第一个 .intro 块（折叠页是 short 摘要，未折叠页就是全文），避免越界读到后面的页面文字
+  const report = html.match(/id="link-report"[\s\S]*?<div class="intro">([\s\S]*?)<\/div>/);
   if (report) {
     const intro = htmlToText(report[1]);
     if (intro) detail.intro = intro.slice(0, DOUBAN_INTRO_MAX);

@@ -193,6 +193,11 @@ describe('parseDoubanSubjectDetail', () => {
     const d = parseDoubanSubjectDetail('<div id="db-tags-section"><div class="indent"><span><a class="  tag" href="/tag/奇幻">奇幻</a><a class="  tag" href="/tag/小说">小说</a></span></div></div>');
     expect(d.tags).toEqual(['奇幻', '小说']);
   });
+  it('短简介未折叠时只取简介本身，不越界读后面的页面文字', () => {
+    const d = parseDoubanSubjectDetail('<div class="indent" id="link-report"><div class="intro"><p>一段短简介。</p></div></div>'
+      + '<h2>作者简介</h2><div>作者介绍文字</div><script>var x = "脚本文字";</script>');
+    expect(d.intro).toBe('一段短简介。');
+  });
   it('空页面不抛错', () => {
     expect(parseDoubanSubjectDetail('<html></html>')).toEqual({ tags: [] });
   });
