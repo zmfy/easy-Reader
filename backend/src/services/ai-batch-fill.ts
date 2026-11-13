@@ -15,7 +15,7 @@ import { authorsMatch } from '../utils/author-match';
 import { buildBookEvidence } from './book-evidence';
 import { detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
 import { LookupOutcome, lookupBook } from './book-lookup';
-import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle } from './lookup-merge';
+import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle, trustedConfirmation } from './lookup-merge';
 import { FILL_SUGGEST_FIELDS, recordContentMismatch, saveSuggestion, SuggestionData } from './ai-suggestions';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
@@ -241,9 +241,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         return { noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: true };
       });
       // 确认的作者与文件名作者对不上（非错标）时多半认错了书：当作没有确认，后续合并一律用 trusted
-      const authorConflict = !mismatch && !!outcome.confirmed?.author && !!knownAuthor
-        && !authorsMatch(outcome.confirmed.author, knownAuthor);
-      const trusted = authorConflict ? undefined : outcome.confirmed;
+      const trusted = trustedConfirmation(outcome, { knownAuthor, mismatch });
+      const authorConflict = !!outcome.confirmed && !trusted;
 
       // 文件名作者与 AI 作者对不上时，以查证确认的作者为准再判一次
       if (fillStatus === 'failed' && trusted?.author && authorsMatch(trusted.author, knownAuthor)) {

@@ -1,6 +1,7 @@
 import { DoubanBookHit, DoubanSubjectDetail } from '../utils/cover';
 import { AdaptationCandidate } from '../utils/adaptation-sources';
 import { extractJsonObject } from '../ai/json-extract';
+import { cleanBookTitle } from '../utils/book-title';
 import {
   Adaptation, ADAPTATION_JUDGE_RULES, describeAdaptationCandidate, toAdaptation,
 } from './adaptations';
@@ -12,7 +13,7 @@ import {
  * 纯逻辑：AI 调用和外部搜索都由调用方注入（deps），这里不碰网络和数据库。
  */
 
-export const LOOKUP_LIMITS = { total: 8, identify: 5 };
+export const LOOKUP_LIMITS = { total: 8, identify: 5, adapt: 3 };
 /** 连续这么多次无效回答就放弃，调用方走兜底 */
 const MAX_CONSECUTIVE_INVALID = 2;
 const INTRO_MAX = 150;
@@ -86,16 +87,24 @@ const PHASE_ACTIONS: Record<Phase, string[]> = {
   identify: ['search_book', 'open_book', 'confirm_book', 'no_book'],
   adapt: ['search_movie', 'search_drama', 'pick_adaptations', 'done'],
 };
+/** 阶段最后一次操作只接受给出结论的动作 */
+const FINAL_ACTIONS: Record<Phase, string[]> = {
+  identify: ['confirm_book', 'no_book'],
+  adapt: ['pick_adaptations', 'done'],
+};
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
-/** 解析 AI 的一个动作；不认识、不属于当前阶段、引用未出现过的编号都返回 null（算一次无效回答） */
-export function parseLookupAction(raw: string, phase: Phase, known: Set<string>): LookupAction | null {
+/**
+ * 解析 AI 的一个动作；不认识、不属于当前阶段、引用未出现过的编号都返回 null（算一次无效回答）。
+ * last = 本阶段最后一次操作，只接受 confirm_book / no_book 或 pick_adaptations / done
+ */
+export function parseLookupAction(raw: string, phase: Phase, known: Set<string>, last = false): LookupAction | null {
   const obj = extractJsonObject(raw);
   const action = obj && str(obj.action);
-  if (!obj || !action || !PHASE_ACTIONS[phase].includes(action)) return null;
+  if (!obj || !action || !(last ? FINAL_ACTIONS : PHASE_ACTIONS)[phase].includes(action)) return null;
   const why = str(obj.why);
   const withWhy = why ? { why } : {};
   switch (action) {
@@ -143,6 +152,25 @@ export function normalizeDoubanAuthor(raw: string): string {
     .join(' / ');
 }
 
+/** 去掉书名里的括号部分（营销语、分册标记等）和书名号 */
+function stripTitle(t: string): string {
+  return t.replace(/（[^）]*）|\([^)]*\)|【[^】]*】|\[[^\]]*\]/g, '').replace(/[《》]/g, '').trim();
+}
+
+const titleKey = (t: string) => stripTitle(t).replace(/\s+/g, '');
+
+/**
+ * confirm_book 的书名只在去括号后等于确认条目的书名、输入书名或文件名书名时采用（同样去括号比较），
+ * 否则用输入书名（不产生书名建议）；AI 没给书名时用确认条目的书名。
+ */
+export function guardConfirmedTitle(aiTitle: string | undefined, hit: DoubanBookHit, input: LookupInput): string {
+  const title = stripTitle(aiTitle ?? hit.title);
+  if (!title) return input.title;
+  const fileTitle = cleanBookTitle(input.fileName.replace(/\.[^.]+$/, ''));
+  const allowed = [hit.title, input.title, fileTitle].map(titleKey);
+  return allowed.includes(titleKey(title)) ? title : input.title;
+}
+
 function bookLine(id: string, h: DoubanBookHit): string {
   return `[${id}] ${[h.title, h.author, h.year && `${h.year}年`].filter(Boolean).join(' | ')}`;
 }
@@ -182,9 +210,11 @@ const IDENTIFY_RULES = `你在帮图书管理员核实一本书是豆瓣上的�
 {"action":"confirm_book","id":"B1","title":"书名","author":"作者","why":"依据"}  确认是这一本
 {"action":"no_book","why":"原因"}  豆瓣上没有这本书
 规则：
-- 可以换说法搜：原名、别名、译名、加上作者名；套装 / 全集搜不到时，试试单本书名或系列名。
-- 确认前要比对作者，必要时先 open_book 看出版信息；只能引用下面出现过的编号。
-- confirm_book 的 title 填这个文件在书库里应显示的书名（套装 / 全集保留整套名，去掉营销用语）；author 保留国籍前缀（如「[英] J.R.R.托尔金」），不含译者。
+- 豆瓣书目搜索按书名前缀匹配，检索词只写书名，不要加作者名（加了常常一条都搜不到）。
+- 先原样搜文件里的书名（套装 / 全集也先原样搜）；搜不到再换更短的书名、系列名、原名、别名或译名。
+- 作者靠看结果每行的作者核对，必要时先 open_book 看出版信息；只能引用下面出现过的编号。
+- 文件是套装 / 全集时优先确认整套条目；只找到单册时可以确认单册（用于封面），但 title 仍填整套名。
+- confirm_book 的 title 填这个文件在书库里应显示的书名（不带括号里的版本、营销用语和分册标记）；author 保留国籍前缀（如「[英] J.R.R.托尔金」），不含译者。
 - 网络小说豆瓣常常没有条目，搜一两次没有就回 no_book，不要反复换词。`;
 
 const ADAPT_RULES = `现在查这本书的影视 / 广播剧改编。每次只做一步，只返回一个 JSON。
@@ -195,6 +225,7 @@ const ADAPT_RULES = `现在查这本书的影视 / 广播剧改编。每次只�
 {"action":"done"}  没有改编，结束
 规则：
 - 检索词可以用书名、改编作品常用的译名或别名（如「魔戒」的电影叫「指环王」）。
+- 每个来源最多搜一次（豆瓣影视、猫耳FM 各一次），不要重复已经搜过的检索词；搜完就 pick_adaptations，没有合适的就给空数组。
 - 候选是搜索得到的，混有同名或无关作品；只能从出现过的候选中选，用编号引用；确认是改编自这本书（含续作、分季、系列中的单部）才选，不确定就不选。
 ${ADAPTATION_JUDGE_RULES}`;
 
@@ -215,6 +246,7 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
   let phase: Phase = 'identify';
   let total = 0;
   let identifyOps = 0;
+  let adaptOps = 0;
   let invalidRun = 0;
 
   const known = () => new Set([...books.keys(), ...candidates.keys()]);
@@ -227,10 +259,16 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
     status, ...(confirmed ? { confirmed } : {}), noBook, seenBooks: [...books.values()], adaptations, steps,
   });
 
+  // 本阶段还剩几次操作（含这一次）
+  const phaseLeft = () => Math.min(
+    phase === 'identify' ? LOOKUP_LIMITS.identify - identifyOps : LOOKUP_LIMITS.adapt - adaptOps,
+    LOOKUP_LIMITS.total - total,
+  );
   const buildPrompt = () => {
-    const left = phase === 'identify'
-      ? Math.min(LOOKUP_LIMITS.identify - identifyOps, LOOKUP_LIMITS.total - total)
-      : LOOKUP_LIMITS.total - total;
+    const left = phaseLeft();
+    const lastNote = phase === 'identify'
+      ? '这是本阶段最后一次操作，只能回 confirm_book 或 no_book。'
+      : '这是本阶段最后一次操作，只能回 pick_adaptations 或 done。';
     const outcome = confirmed
       ? `已确认：[${confirmedId}] 《${confirmed.title}》${confirmed.author ? ` ${confirmed.author}` : ''}`
       : noBook ? '认书结论：豆瓣上没有这本书' : '';
@@ -238,12 +276,14 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
       phase === 'identify' ? IDENTIFY_RULES : ADAPT_RULES,
       `【书】\n${bookInfo(input)}${phase === 'adapt' && outcome ? `\n${outcome}` : ''}`,
       `【已做的操作】\n${history.length ? history.join('\n') : '（无）'}`,
-      `本阶段还剩 ${left} 次操作。只返回一个 JSON。`,
+      left <= 1 ? `${lastNote}只返回一个 JSON。` : `本阶段还剩 ${left} 次操作。只返回一个 JSON。`,
     ].join('\n\n');
   };
 
   while (total < LOOKUP_LIMITS.total) {
     if (phase === 'identify' && identifyOps >= LOOKUP_LIMITS.identify) phase = 'adapt';
+    if (phase === 'adapt' && adaptOps >= LOOKUP_LIMITS.adapt) break;
+    const last = phaseLeft() <= 1;
     let raw: string;
     try {
       raw = await deps.chat(buildPrompt());
@@ -253,8 +293,9 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
     }
     total++;
     if (phase === 'identify') identifyOps++;
+    else adaptOps++;
 
-    const action = parseLookupAction(raw, phase, known());
+    const action = parseLookupAction(raw, phase, known(), last);
     if (!action) {
       record({ kind: 'invalid' }, '（上一次回答无效：不是可用的 JSON 动作，或引用了不存在的编号）');
       if (++invalidRun >= MAX_CONSECUTIVE_INVALID) return result('failed');
@@ -301,7 +342,7 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
         const author = normalizeDoubanAuthor(action.author || doubanAuthor || '');
         confirmedId = action.id;
         confirmed = {
-          hit, title: action.title || hit.title,
+          hit, title: guardConfirmedTitle(action.title, hit, input),
           ...(author ? { author } : {}),
           ...(doubanAuthor ? { doubanAuthor } : {}),
           ...(action.why ? { why: action.why } : {}),

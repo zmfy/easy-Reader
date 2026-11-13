@@ -1,3 +1,4 @@
+import path from 'path';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
@@ -10,7 +11,8 @@ import { cleanBookTitle } from '../utils/book-title';
 import { Adaptation } from './adaptations';
 import { LookupOutcome, lookupBook } from './book-lookup';
 import { LookupStep } from './book-lookup-agent';
-import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle } from './lookup-merge';
+import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle, trustedConfirmation } from './lookup-merge';
+import { extractAuthorFromName } from '../utils/title-normalizer';
 import { finishLookupProgress, setLookupProgress, startLookupProgress } from './lookup-progress';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
@@ -110,7 +112,9 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   } finally {
     finishLookupProgress(bookId);
   }
-  const confirmed = outcome.confirmed;
+  // 确认的作者与当前作者（没有则取文件名中的作者）冲突时当作没有确认；封面候选顺序不变，由用户自己选
+  const knownAuthor = (book.author ?? '').trim() || (extractAuthorFromName(path.basename(book.file_path)) ?? '');
+  const confirmed = trustedConfirmation(outcome, { knownAuthor, mismatch: contentMismatch });
   const adaptations = outcome.adaptations;
 
   // 改编作品的海报 / 广播剧封面排在书封之后，带类型角标；没有 subjectUrl（评分只取书封的豆瓣条目）

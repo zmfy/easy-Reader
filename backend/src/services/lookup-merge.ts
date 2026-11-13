@@ -1,6 +1,7 @@
 import path from 'path';
 import { BookFileMetadata } from '../types';
 import { ConfirmedBook, LookupInput } from './book-lookup-agent';
+import { authorsMatch } from '../utils/author-match';
 
 /**
  * 单本预览与后台批量共用的查证合并规则：怎样组装查证输入、怎样比较书名、
@@ -34,7 +35,9 @@ export function sameTitle(a: string, b: string): boolean {
 /** 豆瓣依据：「豆瓣：《书名》作者 年份；理由」 */
 export function doubanNote(c: ConfirmedBook): string {
   const year = c.hit.year ?? c.detail?.year;
-  const head = `豆瓣：《${c.hit.title}》${[c.doubanAuthor, year].filter(Boolean).join(' ')}`;
+  // 豆瓣书名本身带书名号时（如「《聊斋志异》 蒲松龄 手稿本」）不再包一层
+  const title = c.hit.title.includes('《') ? `${c.hit.title} ` : `《${c.hit.title}》`;
+  const head = `豆瓣：${title}${[c.doubanAuthor, year].filter(Boolean).join(' ')}`;
   return c.why ? `${head}；${c.why}` : head;
 }
 
@@ -71,6 +74,19 @@ export function confirmedMismatch(m: MismatchInfo, c: ConfirmedBook): MismatchIn
   return {
     title: c.title,
     ...(author ? { author } : {}),
-    reason: m.reason ? `${m.reason}；${note}` : note,
+    reason: m.reason ? `${m.reason}${/[。！？.!?；;]$/.test(m.reason) ? '' : '；'}${note}` : note,
   };
+}
+
+/**
+ * 可信的确认结果：确认的作者与已知作者（书的当前作者或文件名中的作者）对不上时多半认错了书，
+ * 当作没有确认（不覆盖作者、不给书名建议、不写豆瓣依据）。错标时查的是正文那本书，不比对。
+ */
+export function trustedConfirmation<T extends ConfirmedBook>(
+  outcome: { confirmed?: T },
+  opts: { knownAuthor: string; mismatch?: MismatchInfo },
+): T | undefined {
+  const c = outcome.confirmed;
+  if (!c || opts.mismatch || !c.author || !opts.knownAuthor) return c;
+  return authorsMatch(c.author, opts.knownAuthor) ? c : undefined;
 }

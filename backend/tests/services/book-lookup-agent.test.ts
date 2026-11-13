@@ -71,6 +71,90 @@ describe('parseLookupAction', () => {
   });
 });
 
+describe('parseLookupAction on the last operation of a phase', () => {
+  const known = new Set(['B1', 'M1']);
+  it('identify: only confirm_book / no_book', () => {
+    expect(parseLookupAction(j({ action: 'search_book', query: '魔戒' }), 'identify', known, true)).toBeNull();
+    expect(parseLookupAction(j({ action: 'open_book', id: 'B1' }), 'identify', known, true)).toBeNull();
+    expect(parseLookupAction(j({ action: 'confirm_book', id: 'B1' }), 'identify', known, true)).toEqual({ action: 'confirm_book', id: 'B1' });
+    expect(parseLookupAction(j({ action: 'no_book' }), 'identify', known, true)).toEqual({ action: 'no_book' });
+  });
+  it('adapt: only pick_adaptations / done', () => {
+    expect(parseLookupAction(j({ action: 'search_movie', query: '指环王' }), 'adapt', known, true)).toBeNull();
+    expect(parseLookupAction(j({ action: 'search_drama', query: '魔戒' }), 'adapt', known, true)).toBeNull();
+    expect(parseLookupAction(j({ action: 'pick_adaptations', ids: [] }), 'adapt', known, true)).toEqual({ action: 'pick_adaptations', ids: [], types: {} });
+    expect(parseLookupAction(j({ action: 'done' }), 'adapt', known, true)).toEqual({ action: 'done' });
+  });
+});
+
+describe('prompt rules', () => {
+  it('identify rules: prefix-match search without author, file title as-is first, prefer the whole set', async () => {
+    const deps = makeDeps([j({ action: 'no_book' }), j({ action: 'done' })]);
+    await runBookLookup(INPUT, deps);
+    const p = deps.chat.mock.calls[0][0] as string;
+    expect(p).toContain('前缀');
+    expect(p).toContain('不要加作者名');
+    expect(p).toContain('原样');
+    expect(p).toContain('整套');
+    expect(p).not.toContain('加上作者名');
+  });
+  it('adapt rules: one search per source, no repeated query, pick (may be empty) when done searching', async () => {
+    const deps = makeDeps([j({ action: 'no_book' }), j({ action: 'done' })]);
+    await runBookLookup(INPUT, deps);
+    const p = deps.chat.mock.calls[1][0] as string;
+    expect(p).toContain('每个来源最多搜一次');
+    expect(p).toContain('不要重复');
+    expect(p).toContain('空数组');
+  });
+});
+
+describe('confirm_book title guard', () => {
+  const run = async (hit: { title: string; author?: string; url: string }, title: string | undefined, input: LookupInput = INPUT) => {
+    const deps = makeDeps([
+      j({ action: 'search_book', query: 'x' }),
+      j({ action: 'confirm_book', id: 'B1', ...(title !== undefined ? { title } : {}) }),
+      j({ action: 'done' }),
+    ], { searchBook: jest.fn().mockResolvedValue([hit, { title: '老人与海图解版', url: 'https://book.douban.com/subject/99/' }]) });
+    return (await runBookLookup(input, deps)).confirmed;
+  };
+  const OLD_MAN: LookupInput = { fileName: '老人与海.海明威.txt', title: '老人与海', author: '海明威' };
+  const HIT = { title: '老人与海', author: '[美] 海明威', url: 'https://book.douban.com/subject/1/' };
+
+  it('marketing brackets are stripped when the rest equals the confirmed entry title', async () => {
+    const c = await run(HIT, '老人与海（作家榜插图珍藏版•全新未删减畅销足本）(作家榜经典文库)', OLD_MAN);
+    expect(c?.title).toBe('老人与海');
+    expect(c?.hit.url).toBe(HIT.url);
+  });
+
+  it('a title of another entry falls back to the input title, keeping the confirmation', async () => {
+    const c = await run(HIT, '老人与海图解版', OLD_MAN);
+    expect(c?.title).toBe('老人与海');
+    expect(c?.hit.url).toBe(HIT.url);
+  });
+
+  it('volume markers like （1-10） are dropped', async () => {
+    const input: LookupInput = { fileName: '理智与情感.txt', title: '凡人修仙传', author: '忘语', mismatchReason: '正文是凡人修仙传' };
+    const c = await run({ title: '凡人修仙传（1-10）', author: '忘语', url: 'https://book.douban.com/subject/3/' }, '凡人修仙传（1-10）', input);
+    expect(c?.title).toBe('凡人修仙传');
+  });
+
+  it('a set title equal to the input title is kept even when a single volume was confirmed', async () => {
+    const c = await run({ title: '魔戒（第一部）', author: '托尔金', url: 'https://book.douban.com/subject/4/' }, '《魔戒全集》');
+    expect(c?.title).toBe('魔戒全集');
+  });
+
+  it('a title equal to the cleaned file name title is accepted', async () => {
+    const input: LookupInput = { fileName: '三体全集【精校】.txt', title: '三体', author: '刘慈欣' };
+    const c = await run({ title: '三体', author: '刘慈欣', url: 'https://book.douban.com/subject/5/' }, '三体全集', input);
+    expect(c?.title).toBe('三体全集');
+  });
+
+  it('a title that matches nothing → input title; no title → the confirmed entry title without brackets', async () => {
+    expect((await run({ title: '魔戒（第一部）', url: 'https://book.douban.com/subject/4/' }, '魔戒：护戒同盟'))?.title).toBe('魔戒全集');
+    expect((await run({ title: '魔戒（第一部）', url: 'https://book.douban.com/subject/4/' }, undefined))?.title).toBe('魔戒');
+  });
+});
+
 describe('normalizeDoubanAuthor', () => {
   it('keeps nationality, drops translators and 著', () => {
     expect(normalizeDoubanAuthor('[英] J.R.R.托尔金 / 丁棣 译')).toBe('[英] J.R.R.托尔金');
@@ -140,20 +224,59 @@ describe('runBookLookup', () => {
     expect(third).not.toContain('长'.repeat(151));
   });
 
-  it('identify phase ends after 5 operations; total never exceeds 8', async () => {
+  it('identify phase ends after 5 operations (the 5th only accepts confirm/no_book); adapt ≤3; total ≤8', async () => {
     const answers = [
       ...Array.from({ length: 5 }, (_, i) => j({ action: 'search_book', query: `词${i}` })),
       ...Array.from({ length: 10 }, (_, i) => j({ action: 'search_movie', query: `影${i}` })),
     ];
     const deps = makeDeps(answers);
     const r = await runBookLookup(INPUT, deps);
-    expect(LOOKUP_LIMITS).toEqual({ total: 8, identify: 5 });
+    expect(LOOKUP_LIMITS).toEqual({ total: 8, identify: 5, adapt: 3 });
     expect(r.status).toBe('ok');
     expect(r.confirmed).toBeUndefined();
     expect(r.noBook).toBe(false);
     expect(deps.chat).toHaveBeenCalledTimes(8);
-    expect(deps.searchBook).toHaveBeenCalledTimes(5);
-    expect(deps.searchMovie).toHaveBeenCalledTimes(3);
+    // 第 5 次认书回了搜索 → 无效；改编第 3 次回了搜索 → 无效
+    expect(deps.searchBook).toHaveBeenCalledTimes(4);
+    expect(deps.searchMovie).toHaveBeenCalledTimes(2);
+    expect(r.steps.map(s => s.kind)).toEqual([
+      'search_book', 'search_book', 'search_book', 'search_book', 'invalid', 'search_movie', 'search_movie', 'invalid',
+    ]);
+  });
+
+  it('tells the AI when it is the last identify / adapt operation', async () => {
+    const deps = makeDeps([
+      ...Array.from({ length: 4 }, (_, i) => j({ action: 'search_book', query: `词${i}` })),
+      j({ action: 'no_book' }),
+      j({ action: 'search_movie', query: '影' }),
+      j({ action: 'search_drama', query: '剧' }),
+      j({ action: 'pick_adaptations', ids: [] }),
+    ]);
+    const r = await runBookLookup(INPUT, deps);
+    expect(r.status).toBe('ok');
+    expect(r.noBook).toBe(true);
+    expect(r.steps.map(s => s.kind)).toEqual([
+      'search_book', 'search_book', 'search_book', 'search_book', 'no_book', 'search_movie', 'search_drama', 'pick_adaptations',
+    ]);
+    const prompts = deps.chat.mock.calls.map(c => c[0] as string);
+    expect(prompts[3]).not.toContain('最后一次');
+    expect(prompts[4]).toContain('最后一次');
+    expect(prompts[4]).toMatch(/confirm_book.*no_book/);
+    expect(prompts[5]).not.toContain('最后一次');
+    expect(prompts[7]).toContain('最后一次');
+    expect(prompts[7]).toMatch(/pick_adaptations.*done/);
+  });
+
+  it('adapt phase after a quick no_book is still capped at 3 operations', async () => {
+    const deps = makeDeps([
+      j({ action: 'search_book', query: '开局签到荒古圣体' }),
+      j({ action: 'no_book', why: '网文' }),
+      ...Array.from({ length: 6 }, () => j({ action: 'search_drama', query: '开局签到荒古圣体' })),
+    ]);
+    const r = await runBookLookup(INPUT, deps);
+    expect(deps.chat).toHaveBeenCalledTimes(5);
+    expect(deps.searchDrama).toHaveBeenCalledTimes(2);
+    expect(r.adaptations).toEqual([]);
   });
 
   it('no_book → noBook true, then adapt phase runs as usual', async () => {

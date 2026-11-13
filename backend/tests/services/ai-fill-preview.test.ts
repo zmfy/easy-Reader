@@ -179,9 +179,37 @@ describe('buildAiFillPreview', () => {
 
   describe('lookup', () => {
     const setTitle = (t: string) => testDb.prepare('UPDATE books SET title = ? WHERE id = ?').run(t, 'b1');
+    const setAuthor = (a: string | null) => testDb.prepare('UPDATE books SET author = ? WHERE id = ?').run(a, 'b1');
+
+    it('ignores a confirmation whose author conflicts with the current author (no author override, title or douban evidence)', async () => {
+      setTitle('理智与情感');
+      fill.mockResolvedValue({ title: '理智与情感', author: '忘语', summary: '修仙', evidence: { author: '文件' } });
+      lookup.mockResolvedValue(outcome({ confirmed: { ...lotr, title: '魔戒' }, coverCandidates: covers }));
+      testDb.prepare('UPDATE books SET author = ? WHERE id = ?').run('忘语', 'b1');
+      const p = await buildAiFillPreview('b1');
+      expect(p.suggested.title).toBeUndefined();
+      expect(p.suggested.author).toBe('忘语');
+      expect(p.suggested.confidence.title).toBeUndefined();
+      expect(p.suggested.confidence.author).not.toBe('high');
+      expect(p.suggested.evidence.title).toBeUndefined();
+      expect(p.suggested.evidence.author).toBe('文件');
+      expect(p.coverCandidates.map(c => c.title)).toEqual(['三国演义', '三国演义3']);
+    });
+
+    it('without a current author, the author in the file name is used for the conflict check', async () => {
+      setTitle('理智与情感');
+      setAuthor(null);
+      testDb.prepare('UPDATE books SET file_path = ? WHERE id = ?').run('/books/理智与情感 作者：忘语.txt', 'b1');
+      fill.mockResolvedValue({ title: '理智与情感', summary: '修仙' });
+      lookup.mockResolvedValue(outcome({ confirmed: { ...lotr, title: '魔戒' } }));
+      const p = await buildAiFillPreview('b1');
+      expect(p.suggested.title).toBeUndefined();
+      expect(p.suggested.author).toBeUndefined();
+    });
 
     it('suggests the confirmed title when it differs from the current one, with douban evidence', async () => {
       setTitle('魔戒全集 精校版');
+      setAuthor('托尔金');
       fill.mockResolvedValue({ title: '魔戒', author: '托尔金', summary: '中土', confidence: { author: 'low' } });
       lookup.mockResolvedValue(outcome({ confirmed: lotr }));
       const p = await buildAiFillPreview('b1');
@@ -195,6 +223,7 @@ describe('buildAiFillPreview', () => {
 
     it('does not suggest a title that only differs by spaces or book-title marks', async () => {
       setTitle('《魔戒 全集》');
+      setAuthor(null);
       lookup.mockResolvedValue(outcome({ confirmed: lotr }));
       const p = await buildAiFillPreview('b1');
       expect(p.suggested.title).toBeUndefined();
