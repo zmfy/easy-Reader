@@ -1,7 +1,6 @@
-import path from 'path';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
-import { Book, BookFileMetadata } from '../types';
+import { Book } from '../types';
 import { buildBookEvidence } from './book-evidence';
 import { FillConfidence, detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
 import { DoubanCandidate, fetchCoverThumbnailDataUri } from '../utils/cover';
@@ -10,7 +9,8 @@ import { parseEditedFields } from './ai-batch-fill';
 import { cleanBookTitle } from '../utils/book-title';
 import { Adaptation } from './adaptations';
 import { LookupOutcome, lookupBook } from './book-lookup';
-import { ConfirmedBook, LookupStep } from './book-lookup-agent';
+import { LookupStep } from './book-lookup-agent';
+import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle } from './lookup-merge';
 import { finishLookupProgress, setLookupProgress, startLookupProgress } from './lookup-progress';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
@@ -69,31 +69,6 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
-/** 文件内置书目信息的简短摘要（交给查证；不含正文节选） */
-function formatEmbedded(meta: BookFileMetadata): string | undefined {
-  const parts = [
-    meta.title ? `书名：${meta.title}` : '',
-    meta.author ? `作者：${meta.author}` : '',
-    meta.publisher ? `出版者：${meta.publisher}` : '',
-    meta.date ? `出版日期：${meta.date}` : '',
-    meta.isbn ? `ISBN：${meta.isbn}` : '',
-  ].filter(Boolean);
-  return parts.length ? parts.join('；') : undefined;
-}
-
-/** 比较书名时忽略空白与书名号 */
-function sameTitle(a: string, b: string): boolean {
-  const norm = (t: string) => t.replace(/[\s《》〈〉]/g, '');
-  return norm(a) === norm(b);
-}
-
-/** 豆瓣依据：「豆瓣：《书名》作者 年份；理由」 */
-function doubanNote(c: ConfirmedBook): string {
-  const year = c.hit.year ?? c.detail?.year;
-  const head = `豆瓣：《${c.hit.title}》${[c.doubanAuthor, year].filter(Boolean).join(' ')}`;
-  return c.why ? `${head}；${c.why}` : head;
-}
-
 export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview> {
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as Book | undefined;
@@ -125,19 +100,13 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const current = getMetadata(bookId);
 
   // AI 查证：认书、挑改编（关闭或失败时内部走原有检索）；错标时查证正文实际的书
-  const embedded = formatEmbedded(evidence.metadata);
   startLookupProgress(bookId);
   let outcome: LookupOutcome;
   try {
-    outcome = await lookupBook({
-      fileName: path.basename(book.file_path),
-      ...(embedded ? { embedded } : {}),
-      title: contentMismatch ? contentMismatch.title : (str(info.title) || cleanedTitle),
-      author: contentMismatch ? contentMismatch.author : (str(info.author) ?? book.author ?? undefined),
-      ...(str(info.book_type) ? { bookType: str(info.book_type) } : {}),
-      ...(summary ? { summary } : {}),
-      ...(contentMismatch?.reason ? { mismatchReason: contentMismatch.reason } : {}),
-    }, db, { onStep: steps => setLookupProgress(bookId, steps) });
+    outcome = await lookupBook(buildLookupInput({
+      filePath: book.file_path, metadata: evidence.metadata, info,
+      title: cleanedTitle, author: book.author ?? undefined, summary, mismatch: contentMismatch,
+    }), db, { onStep: steps => setLookupProgress(bookId, steps) });
   } finally {
     finishLookupProgress(bookId);
   }
@@ -170,15 +139,10 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   let suggestedTitle: string | undefined;
   let suggestedAuthor = str(info.author);
   if (confirmed) {
-    const note = doubanNote(confirmed);
     if (contentMismatch) {
-      const author = confirmed.author ?? contentMismatch.author;
-      contentMismatch = {
-        title: confirmed.title,
-        ...(author ? { author } : {}),
-        reason: contentMismatch.reason ? `${contentMismatch.reason}；${note}` : note,
-      };
+      contentMismatch = confirmedMismatch(contentMismatch, confirmed);
     } else {
+      const note = doubanNote(confirmed);
       if (!sameTitle(confirmed.title, book.title)) suggestedTitle = confirmed.title;
       confidence.title = 'high';
       evidenceNotes.title = note;

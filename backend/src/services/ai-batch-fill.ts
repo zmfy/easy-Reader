@@ -5,7 +5,7 @@ import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { setScanProgress, isCancelled } from './scan-task';
 import { writeAudit } from './audit-log';
-import { doubanSuggest, downloadCover, fetchRating } from '../utils/cover';
+import { downloadCoverFromPic, fetchRating } from '../utils/cover';
 import { createDefaultCover } from './default-cover-file';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
@@ -14,7 +14,8 @@ import { extractAuthorFromName } from '../utils/title-normalizer';
 import { authorsMatch } from '../utils/author-match';
 import { buildBookEvidence } from './book-evidence';
 import { detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
-import { findAdaptations } from './adaptations';
+import { LookupOutcome, lookupBook } from './book-lookup';
+import { buildLookupInput, confirmedMismatch, doubanNote, sameTitle } from './lookup-merge';
 import { FILL_SUGGEST_FIELDS, recordContentMismatch, saveSuggestion, SuggestionData } from './ai-suggestions';
 import { getCategoryTree, resolveCategoryPath } from '../utils/category-tree';
 
@@ -197,7 +198,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
     let autoFilled = false;   // 处理完才计入批次，避免并发时与本数记在不同批
     let authorMismatch = false;
     try {
-      const rawText = (await buildBookEvidence(b)).text;
+      const bookEvidence = await buildBookEvidence(b);
+      const rawText = bookEvidence.text;
       const knownTitle = lookupKey(b.title) || b.title;
       const knownAuthor = ((b.author ?? '').trim()) || (extractAuthorFromName(path.basename(b.file_path)) ?? '');
 
@@ -223,6 +225,28 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       // 分类只接受分类树中的路径（末级名可唯一对应时自动补全），否则不写
       info.category = resolveCategoryPath(getCategoryTree(db), info.category);
+      const infoRec = info as Record<string, unknown>;
+
+      // AI 查证：认书、挑改编（关闭或失败时内部走原有检索）；错标时查证正文实际的书。
+      // 额度 / 鉴权错误向上抛给下面的暂停逻辑；其他意外出错当作什么都没查到，不让这本书失败
+      let mismatch = detectContentMismatch(infoRec);
+      const lookupInput = buildLookupInput({
+        filePath: b.file_path, metadata: bookEvidence.metadata, info: infoRec,
+        title: knownTitle, author: knownAuthor || undefined,
+        summary: info.summary && info.summary.trim() ? info.summary.trim() : undefined, mismatch,
+      });
+      const fatal = (err: unknown): boolean => isQuotaError(err) || isAuthError(err);
+      const outcome: LookupOutcome = await lookupBook(lookupInput, db, { throttle: true, isFatal: fatal }).catch((err: unknown) => {
+        if (fatal(err)) throw err;
+        return { noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: true };
+      });
+      const confirmed = outcome.confirmed;
+
+      // 文件名作者与 AI 作者对不上时，以查证确认的作者为准再判一次
+      if (fillStatus === 'failed' && confirmed?.author && authorsMatch(confirmed.author, knownAuthor)) {
+        fillStatus = 'filled';
+        info.author = confirmed.author;
+      }
 
       if (fillStatus === 'failed') {
         db.prepare("UPDATE books SET ai_fill_status = 'failed' WHERE id = ?").run(b.id);
@@ -240,8 +264,17 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
       const edited = new Set<string>(parseEditedFields(current.manually_edited_fields));
 
+      // 查证确认的书：错标时改写错标信息；否则作者以豆瓣为准（视为高置信），依据写豆瓣
+      const confirmedNote = confirmed ? doubanNote(confirmed) : '';
+      if (confirmed && mismatch) {
+        mismatch = confirmedMismatch(mismatch, confirmed);
+      } else if (confirmed?.author) {
+        info.author = confirmed.author;
+        const conf = infoRec.confidence && typeof infoRec.confidence === 'object' ? infoRec.confidence as Record<string, unknown> : {};
+        infoRec.confidence = { ...conf, author: 'high' };
+      }
+
       // 正文与文件名不是同一本书时（错标），一个字段都不自动写，全部进待确认
-      const mismatch = detectContentMismatch(info as Record<string, unknown>);
       recordContentMismatch(db, b.id, mismatch);
 
       const updates: string[] = [];
@@ -277,9 +310,16 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       }
 
       // 其余结果进「待确认」：与当前不同、且没有自动写入的字段，以及标签、类似作品、改编作品
-      const infoRec = info as Record<string, unknown>;
       const evidence = infoRec.evidence && typeof infoRec.evidence === 'object' ? infoRec.evidence as Record<string, unknown> : {};
+      if (confirmed && !mismatch) evidence.author = confirmedNote;
       const suggestion: SuggestionData = { fields: {} };
+      // 书名只进待确认：查证确认的书名与当前实质不同（忽略空白、书名号）时才给
+      if (confirmed && !mismatch && !sameTitle(confirmed.title, current.title ?? '')) {
+        suggestion.fields.title = {
+          value: confirmed.title, current: current.title || null, confidence: 'high', evidence: confirmedNote,
+          ...(edited.has('title') ? { locked: true } : {}),
+        };
+      }
       for (const f of FILL_SUGGEST_FIELDS) {
         const value = typeof info[f] === 'string' ? (info[f] as string).trim() : '';
         if (!value || filledFields[f] !== undefined) continue;
@@ -297,36 +337,30 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       if (meta.similar.length > 0 && !sameList(meta.similar.map(w => w.title), (existing?.similar_works ?? []).map(w => w.title))) {
         suggestion.similar_works = meta.similar;
       }
-      // 错标时按正文实际的书名查改编作品，而不是文件名上的
-      const lookupTitle = (mismatch?.title || (info.title && info.title.trim()) || knownTitle || '').trim();
-      const adaptations = await findAdaptations(
-        { title: lookupTitle, author: mismatch?.author || info.author || current.author || undefined, summary: info.summary || current.summary || undefined },
-        db, { throttle: true },
-      ).catch(() => []);
+      const adaptations = outcome.adaptations;
       if (adaptations.length > 0 && !sameList(adaptations.map(a => a.url), (existing?.adaptations ?? []).map(a => a.url))) {
         suggestion.adaptations = adaptations.map(({ pic: _pic, ...a }) => a);
       }
       saveSuggestion(db, b.id, suggestion, currentBatchNo());
 
-      // 封面 + 评分：共用一次豆瓣联想请求，尽力而为；豆瓣找不到封面（套装、合集常见）就生成默认封面
-      const titleForCover = ((info.title && info.title.trim()) || knownTitle || filledFields.title || current.title || '').trim();
+      // 封面 + 评分：取查证结果的第一个候选（已确认的书排第一），尽力而为；
+      // 找不到封面（套装、合集常见）就生成默认封面
+      const titleForCover = confirmed?.title || lookupInput.title;
       const needCover = !current.cover_url;
       const needRating = current.rating == null;
       let coverUrl: string | undefined;
       let coverSource: 'douban' | 'default' = 'douban';
-      if ((needCover || needRating) && titleForCover.length > 0) {
-        try {
-          const item = await doubanSuggest(titleForCover);
-          if (item) {
-            if (needCover) coverUrl = await downloadCover(item, b.id);
-            if (needRating) {
-              const rating = await fetchRating(item);
-              if (rating != null) db.prepare('UPDATE books SET rating = ? WHERE id = ?').run(rating, b.id);
-            }
-          }
-        } catch {
-          // best-effort; never fail the book on cover/rating
+      const candidate = outcome.coverCandidates[0];
+      try {
+        if (needCover && candidate) coverUrl = await downloadCoverFromPic(candidate.pic, b.id);
+        if (needRating) {
+          // 确认的条目已打开过详情时直接用其评分，否则抓条目页
+          const ratingUrl = confirmed ? confirmed.hit.url : candidate?.subjectUrl;
+          const rating = confirmed?.rating ?? (ratingUrl ? await fetchRating({ url: ratingUrl }) : undefined);
+          if (rating != null) db.prepare('UPDATE books SET rating = ? WHERE id = ?').run(rating, b.id);
         }
+      } catch {
+        // best-effort; never fail the book on cover/rating
       }
       if (needCover && !coverUrl) {
         try {
