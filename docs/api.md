@@ -326,18 +326,28 @@
   },
   "lockedFields": ["title"],
   "lookupTrace": [
-    { "kind": "search_book", "query": "魔戒 托尔金", "count": 8 },
+    { "kind": "search_book", "query": "魔戒全集", "count": 0 },
+    { "kind": "search_book", "query": "魔戒", "count": 5 },
+    { "kind": "open_book", "id": "B1", "label": "魔戒 / [英] J.R.R.托尔金 / 译林出版社 2013" },
     { "kind": "confirm_book", "id": "B1", "label": "魔戒 / [英] J.R.R.托尔金 / 译林出版社 2013" }
   ],
   "lookupUsedFallback": false
 }
 ```
 
-- `suggested.title`：查证确认的书名，只在与当前书名实质不同时给出（同时 `suggested.confidence.title` 为 `high`，`suggested.evidence.title` 为豆瓣条目信息）。查证确认后 `suggested.author` 也取豆瓣的作者（保留国籍、去掉译者）。
+- `suggested.title`：查证确认的书名，只在与当前书名实质不同时给出（同时 `suggested.confidence.title` 为 `high`，`suggested.evidence.title` 为豆瓣条目信息）。书名建议需用户勾选才采用：预览弹窗默认保留当前书名，「待确认」页默认也不勾书名。查证确认后 `suggested.author` 也取豆瓣的作者（保留国籍、去掉译者）。
+- 查证确认的书的作者与书库里的作者（没有时取文件名中的作者）对不上时，多半认错了书，查证结果不采用：不给书名建议、不改用豆瓣的作者，批量填充也不用这个条目的封面和评分。
 - `lockedFields` 可能包含 `title`（书名手动改过；此时仍会给出书名建议，由用户决定）。
 - `lookupTrace`：查证过程（`LookupStep` 数组）；关闭查证时为空数组。
 - `lookupUsedFallback`：`true` 表示查证关闭或失败，封面候选与改编按书名直接搜索得到。
 - 正文与文件名不是同一部作品（`contentMismatch`）时，查证的是正文实际的书，书名只写进 `contentMismatch`，不给 `suggested.title`。
+
+批量填充（后台）同样经过查证，封面和评分的取法：
+
+- 查证确认了书（且作者不冲突）：用确认条目的封面和评分；该条目没有封面时生成默认封面。
+- 查证跑了但没有可信的确认（豆瓣没有这本书 `no_book`、作者冲突、到最后也没确认）：搜索中见过的条目都不用，不下载豆瓣封面、不写评分，需要封面时生成默认封面。
+- 查证关闭或失败（走原有检索）：沿用原有做法，取第一个候选的封面和评分。
+- 查证确认的书名与当前不同时只写进「待确认」建议的 `fields.title`，不自动改名。
 
 #### GET /api/v1/library/:id/ai-fill/progress
 

@@ -22,6 +22,18 @@ describe('ai suggestion helpers', () => {
     })
   })
 
+  it('leaves the 查证 title suggestion unchecked by default', () => {
+    const t: AiSuggestion = {
+      ...s,
+      data: { ...s.data, fields: { title: { value: '西游记（全本）', current: '西游记', confidence: 'high', evidence: '豆瓣：《西游记（全本）》' }, ...s.data.fields } },
+    }
+    const c = defaultChoice(t)
+    expect(c.fields.title).toBe(false)
+    expect(c.fields.summary).toBe(true)
+    c.fields.title = true
+    expect(toSelection(t, c).fields).toEqual(['title', 'summary'])
+  })
+
   it('selects nothing by default for a mismatched file', () => {
     expect(defaultChoice({ ...s, content_mismatch: { title: '诡秘之主' } })).toEqual({
       fields: { title: false, author: false, summary: false, category: false }, tags: false, similar: false, adaptations: false,

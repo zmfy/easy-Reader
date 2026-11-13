@@ -13,7 +13,7 @@
     <div v-if="loading" class="preview-loading">
       <el-icon class="is-loading loading-icon"><IconLoader2 /></el-icon>
       <div class="loading-title">{{ progress && progress.length > 0 ? lookupStepText(progress[progress.length - 1]) : 'AI 正在查找书籍信息…' }}</div>
-      <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要几秒到一分钟，可随时取消</div>
+      <div class="loading-hint">已用 {{ elapsed }} 秒，通常需要半分钟到两分钟，可随时取消</div>
     </div>
     <div v-else-if="preview && form" class="preview-body">
       <p v-if="preview.contentMismatch" class="note note--warning">
@@ -63,7 +63,7 @@
 
       <!-- 宽屏两栏：左侧 作者 / 分类 / 连载 / 标签，右侧 简介 / 类似作品 -->
       <div class="preview-grid" :class="{ 'has-title': showTitle }">
-      <!-- 书名（只在 AI 给出建议时显示）/ 作者 / 分类 / 简介（锁定字段可切换为 AI 结果） -->
+      <!-- 书名（只在 AI 给出建议时显示）/ 作者 / 分类 / 简介（书名、锁定字段可切换为 AI 结果） -->
       <section v-for="f in visibleFields" :key="f.key" class="block" :class="`area-${f.key}`">
         <div class="block-title">
           {{ f.label }}
@@ -72,16 +72,15 @@
             size="small"
             :type="preview.suggested.confidence[f.key] === 'low' ? 'warning' : 'info'"
           >{{ CONFIDENCE_LABELS[preview.suggested.confidence[f.key]!] }}</el-tag>
-          <template v-if="isLocked(f.key)">
-            <el-tag size="small" type="info">已锁定</el-tag>
-            <el-switch
-              v-if="preview.suggested[f.key]"
-              v-model="form.useAi[f.key]"
-              size="small"
-              active-text="改用 AI 结果"
-              @change="onToggleAi(f.key)"
-            />
-          </template>
+          <el-tag v-if="isLocked(f.key)" size="small" type="info">已锁定</el-tag>
+          <!-- 锁定字段、书名：勾选后才用 AI 结果 -->
+          <el-switch
+            v-if="hasToggle(f.key) && preview.suggested[f.key]"
+            v-model="form.useAi[f.key]"
+            size="small"
+            active-text="改用 AI 结果"
+            @change="onToggleAi(f.key)"
+          />
         </div>
         <!-- 分类：从分类树选（值为完整路径）；当前值不在分类树里时以占位文字显示 -->
         <el-cascader
@@ -102,12 +101,12 @@
           :placeholder="f.label"
           :maxlength="f.max"
         />
-        <div v-if="isLocked(f.key) && preview.suggested[f.key]" class="hint other-value">
+        <div v-if="hasToggle(f.key) && preview.suggested[f.key]" class="hint other-value">
           {{ form.useAi[f.key] ? '原内容' : 'AI 建议' }}：{{ clip(form.useAi[f.key] ? preview.current[f.key] : preview.suggested[f.key]) }}
         </div>
         <!-- 低置信建议不预填：显示出来，由用户决定是否采用 -->
         <div
-          v-if="!isLocked(f.key) && preview.suggested[f.key] && isLowConfidence(preview, f.key) && form[f.key] !== preview.suggested[f.key]"
+          v-if="!hasToggle(f.key) && preview.suggested[f.key] && isLowConfidence(preview, f.key) && form[f.key] !== preview.suggested[f.key]"
           class="hint other-value"
         >
           AI 猜测（未采用）：{{ clip(preview.suggested[f.key]) }}
@@ -202,7 +201,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { IconLoader2, IconTrash } from '@tabler/icons-vue'
 import { libraryApi } from '@/api/library'
-import { initialForm, buildApplyPayload, effectiveCoverTitle, isLowConfidence, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
+import { initialForm, buildApplyPayload, effectiveCoverTitle, isLowConfidence, syncUseAi, ADAPTATION_SOURCE_LABELS, SHORT_DRAMA_HINT, type AiFillForm } from '@/utils/ai-fill-form'
 import type { AiFillPreview, AiFillLockableField, AiFillConfidence, Book, LookupStep } from '@/types'
 import { lookupStepText } from '@/utils/lookup-step-text'
 import { toCategoryOptions, type CategoryOption } from '@/utils/category'
@@ -268,9 +267,13 @@ function isLocked(field: AiFillLockableField): boolean {
   return !!props.preview?.lockedFields.includes(field)
 }
 
+/** 书名建议和锁定字段一样，需切换开关才采用 */
+function hasToggle(field: AiFillLockableField): boolean {
+  return field === 'title' || isLocked(field)
+}
+
 function onToggleAi(field: AiFillLockableField) {
-  if (!form.value || !props.preview) return
-  form.value[field] = (form.value.useAi[field] ? props.preview.suggested[field] : props.preview.current[field]) || ''
+  if (form.value && props.preview) syncUseAi(form.value, props.preview, field)
 }
 
 function clip(text?: string | null): string {
