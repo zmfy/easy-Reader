@@ -239,3 +239,32 @@ describe('applyAiFill rating follows the cover', () => {
 it('throws not-found for an unknown book', async () => {
   await expect(applyAiFill('nope', input())).rejects.toThrow(/不存在/);
 });
+
+describe('applyAiFill title', () => {
+  it('writes and locks a title equal to the AI suggestion', async () => {
+    await applyAiFill('b1', input({ title: '诡秘之主', suggested: { title: '诡秘之主' } }));
+    expect(row().title).toBe('诡秘之主');
+    expect(locks()).toEqual(['author', 'title']);
+  });
+
+  it('writes and locks a title edited by hand (trimmed)', async () => {
+    await applyAiFill('b1', input({ title: '  我改的书名 ', suggested: { title: '诡秘之主' } }));
+    expect(row().title).toBe('我改的书名');
+    expect(locks()).toEqual(['author', 'title']);
+  });
+
+  it('leaves title and its lock state alone when unchanged', async () => {
+    await applyAiFill('b1', input({ title: '三国演义', suggested: { title: '三国演义' } }));
+    expect(row().title).toBe('三国演义');
+    expect(locks()).toEqual(['author']);
+    setupDb({ manually_edited_fields: '["title"]' });
+    await applyAiFill('b1', input({ title: ' 三国演义 ', suggested: { title: '别的' } }));
+    expect(locks()).toEqual(['title']);
+  });
+
+  it('does not touch the title when none is submitted', async () => {
+    await applyAiFill('b1', input());
+    expect(row().title).toBe('三国演义');
+    expect(locks()).toEqual(['author']);
+  });
+});

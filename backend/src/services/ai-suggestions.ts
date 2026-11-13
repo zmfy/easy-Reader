@@ -18,7 +18,7 @@ export type SuggestField = 'title' | 'author' | 'summary' | 'category';
 /** 可勾选采纳的字段。书名只来自错标判定（见 mismatchTitleSuggestion），不由批量填充生成 */
 export const SUGGEST_FIELDS: SuggestField[] = ['title', 'author', 'summary', 'category'];
 /** 批量填充比对生成建议的字段（不含书名：文件名清洗出的书名与 AI 书名常有无关紧要的差别） */
-export type FillSuggestField = Exclude<SuggestField, 'title'>;
+export type FillSuggestField = SuggestField;
 export const FILL_SUGGEST_FIELDS: FillSuggestField[] = ['author', 'summary', 'category'];
 
 export interface FieldSuggestion {
@@ -187,7 +187,7 @@ export function listSuggestions(db: Database.Database, batchNo?: number | null):
     let data: SuggestionData;
     try { data = JSON.parse(r.data); } catch { return []; }
     const title = mismatchTitleSuggestion(r.title, r.content_mismatch);
-    if (title) data = { ...data, fields: { title, ...data.fields } };
+    if (title) data = { ...data, fields: { ...data.fields, title } };
     const meta = getMetadata(r.book_id);
     return [{
       book_id: r.book_id, title: r.title, author: r.author, cover_url: r.cover_url, created_at: r.created_at, batch_no: r.batch_no,
@@ -232,7 +232,9 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
   };
   // 书名：勾选且书仍判定为错标时，改为正文书名
   const acceptTitle = sel.fields.includes('title') && !!mismatchTitleSuggestion(book.title, (book as Book & { content_mismatch?: string | null }).content_mismatch);
-  const applied: string[] = acceptTitle ? ['title'] : [];
+  // 没有错标时，勾选的书名来自建议里显式写入的 fields.title，交给 applyAiFill（改了就锁定）
+  const fillTitle = !acceptTitle && sel.fields.includes('title') ? data.fields.title?.value : undefined;
+  const applied: string[] = acceptTitle || fillTitle !== undefined ? ['title'] : [];
   const input = {
     ...Object.fromEntries(FILL_SUGGEST_FIELDS.map((f) => {
       const v = pick(f);
@@ -242,8 +244,9 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
     recommended_tags: sel.tags && data.recommended_tags ? (applied.push('recommended_tags'), data.recommended_tags) : (meta?.recommended_tags ?? []),
     similar_works: sel.similar && data.similar_works ? (applied.push('similar_works'), data.similar_works) : (meta?.similar_works ?? []),
     ...(sel.adaptations && data.adaptations ? (applied.push('adaptations'), { adaptations: data.adaptations }) : {}),
+    ...(fillTitle !== undefined ? { title: fillTitle } : {}),
     cover: { type: 'keep' as const },
-    suggested: Object.fromEntries(FILL_SUGGEST_FIELDS.map(f => [f, pick(f)])),
+    suggested: { ...Object.fromEntries(FILL_SUGGEST_FIELDS.map(f => [f, pick(f)])), ...(fillTitle !== undefined ? { title: fillTitle } : {}) },
   } as AiFillApplyInput;
 
   let updated = await applyAiFill(sel.book_id, input, generatedBy);

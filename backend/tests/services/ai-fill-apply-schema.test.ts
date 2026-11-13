@@ -18,6 +18,11 @@ describe('parseAiFillApplyBody', () => {
     expect(r).toEqual({ ok: false, message: expect.stringContaining('简介') });
   });
 
+  it('rejects an empty title naming 书名, accepts a normal one', () => {
+    expect(parseAiFillApplyBody({ ...base, title: '   ' })).toEqual({ ok: false, message: expect.stringContaining('书名') });
+    expect(parseAiFillApplyBody({ ...base, title: '诡秘之主', suggested: { title: '诡秘之主' } }).ok).toBe(true);
+  });
+
   it('names the similar-works field for an over-long reason', () => {
     const r = parseAiFillApplyBody({ ...base, similar_works: [{ title: 'a', reason: '因'.repeat(501) }] });
     expect(r).toEqual({ ok: false, message: expect.stringContaining('类似作品') });

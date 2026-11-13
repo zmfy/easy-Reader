@@ -135,6 +135,27 @@ describe('AI suggestion routes', () => {
       expect(JSON.parse(audit.details).applied).toEqual(['title', 'summary']);
     });
 
+    it('无错标时勾选 fields.title：书名改为建议值并锁定，日志里有 title', async () => {
+      const db = getDb();
+      saveSuggestion(db, 'b1', { fields: { title: { value: '西游记（全本）', current: '西游记', confidence: 'high' } } });
+      const res = await json(await call('POST', '/ai-suggestions/apply', {
+        items: [{ book_id: 'b1', fields: ['title'], tags: false, similar: false, adaptations: false }],
+      }));
+      expect(res).toEqual({ applied: ['b1'], failed: [] });
+      expect(JSON.parse(titleOf('b1').manually_edited_fields).sort()).toEqual(['author', 'title']);
+      expect(titleOf('b1').title).toBe('西游记（全本）');
+      const audit = db.prepare("SELECT details FROM audit_log WHERE action = 'ai_suggestion_apply' AND resource_id = 'b1' ORDER BY rowid DESC").get();
+      expect(JSON.parse(audit.details).applied).toEqual(['title']);
+    });
+
+    it('有错标时 fields.title 不抢优先：列表与采纳都按正文书名', async () => {
+      const db = getDb();
+      saveSuggestion(db, 'b2', { fields: { title: { value: '别的书名', current: '三国演义', confidence: 'high' } } });
+      expect((await json(await call('GET', '/ai-suggestions')))[0].data.fields.title.value).toBe('诡秘之主');
+      await call('POST', '/ai-suggestions/apply', { items: [{ book_id: 'b2', fields: ['title'], tags: false, similar: false, adaptations: false }] });
+      expect(titleOf('b2')).toEqual({ title: '诡秘之主', content_mismatch: null, manually_edited_fields: '["title"]' });
+    });
+
     it('不勾书名：书名不变，错标提示保留', async () => {
       await call('POST', '/ai-suggestions/apply', { items: [{ book_id: 'b2', fields: ['summary'], tags: false, similar: false, adaptations: false }] });
       expect(titleOf('b2')).toMatchObject({ title: '三国演义' });
