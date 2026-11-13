@@ -126,7 +126,7 @@ easyReader/
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/` | 书籍列表（分页，`status` 可筛 `problems` / `garbled` / `duplicate`） |
+| GET | `/` | 书籍列表（分页，`status` 可筛 `problems` / `garbled` / `duplicate` / `damaged`） |
 | GET | `/:id` | 书籍详情 |
 | PUT | `/:id` | 修改书籍信息 — admin |
 | DELETE | `/:id` | 删除书籍 — admin |
@@ -156,6 +156,14 @@ easyReader/
 | PATCH | `/:batchId/items/:itemId` | 修改单个条目（书名、作者、判重、系列归类等） |
 | POST | `/:id/apply` | 应用整批到书库 |
 | DELETE | `/:id` | 丢弃批次 |
+
+扫描时会检查每个 EPUB 能不能打开（单本 15 秒超时，健康检查版本 `HEALTH_CHECK_VERSION` 记在 `books.health_check_version`，已检查过且文件没变的不再打开）：
+
+- 打不开或没有可读章节的新文件生成 `type = 'damaged'` 的条目，payload 为 `{ file_path, file_size, file_mtime, reason }`，单独成批（不和新书混在一批）。`reason` 为固定文案：「文件不完整（可能下载或复制中断）」「缺少书籍目录（content.opf）」「没有可读的章节」「解析超时」「无法解析：<简短错误>」。
+- `damaged` 条目必须逐本决定：PATCH 条目 `accept` = 导入（书入库，`status = 'damaged'`、`damage_reason` 为原因），`reject` = 跳过（记入 `scan_skipped_files`，路径、大小、修改时间都没变时以后扫描不再提示）。还有没决定的条目时，`POST /:id/apply` 返回 422 `VALIDATION_ERROR`「请先为每本损坏的书选择导入或跳过」；自动模式下这类批次保持 pending，并发铃铛提醒。
+- 应用结果新增 `damaged_imported`、`damaged_skipped`；批次 `summary_counts` 新增 `damaged`。
+- 读取时自动修正过的 EPUB（如 zip 目录条目数写错），新书条目 payload 带 `repaired: true`，审核页显示「已自动修正」。
+- 已入库的书：变成损坏的直接改为 `damaged`，损坏的换成完整文件后改回 `normal`；有这类变化或有自动修正的书时，扫描结束发一条 `kind = 'scan_health'` 的提醒（链接到问题书籍页）。
 
 ### 人工覆盖 `/api/library/manual-overrides` — 全部 admin
 
@@ -193,7 +201,7 @@ easyReader/
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/:bookId/chapters` | 章节目录 |
-| GET | `/:bookId/chapter/:index` | 单章正文 |
+| GET | `/:bookId/chapter/:index` | 单章正文（损坏的 EPUB：目录与正文都返回 409 并说明原因） |
 | GET | `/:bookId/raw` | 原始文件 |
 | GET | `/:bookId/asset/*` | EPUB 内嵌资源（图片等） |
 | GET | `/:bookId/progress` | 读取阅读进度 |
