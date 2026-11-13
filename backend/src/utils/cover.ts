@@ -120,15 +120,39 @@ export function pickDoubanBook(items: unknown): DoubanSuggest | undefined {
   return books.find(s => s.pic && !s.pic.includes('book-default')) ?? books[0];
 }
 
+/**
+ * Pure: 豆瓣联想按书名匹配，「魔戒全集」这类带合集后缀的书名常常一条都搜不到。
+ * 返回去掉合集后缀（全集、合集、套装、系列、三部曲、全 N 册）后的检索词；没有可去的后缀时返回 undefined。
+ * 作品集 / 文集不去：剩下的多半是作者名，搜出来是作者的其他书。
+ */
+export function doubanFallbackQuery(title: string): string | undefined {
+  const stripped = title
+    .replace(/[\s·・\-_]*[(（]?(全集|合集|套装|系列|三部曲|全[\d一二三四五六七八九十]+[册卷本部])[)）]?\s*$/, '')
+    .trim();
+  return stripped && stripped !== title.trim() ? stripped : undefined;
+}
+
+async function fetchDoubanSuggest(query: string): Promise<unknown> {
+  const apiUrl = `https://book.douban.com/j/subject_suggest?q=${encodeURIComponent(query)}`;
+  const buf = await request(apiUrl, {
+    'Accept': 'application/json, text/javascript, */*',
+    'Referer': 'https://book.douban.com/',
+  }, 4, isDoubanBookHost);
+  return JSON.parse(buf.toString('utf-8'));
+}
+
+/** 联想请求；书名搜不到任何书时，去掉合集后缀再搜一次 */
+async function fetchDoubanSuggestWithFallback(title: string): Promise<unknown> {
+  const items = await fetchDoubanSuggest(title);
+  if (Array.isArray(items) && (items as DoubanSuggest[]).some(isBookItem)) return items;
+  const fallback = doubanFallbackQuery(title);
+  return fallback ? fetchDoubanSuggest(fallback) : items;
+}
+
 /** One suggest request; returns the best book item (prefers one with a real cover), or undefined. */
 export async function doubanSuggest(title: string): Promise<DoubanSuggest | undefined> {
   try {
-    const apiUrl = `https://book.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`;
-    const buf = await request(apiUrl, {
-      'Accept': 'application/json, text/javascript, */*',
-      'Referer': 'https://book.douban.com/',
-    });
-    return pickDoubanBook(JSON.parse(buf.toString('utf-8')));
+    return pickDoubanBook(await fetchDoubanSuggestWithFallback(title));
   } catch {
     return undefined;
   }
@@ -138,6 +162,10 @@ export async function doubanSuggest(title: string): Promise<DoubanSuggest | unde
 export function parseDoubanSuggestList(json: string, limit = 6): DoubanCandidate[] {
   let items: unknown;
   try { items = JSON.parse(json); } catch { return []; }
+  return toDoubanCandidates(items, limit);
+}
+
+function toDoubanCandidates(items: unknown, limit: number): DoubanCandidate[] {
   if (!Array.isArray(items)) return [];
   return (items as DoubanSuggest[])
     .filter(s => isBookItem(s) && typeof s.pic === 'string' && s.pic && !s.pic.includes('book-default'))
@@ -154,12 +182,7 @@ export function parseDoubanSuggestList(json: string, limit = 6): DoubanCandidate
 /** 搜索豆瓣，返回最多 limit 个带封面的候选；出错时返回 []。 */
 export async function doubanSuggestList(title: string, limit = 6): Promise<DoubanCandidate[]> {
   try {
-    const apiUrl = `https://book.douban.com/j/subject_suggest?q=${encodeURIComponent(title)}`;
-    const buf = await request(apiUrl, {
-      'Accept': 'application/json, text/javascript, */*',
-      'Referer': 'https://book.douban.com/',
-    }, 4, isDoubanBookHost);
-    return parseDoubanSuggestList(buf.toString('utf-8'), limit);
+    return toDoubanCandidates(await fetchDoubanSuggestWithFallback(title), limit);
   } catch {
     return [];
   }
