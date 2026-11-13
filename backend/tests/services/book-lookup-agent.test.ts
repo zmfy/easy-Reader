@@ -299,6 +299,80 @@ describe('runBookLookup', () => {
     expect(r.steps[1]).toEqual({ kind: 'no_book', why: '网络小说' });
   });
 
+  describe('failures after a conclusion / at a phase end', () => {
+    const hitDeps = (answers: string[], over: Partial<LookupDeps> = {}) => makeDeps(answers, {
+      searchBook: jest.fn().mockResolvedValue([LOTR_HIT]), ...over,
+    });
+    const confirmAnswers = [j({ action: 'search_book', query: '魔戒' }), j({ action: 'confirm_book', id: 'B1', title: '魔戒全集' })];
+
+    it('confirm → adapt garbage → last op searches → ok with the confirmation kept', async () => {
+      const deps = hitDeps([
+        ...confirmAnswers,
+        j({ action: 'search_movie', query: '指环王' }),
+        '胡言乱语',
+        j({ action: 'search_movie', query: '魔戒' }),
+      ]);
+      const r = await runBookLookup(INPUT, deps);
+      expect(r.status).toBe('ok');
+      expect(r.confirmed?.title).toBe('魔戒全集');
+      expect(r.adaptations).toEqual([]);
+      expect(deps.searchMovie).toHaveBeenCalledTimes(1);
+      expect(r.steps.map(s => s.kind)).toEqual(['search_book', 'confirm_book', 'search_movie', 'invalid', 'invalid']);
+    });
+
+    it('a non-conclusion on the last op is explained to the AI and does not count as garbage', async () => {
+      const deps = hitDeps([
+        ...confirmAnswers,
+        '胡言乱语',
+        j({ action: 'search_movie', query: '指环王' }),
+        j({ action: 'search_movie', query: '魔戒' }),
+      ]);
+      const r = await runBookLookup(INPUT, deps);
+      expect(r.status).toBe('ok');
+      expect(r.steps.map(s => s.kind)).toEqual(['search_book', 'confirm_book', 'invalid', 'search_movie', 'invalid']);
+    });
+
+    it('two consecutive garbage answers in the adapt phase after a confirmation → ok with the confirmation', async () => {
+      const deps = hitDeps([...confirmAnswers, '胡言乱语', '还是胡言乱语', j({ action: 'done' })]);
+      const r = await runBookLookup(INPUT, deps);
+      expect(r.status).toBe('ok');
+      expect(r.confirmed?.hit.url).toBe(LOTR_HIT.url);
+      expect(deps.chat).toHaveBeenCalledTimes(4);
+    });
+
+    it('a chat error in the adapt phase after no_book → ok, noBook kept', async () => {
+      const chat = jest.fn()
+        .mockResolvedValueOnce(j({ action: 'no_book' }))
+        .mockRejectedValueOnce(new Error('net'));
+      const r = await runBookLookup(INPUT, makeDeps([], { chat }));
+      expect(r.status).toBe('ok');
+      expect(r.noBook).toBe(true);
+    });
+
+    it('identify last op searches, then one adapt garbage → not failed just from crossing phases', async () => {
+      const deps = makeDeps([
+        ...Array.from({ length: 5 }, (_, i) => j({ action: 'search_book', query: `词${i}` })),
+        '胡言乱语',
+        j({ action: 'done' }),
+      ]);
+      const r = await runBookLookup(INPUT, deps);
+      expect(r.status).toBe('ok');
+      expect(r.steps.map(s => s.kind)).toEqual([
+        'search_book', 'search_book', 'search_book', 'search_book', 'invalid', 'invalid',
+      ]);
+      const sixth = deps.chat.mock.calls[5][0] as string;
+      expect(sixth).toContain('最后一次只能给结论');
+    });
+
+    it('identify garbage at op 4 and 5 still fails (no conclusion yet)', async () => {
+      const deps = makeDeps([
+        ...Array.from({ length: 3 }, (_, i) => j({ action: 'search_book', query: `词${i}` })),
+        '胡言乱语', '还是胡言乱语', j({ action: 'done' }),
+      ]);
+      expect((await runBookLookup(INPUT, deps)).status).toBe('failed');
+    });
+  });
+
   it('two consecutive invalid answers → failed', async () => {
     const deps = makeDeps(['胡言乱语', j({ action: 'open_book', id: 'B5' }), j({ action: 'no_book' })]);
     const r = await runBookLookup(INPUT, deps);

@@ -14,6 +14,10 @@ describe('doubanNote', () => {
     const c = book({ hit: { title: '《聊斋志异》 蒲松龄 手稿本', url: 'u' }, doubanAuthor: '蒲松龄', why: '一致' });
     expect(doubanNote(c)).toBe('豆瓣：《聊斋志异》 蒲松龄 手稿本 蒲松龄；一致');
   });
+  it('no trailing space before ； when author and year are absent', () => {
+    const c = book({ hit: { title: '《聊斋志异》 手稿本', url: 'u' }, doubanAuthor: undefined, why: '一致' });
+    expect(doubanNote(c)).toBe('豆瓣：《聊斋志异》 手稿本；一致');
+  });
 });
 
 describe('confirmedMismatch', () => {

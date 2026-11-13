@@ -64,7 +64,10 @@ export interface LookupDeps {
 }
 
 export interface LookupAgentResult {
-  /** failed = 连续无效回答或 chat 出错，调用方走兜底；次数用完不算 failed，只是该阶段没有结果 */
+  /**
+   * failed = 还没有认书结论时连续无效回答或 chat 出错，调用方走兜底；
+   * 已确认或已判 no_book 后改编阶段出错仍为 ok（保留结论、改编为空）；次数用完不算 failed，只是该阶段没有结果
+   */
   status: 'ok' | 'failed';
   confirmed?: ConfirmedBook;
   noBook: boolean;
@@ -280,8 +283,14 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
     ].join('\n\n');
   };
 
+  // 已有认书结论（确认或 no_book）后，改编阶段出错只算没找到改编，不让整个查证失败
+  const giveUp = () => result(confirmed || noBook ? 'ok' : 'failed');
+
   while (total < LOOKUP_LIMITS.total) {
-    if (phase === 'identify' && identifyOps >= LOOKUP_LIMITS.identify) phase = 'adapt';
+    if (phase === 'identify' && identifyOps >= LOOKUP_LIMITS.identify) {
+      phase = 'adapt';
+      invalidRun = 0;   // 无效回答只在同一阶段内连续计数
+    }
     if (phase === 'adapt' && adaptOps >= LOOKUP_LIMITS.adapt) break;
     const last = phaseLeft() <= 1;
     let raw: string;
@@ -289,7 +298,7 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
       raw = await deps.chat(buildPrompt());
     } catch (err) {
       if (deps.isFatal?.(err)) throw err;
-      return result('failed');
+      return giveUp();
     }
     total++;
     if (phase === 'identify') identifyOps++;
@@ -297,8 +306,13 @@ export async function runBookLookup(input: LookupInput, deps: LookupDeps): Promi
 
     const action = parseLookupAction(raw, phase, known(), last);
     if (!action) {
+      // 最后一次回了本阶段的普通动作：不算乱答，只是本阶段没有结论就结束
+      if (last && parseLookupAction(raw, phase, known())) {
+        record({ kind: 'invalid' }, '（上一次回答无效：本阶段最后一次只能给结论，本阶段到此结束）');
+        continue;
+      }
       record({ kind: 'invalid' }, '（上一次回答无效：不是可用的 JSON 动作，或引用了不存在的编号）');
-      if (++invalidRun >= MAX_CONSECUTIVE_INVALID) return result('failed');
+      if (++invalidRun >= MAX_CONSECUTIVE_INVALID) return giveUp();
       continue;
     }
     invalidRun = 0;

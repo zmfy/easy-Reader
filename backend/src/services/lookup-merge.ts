@@ -36,8 +36,9 @@ export function sameTitle(a: string, b: string): boolean {
 export function doubanNote(c: ConfirmedBook): string {
   const year = c.hit.year ?? c.detail?.year;
   // 豆瓣书名本身带书名号时（如「《聊斋志异》 蒲松龄 手稿本」）不再包一层
-  const title = c.hit.title.includes('《') ? `${c.hit.title} ` : `《${c.hit.title}》`;
-  const head = `豆瓣：${title}${[c.doubanAuthor, year].filter(Boolean).join(' ')}`;
+  const quoted = c.hit.title.includes('《');
+  const rest = [c.doubanAuthor, year].filter(Boolean).join(' ');
+  const head = `豆瓣：${quoted ? c.hit.title : `《${c.hit.title}》`}${quoted && rest ? ' ' : ''}${rest}`;
   return c.why ? `${head}；${c.why}` : head;
 }
 
