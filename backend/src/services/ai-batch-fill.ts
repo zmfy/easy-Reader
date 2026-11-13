@@ -236,13 +236,12 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         summary: info.summary && info.summary.trim() ? info.summary.trim() : undefined, mismatch,
       });
       const fatal = (err: unknown): boolean => isQuotaError(err) || isAuthError(err);
-      const outcome: LookupOutcome = await lookupBook(lookupInput, db, { throttle: true, isFatal: fatal }).catch((err: unknown) => {
+      const lookup: LookupOutcome = await lookupBook(lookupInput, db, { throttle: true, isFatal: fatal }).catch((err: unknown) => {
         if (fatal(err)) throw err;
         return { noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: true };
       });
       // 确认的作者与文件名作者对不上（非错标）时多半认错了书：当作没有确认，后续合并一律用 trusted
-      const trusted = trustedConfirmation(outcome, { knownAuthor, mismatch });
-      const authorConflict = !!outcome.confirmed && !trusted;
+      const trusted = trustedConfirmation(lookup, { knownAuthor, mismatch });
 
       // 文件名作者与 AI 作者对不上时，以查证确认的作者为准再判一次
       if (fillStatus === 'failed' && trusted?.author && authorsMatch(trusted.author, knownAuthor)) {
@@ -339,23 +338,23 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
       if (meta.similar.length > 0 && !sameList(meta.similar.map(w => w.title), (existing?.similar_works ?? []).map(w => w.title))) {
         suggestion.similar_works = meta.similar;
       }
-      const adaptations = outcome.adaptations;
+      const adaptations = lookup.adaptations;
       if (adaptations.length > 0 && !sameList(adaptations.map(a => a.url), (existing?.adaptations ?? []).map(a => a.url))) {
         suggestion.adaptations = adaptations.map(({ pic: _pic, ...a }) => a);
       }
       saveSuggestion(db, b.id, suggestion, currentBatchNo());
 
-      // 封面 + 评分：取查证结果的第一个候选（已确认的书排第一），尽力而为；
+      // 封面 + 评分，尽力而为：查证确认的书用确认的条目；查证关闭或失败走兜底时沿用原有行为取第一个候选；
+      // 查证跑了却没有可信的确认（没找到、作者冲突、未确认）时，见过的条目都不用——不下封面、不写评分。
       // 找不到封面（套装、合集常见）就生成默认封面
       const titleForCover = trusted?.title || lookupInput.title;
       const needCover = !current.cover_url;
       const needRating = current.rating == null;
       let coverUrl: string | undefined;
       let coverSource: 'douban' | 'default' = 'douban';
-      // 不可信的确认条目不拿来当封面
-      const candidate = authorConflict
-        ? outcome.coverCandidates.find(c => c.subjectUrl !== outcome.confirmed!.hit.url)
-        : outcome.coverCandidates[0];
+      const candidate = trusted
+        ? lookup.coverCandidates.find(c => c.subjectUrl === trusted.hit.url)
+        : lookup.usedFallback ? lookup.coverCandidates[0] : undefined;
       try {
         if (needCover && candidate) coverUrl = await downloadCoverFromPic(candidate.pic, b.id);
         if (needRating) {

@@ -665,7 +665,7 @@ describe('batchFill 接入查证', () => {
     expect(s.fields.author).toBeUndefined();   // 已自动写入
   });
 
-  it('Pass A 作者与文件名一致，但查证确认的作者不同 → 当作未确认：不写确认作者、无书名建议、封面评分取下一个候选', async () => {
+  it('Pass A 作者与文件名一致，但查证确认的作者不同 → 当作未确认：不写确认作者、无书名建议、不用见过的候选，生成默认封面、不写评分', async () => {
     const b = fileBook('lr', '魔戒');
     fillSpy.mockResolvedValueOnce({ author: '托尔金', summary: '中土世界', confidence: { author: 'medium' }, evidence: { author: '正文署名' } });
     const other = { title: '魔戒（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s2.jpg', subjectUrl: 'https://book.douban.com/subject/2/' };
@@ -673,16 +673,14 @@ describe('batchFill 接入查证', () => {
       { title: '魔戒三部曲', author: '金庸', doubanAuthor: '金庸', rating: 9.9 },
       { coverCandidates: [{ title: hit.title, pic: hit.pic, subjectUrl: hit.url }, other] },
     ));
-    (downloadCoverFromPic as jest.Mock).mockResolvedValueOnce('/covers/lr.jpg');
-    (fetchRating as jest.Mock).mockResolvedValueOnce(8.0);
     const r = await batchFill({ books: [b] });
     expect(r.succeeded).toContain('lr');
-    expect(row('lr')).toMatchObject({ author: '托尔金', cover_url: '/covers/lr.jpg', rating: 8.0 });
+    expect(row('lr')).toMatchObject({ author: '托尔金', cover_url: '/covers/b1-default.svg', rating: null });
     expect(suggestion('lr')).toBeUndefined();   // 无书名建议、无作者建议
-    expect(downloadCoverFromPic).toHaveBeenCalledWith(other.pic, 'lr');
-    expect(fetchRating).toHaveBeenCalledWith({ url: other.subjectUrl });
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).not.toHaveBeenCalled();
     expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'ai_fetch_cover', details: expect.objectContaining({ title_used: '魔戒' }),
+      action: 'ai_fetch_cover', details: expect.objectContaining({ title_used: '魔戒', source: 'default' }),
     }));
   });
 
@@ -694,6 +692,20 @@ describe('batchFill 接入查证', () => {
     expect(downloadCoverFromPic).not.toHaveBeenCalled();
     expect(fetchRating).not.toHaveBeenCalled();
     expect(row('lr')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: null });
+  });
+
+  it('查证跑了但豆瓣没有这本书（no_book）→ 见过的候选都不用：默认封面、不写评分', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({
+      usedFallback: false, noBook: true,
+      coverCandidates: [{ title: '西游记（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s3.jpg', subjectUrl: 'https://book.douban.com/subject/3/' }],
+    }));
+    const r = await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+    expect(r.succeeded).toEqual(['b1']);
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).not.toHaveBeenCalled();
+    expect(row('b1')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: null });
   });
 
   it('书名只差书名号 / 空白时不给书名建议；作者已有时建议带豆瓣依据', async () => {
@@ -719,6 +731,19 @@ describe('batchFill 接入查证', () => {
     expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'ai_fetch_cover', details: expect.objectContaining({ title_used: '西游记', source: 'douban' }),
     }));
+  });
+
+  it('确认的条目没有封面时不拿其他见过的条目，生成默认封面；评分仍取确认条目', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ hit: { ...hit, pic: undefined } }, {
+      coverCandidates: [{ title: '西游记（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s3.jpg', subjectUrl: 'https://book.douban.com/subject/3/' }],
+    }));
+    (fetchRating as jest.Mock).mockResolvedValueOnce(8.8);
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).toHaveBeenCalledWith({ url: hit.url });
+    expect(row('b1')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: 8.8 });
   });
 
   it('错标时用确认结果记录错标，字段不自动写', async () => {

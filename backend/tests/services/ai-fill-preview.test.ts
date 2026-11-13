@@ -3,7 +3,7 @@ import { buildAiFillPreview } from '../../src/services/ai-fill-preview';
 import { aiManager } from '../../src/ai/ai-manager';
 import { lookupBook, LookupOutcome } from '../../src/services/book-lookup';
 import { fetchCoverThumbnailDataUri, downloadCover, fetchRating } from '../../src/utils/cover';
-import { getLookupProgress } from '../../src/services/lookup-progress';
+import { finishLookupProgress, getLookupProgress, setLookupProgress, startLookupProgress } from '../../src/services/lookup-progress';
 
 let testDb: Database.Database;
 jest.mock('../../src/db', () => ({ getDb: () => testDb }));
@@ -270,6 +270,25 @@ describe('buildAiFillPreview', () => {
       lookup.mockRejectedValue(new Error('boom'));
       await expect(buildAiFillPreview('b1')).rejects.toThrow('boom');
       expect(getLookupProgress('b1')?.done).toBe(true);
+    });
+
+    it('clears the previous run\'s steps at the start, before the AI fill', async () => {
+      startLookupProgress('b1');
+      setLookupProgress('b1', [{ kind: 'search_book', query: '上一次', count: 1 }]);
+      finishLookupProgress('b1');
+      let duringFill: unknown;
+      fill.mockImplementationOnce(async () => {
+        duringFill = getLookupProgress('b1');
+        return { title: '三国演义' };
+      });
+      await buildAiFillPreview('b1');
+      expect(duringFill).toEqual({ steps: [], done: false });
+    });
+
+    it('marks progress done even when the AI fill throws', async () => {
+      fill.mockRejectedValueOnce(new Error('ai down'));
+      await expect(buildAiFillPreview('b1')).rejects.toThrow('ai down');
+      expect(getLookupProgress('b1')).toEqual({ steps: [], done: true });
     });
 
     it('reports title as a locked field', async () => {

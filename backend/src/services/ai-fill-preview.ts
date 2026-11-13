@@ -1,4 +1,5 @@
 import path from 'path';
+import Database from 'better-sqlite3';
 import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
@@ -76,6 +77,17 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId) as Book | undefined;
   if (!book) throw new BookNotFoundError();
 
+  // 一开始就清掉上次的查证进度：60 秒内重开预览时，AI 填充阶段不显示上一次的步骤
+  startLookupProgress(bookId);
+  try {
+    return await buildPreview(db, book);
+  } finally {
+    finishLookupProgress(bookId);
+  }
+}
+
+async function buildPreview(db: Database.Database, book: Book): Promise<AiFillPreview> {
+  const bookId = book.id;
   const cleanedTitle = cleanBookTitle(book.title);
   const evidence = await buildBookEvidence(book);
   const info = await aiManager.fillBookInfo(evidence.text, db) as Record<string, unknown>;
@@ -102,16 +114,10 @@ export async function buildAiFillPreview(bookId: string): Promise<AiFillPreview>
   const current = getMetadata(bookId);
 
   // AI 查证：认书、挑改编（关闭或失败时内部走原有检索）；错标时查证正文实际的书
-  startLookupProgress(bookId);
-  let outcome: LookupOutcome;
-  try {
-    outcome = await lookupBook(buildLookupInput({
-      filePath: book.file_path, metadata: evidence.metadata, info,
-      title: cleanedTitle, author: book.author ?? undefined, summary, mismatch: contentMismatch,
-    }), db, { onStep: steps => setLookupProgress(bookId, steps) });
-  } finally {
-    finishLookupProgress(bookId);
-  }
+  const outcome: LookupOutcome = await lookupBook(buildLookupInput({
+    filePath: book.file_path, metadata: evidence.metadata, info,
+    title: cleanedTitle, author: book.author ?? undefined, summary, mismatch: contentMismatch,
+  }), db, { onStep: steps => setLookupProgress(bookId, steps) });
   // 确认的作者与当前作者（没有则取文件名中的作者）冲突时当作没有确认；封面候选顺序不变，由用户自己选
   const knownAuthor = (book.author ?? '').trim() || (extractAuthorFromName(path.basename(book.file_path)) ?? '');
   const confirmed = trustedConfirmation(outcome, { knownAuthor, mismatch: contentMismatch });

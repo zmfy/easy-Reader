@@ -15,11 +15,13 @@ import { markFieldsAsEdited } from './ai-batch-fill';
  */
 
 export type SuggestField = 'title' | 'author' | 'summary' | 'category';
-/** 可勾选采纳的字段。书名只来自错标判定（见 mismatchTitleSuggestion），不由批量填充生成 */
+/**
+ * 可勾选采纳的字段。书名建议有两个来源：错标判定（见 mismatchTitleSuggestion，临时生成），
+ * 以及批量填充时查证确认、与当前书名实质不同的书名（显式写进 fields.title）
+ */
 export const SUGGEST_FIELDS: SuggestField[] = ['title', 'author', 'summary', 'category'];
-/** 批量填充比对生成建议的字段（不含书名：文件名清洗出的书名与 AI 书名常有无关紧要的差别） */
-export type FillSuggestField = SuggestField;
-export const FILL_SUGGEST_FIELDS: FillSuggestField[] = ['author', 'summary', 'category'];
+/** 批量填充拿 AI 结果与当前值比对生成建议的字段（不含书名：文件名清洗出的书名与 AI 书名常有无关紧要的差别，书名建议只来自查证） */
+export const FILL_SUGGEST_FIELDS: SuggestField[] = ['author', 'summary', 'category'];
 
 export interface FieldSuggestion {
   value: string;
@@ -226,7 +228,7 @@ export async function applySuggestion(sel: SuggestionSelection, userId: string, 
   const data = JSON.parse(row.data) as SuggestionData;
   const meta = getMetadata(sel.book_id);
 
-  const pick = (f: FillSuggestField): string | undefined => {
+  const pick = (f: SuggestField): string | undefined => {
     const s = data.fields[f];
     return sel.fields.includes(f) && s ? s.value : undefined;
   };
