@@ -295,6 +295,58 @@
 
 `cover_url` 为 `null` 时，客户端自行显示默认封面。
 
+### AI 填充与查证（管理员）
+
+以下接口只有管理员可用，属于开头所说的「AI 补全」管理员接口，**不在稳定范围内**，字段可能随版本调整，这里只列出与「AI 查证」相关的部分。
+
+「AI 查证」：AI 读完书的内容后，多轮搜索豆瓣（必要时打开条目页）确认是哪本书，再取书名、作者、封面、评分，并挑出改编作品。开关通过 `PUT /api/v1/settings` 保存，键 `ai_lookup_enabled`，值 `'0'` 为关闭，缺省或其他值为开启（默认开启）。关闭或查证失败时按书名直接搜索豆瓣（原有做法）。开启时批量填充的费用估算按每本 1 + 4 次 AI 调用计算。
+
+`LookupStep`（查证中的一步，按顺序排列）：
+
+| `kind` | 其他字段 | 含义 |
+|---|---|---|
+| `search_book` | `query`、`count`、`error?` | 搜索豆瓣读书，`count` 为结果数，`error` 为 `true` 表示搜索失败 |
+| `search_movie` / `search_drama` | 同上 | 搜索豆瓣影视 / 猫耳广播剧（找改编） |
+| `open_book` | `id`、`label` | 打开候选条目页核对，`id` 如 `B1`，`label` 为「书名 / 作者 / 出版社 年份」 |
+| `confirm_book` | `id`、`label`、`why?` | 确认是这本书 |
+| `no_book` | `why?` | 豆瓣上没有这本书（如网络小说） |
+| `pick_adaptations` | `count` | 选出的改编作品数 |
+| `invalid` | — | AI 的回答无法解析 |
+
+#### POST /api/v1/library/:id/ai-fill/preview
+
+生成填充预览，不写库。查证过程中可轮询下面的 `progress` 接口。与查证相关的响应字段：
+
+```json
+{
+  "suggested": {
+    "title": "魔戒", "author": "[英] J.R.R.托尔金",
+    "confidence": { "title": "high", "author": "high" },
+    "evidence": { "title": "豆瓣：《魔戒》[英] J.R.R.托尔金 2013", "author": "…" }
+  },
+  "lockedFields": ["title"],
+  "lookupTrace": [
+    { "kind": "search_book", "query": "魔戒 托尔金", "count": 8 },
+    { "kind": "confirm_book", "id": "B1", "label": "魔戒 / [英] J.R.R.托尔金 / 译林出版社 2013" }
+  ],
+  "lookupUsedFallback": false
+}
+```
+
+- `suggested.title`：查证确认的书名，只在与当前书名实质不同时给出（同时 `suggested.confidence.title` 为 `high`，`suggested.evidence.title` 为豆瓣条目信息）。查证确认后 `suggested.author` 也取豆瓣的作者（保留国籍、去掉译者）。
+- `lockedFields` 可能包含 `title`（书名手动改过；此时仍会给出书名建议，由用户决定）。
+- `lookupTrace`：查证过程（`LookupStep` 数组）；关闭查证时为空数组。
+- `lookupUsedFallback`：`true` 表示查证关闭或失败，封面候选与改编按书名直接搜索得到。
+- 正文与文件名不是同一部作品（`contentMismatch`）时，查证的是正文实际的书，书名只写进 `contentMismatch`，不给 `suggested.title`。
+
+#### GET /api/v1/library/:id/ai-fill/progress
+
+预览请求进行中的查证进度：`{ "steps": [ /* LookupStep */ ], "done": false }`。预览结束后 `done` 为 `true`，记录保留 60 秒；没有记录时返回 `{ "steps": [], "done": false }`。
+
+#### POST /api/v1/library/:id/ai-fill/apply
+
+写入预览确认的结果。请求体新增可选的 `title`（1–200 字），`suggested` 里相应带回预览的 `suggested.title`。`title` 与当前书名不同时改名并锁定书名（不论是否等于建议）；相同则不改书名，也不改锁定状态。
+
 ## 5. 书架与阅读历史
 
 每个用户有自己的书架。
