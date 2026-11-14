@@ -4,6 +4,7 @@ import {
   AdaptationCandidate, AdaptationSource, searchDoubanMovies, searchMissevanDramas,
 } from '../utils/adaptation-sources';
 import { extractJsonObject } from '../ai/json-extract';
+import { throttled, _resetExternalThrottle } from '../utils/external-throttle';
 
 /**
  * 改编作品：先从豆瓣电影、猫耳 FM 按书名搜出候选，再由 AI 结合书目信息挑出真正改编自这本书的。
@@ -45,18 +46,26 @@ export function looksLikeShortDrama(c: AdaptationCandidate): boolean {
 
 const SOURCE_LABELS: Record<AdaptationSource, string> = { douban: '豆瓣影视', missevan: '猫耳FM广播剧' };
 
+/** 候选的一行描述（不含编号）：书名 | 来源 | 年份 | 集数 | 短剧提示 | 原著作者 | 简介；AI 查证循环也用同样的格式 */
+export function describeAdaptationCandidate(c: AdaptationCandidate): string {
+  const extra = [
+    SOURCE_LABELS[c.source],
+    c.year && `${c.year}年`,
+    c.episodes && `${c.episodes}集`,
+    looksLikeShortDrama(c) && '集数多且年份新，可能是短剧',
+    c.author && `原著作者：${c.author}`,
+    c.abstract && `简介：${c.abstract}`,
+  ].filter(Boolean).join(' | ');
+  return `${c.title} | ${extra}`;
+}
+
+/** 判断改编的规则（同名排除、类型、短剧），与 AI 查证循环的改编阶段共用 */
+export const ADAPTATION_JUDGE_RULES = `- 同名但题材、年代、原著作者对不上的不选；纪录片、综艺、解说、配音片段、同人二创不选。
+- type 取 ${ADAPTATION_TYPES.join(' / ')}；猫耳FM 的一律为广播剧。
+- 短剧（微短剧）指每集几分钟、几十上百集、近几年在短剧平台上线的竖屏剧，type 选「短剧」；集数多但每集是正常时长的长篇电视剧（多为较早年代或知名剧集）仍选「电视剧」。拿不准时选「电视剧」。`;
+
 export function buildAdaptationPrompt(book: AdaptationBookInfo, candidates: AdaptationCandidate[]): string {
-  const lines = candidates.map((c, i) => {
-    const extra = [
-      SOURCE_LABELS[c.source],
-      c.year && `${c.year}年`,
-      c.episodes && `${c.episodes}集`,
-      looksLikeShortDrama(c) && '集数多且年份新，可能是短剧',
-      c.author && `原著作者：${c.author}`,
-      c.abstract && `简介：${c.abstract}`,
-    ].filter(Boolean).join(' | ');
-    return `[#${i}] ${c.title} | ${extra}`;
-  }).join('\n');
+  const lines = candidates.map((c, i) => `[#${i}] ${describeAdaptationCandidate(c)}`).join('\n');
   return `判断下面哪些影视 / 广播剧作品改编自这本书。候选是按书名搜索得到的，混有同名或无关作品。
 
 【书】《${book.title}》${book.author ? ` 作者：${book.author}` : ''}
@@ -67,9 +76,7 @@ ${lines}
 只返回 JSON：{"adaptations":[{"index":0,"type":"电视剧"}]}
 规则：
 - 只能从候选中选，用编号 index 引用；确认是改编自这本书（含续作、分季、系列中的单部）才选，不确定就不选。
-- 同名但题材、年代、原著作者对不上的不选；纪录片、综艺、解说、配音片段、同人二创不选。
-- type 取 ${ADAPTATION_TYPES.join(' / ')}；猫耳FM 的一律为广播剧。
-- 短剧（微短剧）指每集几分钟、几十上百集、近几年在短剧平台上线的竖屏剧，type 选「短剧」；集数多但每集是正常时长的长篇电视剧（多为较早年代或知名剧集）仍选「电视剧」。拿不准时选「电视剧」。
+${ADAPTATION_JUDGE_RULES}
 - 没有改编就返回 {"adaptations":[]}。`;
 }
 
@@ -84,43 +91,37 @@ export function parseAdaptationResponse(raw: string, candidates: AdaptationCandi
     const c = candidates[index];
     if (!c) continue;
     seen.add(index);
-    const rawType = (item as { type?: unknown }).type;
-    const type: AdaptationType = c.source === 'missevan'
-      ? '广播剧'
-      : (ADAPTATION_TYPES as readonly unknown[]).includes(rawType) ? rawType as AdaptationType : '其他';
-    out.push({
-      type, title: c.title, ...(c.year ? { year: c.year } : {}), source: c.source, url: c.url,
-      ...(c.pic ? { pic: c.pic } : {}),
-    });
+    out.push(toAdaptation(c, (item as { type?: unknown }).type));
   }
   return out;
+}
+
+/** 候选 + AI 给的类型 → 改编作品：猫耳一律为广播剧，类型不认识的归「其他」 */
+export function toAdaptation(c: AdaptationCandidate, rawType: unknown): Adaptation {
+  const type: AdaptationType = c.source === 'missevan'
+    ? '广播剧'
+    : (ADAPTATION_TYPES as readonly unknown[]).includes(rawType) ? rawType as AdaptationType : '其他';
+  return {
+    type, title: c.title, ...(c.year ? { year: c.year } : {}), source: c.source, url: c.url,
+    ...(c.pic ? { pic: c.pic } : {}),
+  };
 }
 
 /** 搜不到候选时不调用 AI；任何一步失败都返回 []（改编信息是锦上添花，不能让填充失败） */
 /** 后台批量时外部搜索的最小间隔：全局串行，避免短时间大量请求触发豆瓣 / 猫耳的反爬 */
 export const ADAPTATION_SEARCH_INTERVAL_MS = 3000;
-let searchChain: Promise<unknown> = Promise.resolve();
-let lastSearchAt = 0;
 
 function searchCandidates(title: string): Promise<AdaptationCandidate[]> {
   return Promise.all([searchDoubanMovies(title), searchMissevanDramas(title)]).then(([d, m]) => [...d, ...m]);
 }
 
 function throttledSearch(title: string): Promise<AdaptationCandidate[]> {
-  const run = searchChain.then(async () => {
-    const wait = lastSearchAt + ADAPTATION_SEARCH_INTERVAL_MS - Date.now();
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    lastSearchAt = Date.now();
-    return searchCandidates(title);
-  });
-  searchChain = run.catch(() => undefined);
-  return run;
+  return throttled(() => searchCandidates(title), ADAPTATION_SEARCH_INTERVAL_MS);
 }
 
 /** 测试用：重置限速状态 */
 export function _resetAdaptationThrottle(): void {
-  searchChain = Promise.resolve();
-  lastSearchAt = 0;
+  _resetExternalThrottle();
 }
 
 /** throttle：后台批量时为 true，外部搜索排队并保持间隔（AI 筛选不受限） */

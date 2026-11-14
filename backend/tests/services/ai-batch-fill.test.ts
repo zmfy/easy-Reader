@@ -2,7 +2,8 @@ import Database from 'better-sqlite3';
 import { selectFillCandidates, stampFillVersion, authorMatchDecision, batchFill, isRateLimitError, isQuotaError, isAuthError, resetAllFills, FillBatchSummary, MAX_CONSECUTIVE_FAILURES } from '../../src/services/ai-batch-fill';
 import { AI_FILL_VERSION } from '../../src/services/scan-versions';
 import { aiManager } from '../../src/ai/ai-manager';
-import { doubanSuggest, downloadCover, fetchRating } from '../../src/utils/cover';
+import { downloadCoverFromPic, fetchRating } from '../../src/utils/cover';
+import { lookupBook, LookupOutcome } from '../../src/services/book-lookup';
 import { isCancelled } from '../../src/services/scan-task';
 
 // ── mock out modules that have side-effects or need real infra ──────────────
@@ -21,10 +22,21 @@ jest.mock('../../src/db', () => ({
 }));
 
 jest.mock('../../src/utils/cover', () => ({
-  doubanSuggest: jest.fn().mockResolvedValue(undefined),
-  downloadCover: jest.fn().mockResolvedValue(undefined),
+  downloadCoverFromPic: jest.fn().mockResolvedValue(undefined),
   fetchRating: jest.fn().mockResolvedValue(undefined),
 }));
+
+// 查证会访问外网 / 调 AI，测试里替换掉；默认返回兜底形态的空结果
+const emptyOutcome = (o: Partial<LookupOutcome> = {}): LookupOutcome =>
+  ({ noBook: false, coverCandidates: [], adaptations: [], steps: [], usedFallback: true, ...o });
+jest.mock('../../src/services/book-lookup', () => ({
+  lookupBook: jest.fn(),
+}));
+beforeEach(() => {
+  (lookupBook as jest.Mock).mockReset().mockResolvedValue(emptyOutcome());
+  (downloadCoverFromPic as jest.Mock).mockReset().mockResolvedValue(undefined);
+  (fetchRating as jest.Mock).mockReset().mockResolvedValue(undefined);
+});
 
 // 默认封面只生成文件：测试里不写盘，返回固定地址
 jest.mock('../../src/services/default-cover-file', () => ({
@@ -39,12 +51,6 @@ jest.mock('../../src/services/scan-task', () => ({
 }));
 
 // No-op audit writes – avoids needing audit_log table.
-// 后台查改编作品会访问外网，测试里替换掉
-jest.mock('../../src/services/adaptations', () => ({
-  ...jest.requireActual('../../src/services/adaptations'),
-  findAdaptations: jest.fn().mockResolvedValue([]),
-}));
-
 jest.mock('../../src/services/audit-log', () => ({
   writeAudit: jest.fn(),
 }));
@@ -257,8 +263,10 @@ describe('batchFill two-pass', () => {
   it('writes cover_url and rating fetched from douban during fill', async () => {
     insBook(_testDb!, { id: 'cv1', title: '有封面的书', author: '某作者', file_path: '/nonexistent/cv1.txt' });
     fillSpy.mockResolvedValueOnce({ author: '某作者', summary: '简介…' });
-    (doubanSuggest as jest.Mock).mockResolvedValueOnce({ url: 'https://book.douban.com/subject/1/', pic: 'x/spic/y.jpg' });
-    (downloadCover as jest.Mock).mockResolvedValueOnce('/covers/cv1.jpg');
+    (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({
+      coverCandidates: [{ title: '有封面的书', pic: 'x/spic/y.jpg', subjectUrl: 'https://book.douban.com/subject/1/' }],
+    }));
+    (downloadCoverFromPic as jest.Mock).mockResolvedValueOnce('/covers/cv1.jpg');
     (fetchRating as jest.Mock).mockResolvedValueOnce(8.5);
 
     await batchFill({ books: [{ id: 'cv1', file_path: '/nonexistent/cv1.txt', file_format: 'txt', title: '有封面的书', author: '某作者' }] });
@@ -266,6 +274,8 @@ describe('batchFill two-pass', () => {
     const row = _testDb!.prepare('SELECT cover_url, rating FROM books WHERE id = ?').get('cv1') as { cover_url: string | null; rating: number | null };
     expect(row.cover_url).toBe('/covers/cv1.jpg');
     expect(row.rating).toBe(8.5);
+    expect(downloadCoverFromPic).toHaveBeenCalledWith('x/spic/y.jpg', 'cv1');
+    expect(fetchRating).toHaveBeenCalledWith({ url: 'https://book.douban.com/subject/1/' });
   });
 
   it('Pass A empty → Pass B author match → filled (two calls, summary written)', async () => {
@@ -464,14 +474,11 @@ describe('resetAllFills', () => {
 });
 
 describe('batchFill suggestions and content mismatch', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { findAdaptations } = require('../../src/services/adaptations');
   let fillSpy: jest.SpyInstance;
 
   beforeEach(() => {
     _testDb = makeIntegrationDb();
     fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
-    (findAdaptations as jest.Mock).mockReset().mockResolvedValue([]);
   });
   afterEach(() => { fillSpy.mockRestore(); _testDb?.close(); _testDb = null; });
 
@@ -486,9 +493,9 @@ describe('batchFill suggestions and content mismatch', () => {
 
   it('auto-fills empty confident fields and queues the rest (changes, low confidence, locked, tags, adaptations)', async () => {
     book({ summary: '旧简介', category: '玄幻', manually_edited_fields: '["category"]' });
-    (findAdaptations as jest.Mock).mockResolvedValueOnce([
+    (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({ adaptations: [
       { type: '电视剧', title: '西游记', year: '1986', source: 'douban', url: 'https://movie.douban.com/subject/1/', pic: 'https://img1.doubanio.com/p.jpg' },
-    ]);
+    ] }));
     fillSpy.mockResolvedValueOnce({
       author: '吴承恩', summary: '唐僧师徒取经', category: '小说/中国古典小说',
       recommended_tags: ['神魔'], similar_works: [{ title: '封神演义' }],
@@ -507,8 +514,12 @@ describe('batchFill suggestions and content mismatch', () => {
     expect(s.adaptations).toEqual([{ type: '电视剧', title: '西游记', year: '1986', source: 'douban', url: 'https://movie.douban.com/subject/1/' }]);
     // 标签不再直接写库
     expect(_testDb!.prepare('SELECT COUNT(*) AS n FROM book_ai_metadata').get()).toEqual({ n: 0 });
-    // 后台查改编作品走限速
-    expect((findAdaptations as jest.Mock).mock.calls[0][2]).toEqual({ throttle: true });
+    // 后台查证走限速，额度 / 鉴权错误向上抛
+    const opts = (lookupBook as jest.Mock).mock.calls[0][2];
+    expect(opts.throttle).toBe(true);
+    expect(opts.isFatal(new Error('DeepSeek API error: 402'))).toBe(true);
+    expect(opts.isFatal(new Error('DeepSeek API error: 401'))).toBe(true);
+    expect(opts.isFatal(new Error('fetch failed'))).toBe(false);
   });
 
   it('writes nothing automatically when the content is a different book, and records the mismatch', async () => {
@@ -524,8 +535,8 @@ describe('batchFill suggestions and content mismatch', () => {
     expect(suggestion().fields.author).toMatchObject({ value: '爱潜水的乌贼', current: null });
     // 书名建议不存进建议数据：由错标判定在列出 / 采纳时生成
     expect(suggestion().fields.title).toBeUndefined();
-    // 按正文实际的书名查改编作品
-    expect((findAdaptations as jest.Mock).mock.calls[0][0]).toMatchObject({ title: '诡秘之主', author: '爱潜水的乌贼' });
+    // 按正文实际的书查证
+    expect((lookupBook as jest.Mock).mock.calls[0][0]).toMatchObject({ fileName: 'b1.txt', title: '诡秘之主', author: '爱潜水的乌贼', mismatchReason: '正文是诡秘之主' });
   });
 
   describe('封面', () => {
@@ -537,8 +548,6 @@ describe('batchFill suggestions and content mismatch', () => {
     const { writeAudit } = require('../../src/services/audit-log');
     const coverUrl = () => (_testDb!.prepare('SELECT cover_url FROM books WHERE id = ?').get('b1') as { cover_url: string | null }).cover_url;
     beforeEach(() => {
-      (cover.doubanSuggest as jest.Mock).mockReset().mockResolvedValue(undefined);
-      (cover.downloadCover as jest.Mock).mockReset().mockResolvedValue(undefined);
       (createDefaultCover as jest.Mock).mockClear();
       (writeAudit as jest.Mock).mockClear();
     });
@@ -557,8 +566,8 @@ describe('batchFill suggestions and content mismatch', () => {
 
     it('豆瓣有封面就用豆瓣的，不生成默认封面', async () => {
       book();
-      (cover.doubanSuggest as jest.Mock).mockResolvedValueOnce({ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' });
-      (cover.downloadCover as jest.Mock).mockResolvedValueOnce('/covers/b1-douban.jpg');
+      (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({ coverCandidates: [{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' }] }));
+      (cover.downloadCoverFromPic as jest.Mock).mockResolvedValueOnce('/covers/b1-douban.jpg');
       fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
       await run();
       expect(coverUrl()).toBe('/covers/b1-douban.jpg');
@@ -567,7 +576,7 @@ describe('batchFill suggestions and content mismatch', () => {
 
     it('豆瓣封面下载失败也用默认封面', async () => {
       book();
-      (cover.doubanSuggest as jest.Mock).mockResolvedValueOnce({ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' });
+      (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({ coverCandidates: [{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' }] }));
       fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
       await run();
       expect(coverUrl()).toBe('/covers/b1-default.svg');
@@ -590,6 +599,187 @@ describe('batchFill suggestions and content mismatch', () => {
   });
 });
 
+
+describe('batchFill 接入查证', () => {
+  let fillSpy: jest.SpyInstance;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { writeAudit } = require('../../src/services/audit-log');
+  const hit = { title: '西游记', author: '吴承恩', year: '2005', pic: 'https://img9.doubanio.com/view/subject/s/public/s9.jpg', url: 'https://book.douban.com/subject/9/' };
+  const confirmed = (c: Record<string, unknown> = {}, o: Partial<LookupOutcome> = {}): LookupOutcome => emptyOutcome({
+    usedFallback: false,
+    confirmed: { hit, title: '西游记', author: '[明] 吴承恩', doubanAuthor: '[明] 吴承恩 著', why: '书名作者一致', ...c },
+    coverCandidates: [{ title: hit.title, author: hit.author, year: hit.year, pic: hit.pic, subjectUrl: hit.url }],
+    ...o,
+  });
+
+  beforeEach(() => {
+    _testDb = makeIntegrationDb();
+    fillSpy = jest.spyOn(aiManager, 'fillBookInfo');
+    (writeAudit as jest.Mock).mockClear();
+  });
+  afterEach(() => { fillSpy.mockRestore(); _testDb?.close(); _testDb = null; });
+
+  const row = (id: string) => _testDb!.prepare('SELECT title, author, cover_url, rating, ai_fill_status, ai_fill_version, content_mismatch FROM books WHERE id = ?').get(id) as Record<string, string | number | null>;
+  const suggestion = (id: string) => {
+    const r = _testDb!.prepare('SELECT data FROM ai_suggestions WHERE book_id = ?').get(id) as { data: string } | undefined;
+    return r ? JSON.parse(r.data) : undefined;
+  };
+  const fileBook = (id: string, title: string) => {
+    const file_path = `/nonexistent/${title} 作者：托尔金.txt`;
+    insBook(_testDb!, { id, title, file_path });
+    return { id, file_path, file_format: 'txt', title };
+  };
+
+  it('Pass B 作者被判不一致，但查证确认的作者与文件名作者一致 → 不再失败', async () => {
+    const b = fileBook('lr', '魔戒');
+    fillSpy.mockResolvedValueOnce({}).mockResolvedValueOnce({ author: 'J. R. R. Tolkien', summary: '中土世界' });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ title: '魔戒', author: '[英] J.R.R.托尔金', doubanAuthor: '[英] J.R.R.托尔金' }));
+    const r = await batchFill({ books: [b] });
+    expect(r.succeeded).toContain('lr');
+    expect(r.failed).toHaveLength(0);
+    expect(row('lr')).toMatchObject({ author: '[英] J.R.R.托尔金', ai_fill_status: 'filled' });
+  });
+
+  it('查证确认的作者与文件名作者也不符 → 仍判失败', async () => {
+    const b = fileBook('lr', '魔戒');
+    fillSpy.mockResolvedValueOnce({}).mockResolvedValueOnce({ author: 'J. R. R. Tolkien', summary: '中土世界' });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ title: '射雕英雄传', author: '金庸' }));
+    const r = await batchFill({ books: [b] });
+    expect(r.succeeded).not.toContain('lr');
+    expect(r.failed.map(f => f.book_id)).toEqual(['lr']);
+    expect(row('lr')).toMatchObject({ author: null, ai_fill_status: 'failed' });
+  });
+
+  it('确认的书名不同 → 建议含高置信书名；确认作者视为高置信自动写入，查证输入来自填充结果', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ title: '西游', author: '吴承恩', summary: '取经', book_type: '古典小说', confidence: { author: 'low' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed());
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+
+    expect((lookupBook as jest.Mock).mock.calls[0][0]).toMatchObject({ fileName: 'b1.txt', title: '西游', author: '吴承恩', bookType: '古典小说', summary: '取经' });
+    expect(row('b1').author).toBe('[明] 吴承恩');
+    const s = suggestion('b1');
+    expect(s.fields.title).toMatchObject({ value: '西游记', current: '西游', confidence: 'high' });
+    expect(s.fields.title.evidence).toContain('豆瓣');
+    expect(s.fields.title.evidence).toContain('书名作者一致');
+    expect(s.fields.author).toBeUndefined();   // 已自动写入
+  });
+
+  it('Pass A 作者与文件名一致，但查证确认的作者不同 → 当作未确认：不写确认作者、无书名建议、不用见过的候选，生成默认封面、不写评分', async () => {
+    const b = fileBook('lr', '魔戒');
+    fillSpy.mockResolvedValueOnce({ author: '托尔金', summary: '中土世界', confidence: { author: 'medium' }, evidence: { author: '正文署名' } });
+    const other = { title: '魔戒（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s2.jpg', subjectUrl: 'https://book.douban.com/subject/2/' };
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed(
+      { title: '魔戒三部曲', author: '金庸', doubanAuthor: '金庸', rating: 9.9 },
+      { coverCandidates: [{ title: hit.title, pic: hit.pic, subjectUrl: hit.url }, other] },
+    ));
+    const r = await batchFill({ books: [b] });
+    expect(r.succeeded).toContain('lr');
+    expect(row('lr')).toMatchObject({ author: '托尔金', cover_url: '/covers/b1-default.svg', rating: null });
+    expect(suggestion('lr')).toBeUndefined();   // 无书名建议、无作者建议
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).not.toHaveBeenCalled();
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ai_fetch_cover', details: expect.objectContaining({ title_used: '魔戒', source: 'default' }),
+    }));
+  });
+
+  it('作者冲突且没有其他候选 → 默认封面，不用确认的评分', async () => {
+    const b = fileBook('lr', '魔戒');
+    fillSpy.mockResolvedValueOnce({ author: '托尔金', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ title: '魔戒三部曲', author: '金庸', rating: 9.9 }));
+    await batchFill({ books: [b] });
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).not.toHaveBeenCalled();
+    expect(row('lr')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: null });
+  });
+
+  it('查证跑了但豆瓣没有这本书（no_book）→ 见过的候选都不用：默认封面、不写评分', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({
+      usedFallback: false, noBook: true,
+      coverCandidates: [{ title: '西游记（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s3.jpg', subjectUrl: 'https://book.douban.com/subject/3/' }],
+    }));
+    const r = await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+    expect(r.succeeded).toEqual(['b1']);
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).not.toHaveBeenCalled();
+    expect(row('b1')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: null });
+  });
+
+  it('书名只差书名号 / 空白时不给书名建议；作者已有时建议带豆瓣依据', async () => {
+    insBook(_testDb!, { id: 'b1', title: '《西游 记》', author: '吴承恩', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' }, evidence: { author: '正文署名' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed());
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '《西游 记》', author: '吴承恩' }] });
+    const s = suggestion('b1');
+    expect(s.fields.title).toBeUndefined();
+    expect(s.fields.author).toMatchObject({ value: '[明] 吴承恩', current: '吴承恩', confidence: 'high' });
+    expect(s.fields.author.evidence).toContain('豆瓣：《西游记》');
+  });
+
+  it('封面取第一个候选，评分用查证确认的评分；审计记确认的书名', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ rating: 9.1 }));
+    (downloadCoverFromPic as jest.Mock).mockResolvedValueOnce('/covers/b1.jpg');
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+    expect(downloadCoverFromPic).toHaveBeenCalledWith(hit.pic, 'b1');
+    expect(fetchRating).not.toHaveBeenCalled();
+    expect(row('b1')).toMatchObject({ cover_url: '/covers/b1.jpg', rating: 9.1 });
+    expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ai_fetch_cover', details: expect.objectContaining({ title_used: '西游记', source: 'douban' }),
+    }));
+  });
+
+  it('确认的条目没有封面时不拿其他见过的条目，生成默认封面；评分仍取确认条目', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ hit: { ...hit, pic: undefined } }, {
+      coverCandidates: [{ title: '西游记（插图本）', pic: 'https://img9.doubanio.com/view/subject/s/public/s3.jpg', subjectUrl: 'https://book.douban.com/subject/3/' }],
+    }));
+    (fetchRating as jest.Mock).mockResolvedValueOnce(8.8);
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游' }] });
+    expect(downloadCoverFromPic).not.toHaveBeenCalled();
+    expect(fetchRating).toHaveBeenCalledWith({ url: hit.url });
+    expect(row('b1')).toMatchObject({ cover_url: '/covers/b1-default.svg', rating: 8.8 });
+  });
+
+  it('错标时用确认结果记录错标，字段不自动写', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游记', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({
+      title: '西游记', author: '爱潜水的乌贼', filename_matches: false, content_title: '诡秘之主', mismatch_reason: '正文是诡秘之主',
+      confidence: { title: 'high', author: 'high' },
+    });
+    (lookupBook as jest.Mock).mockResolvedValueOnce(confirmed({ title: '诡秘之主', author: '爱潜水的乌贼', doubanAuthor: '爱潜水的乌贼', hit: { ...hit, title: '诡秘之主' } }));
+    await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游记' }] });
+    expect(row('b1').author).toBeNull();
+    const m = JSON.parse(row('b1').content_mismatch as string);
+    expect(m).toMatchObject({ title: '诡秘之主', author: '爱潜水的乌贼' });
+    expect(m.reason).toMatch(/^正文是诡秘之主；豆瓣：《诡秘之主》/);
+    expect(suggestion('b1').fields.title).toBeUndefined();
+  });
+
+  it('查证抛额度错误 → 任务暂停，这本不盖戳不标失败', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游记', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockRejectedValueOnce(new Error('DeepSeek API error: 402'));
+    const r = await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游记' }] });
+    expect(r.paused?.reason).toBe('quota');
+    expect(r.failed).toHaveLength(0);
+    expect(row('b1')).toMatchObject({ author: null, ai_fill_status: null, ai_fill_version: null });
+  });
+
+  it('查证其他意外出错不影响这本书（尽力而为）', async () => {
+    insBook(_testDb!, { id: 'b1', title: '西游记', file_path: '/nonexistent/b1.txt' });
+    fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+    (lookupBook as jest.Mock).mockRejectedValueOnce(new Error('fetch failed'));
+    const r = await batchFill({ books: [{ id: 'b1', file_path: '/nonexistent/b1.txt', file_format: 'txt', title: '西游记' }] });
+    expect(r.succeeded).toEqual(['b1']);
+    expect(row('b1')).toMatchObject({ author: '吴承恩', ai_fill_status: 'filled', cover_url: '/covers/b1-default.svg' });
+  });
+});
 
 describe('isQuotaError', () => {
   it.each([

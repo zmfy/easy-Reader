@@ -13,6 +13,7 @@ export interface SuggestionChoice {
 
 /**
  * 默认勾选：依据明确 / 推断的字段勾上；低置信、手动改过（锁定）的不勾；标签、类似作品、改编作品有就勾。
+ * 查证给出的书名建议默认不勾，由用户自己勾选采用。
  * 文件名与正文不符（错标）的书一律不勾：可能更想先改文件，而不是把信息换成正文那本书的；
  * 认可 AI 判定时连同「书名」一起勾选，采纳后书名改为正文书名
  */
@@ -21,7 +22,7 @@ export function defaultChoice(s: AiSuggestion): SuggestionChoice {
   if (s.content_mismatch) return { fields, tags: false, similar: false, adaptations: false }
   for (const f of SUGGEST_FIELDS) {
     const x = s.data.fields[f]
-    fields[f] = !!x && x.confidence !== 'low' && !x.locked
+    fields[f] = f !== 'title' && !!x && x.confidence !== 'low' && !x.locked
   }
   return {
     fields,

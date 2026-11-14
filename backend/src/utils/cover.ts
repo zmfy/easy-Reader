@@ -2,6 +2,7 @@ import https from 'https';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { unescapeHtml } from './html';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
 const COVERS_DIR = path.join(DATA_DIR, 'covers');
@@ -186,6 +187,108 @@ export async function doubanSuggestList(title: string, limit = 6): Promise<Douba
   } catch {
     return [];
   }
+}
+
+/** AI 查证用的豆瓣书目命中（只含书条目；封面是 book-default 时省略 pic） */
+export interface DoubanBookHit {
+  title: string;
+  author?: string;
+  year?: string;
+  pic?: string;
+  url: string;
+}
+
+/** Pure: 解析豆瓣联想结果为书目命中（保留无封面的书，与封面候选不同） */
+export function parseDoubanBookHits(json: string, limit = 10): DoubanBookHit[] {
+  let items: unknown;
+  try { items = JSON.parse(json); } catch { return []; }
+  if (!Array.isArray(items)) return [];
+  return (items as DoubanSuggest[])
+    .filter(s => isBookItem(s) && !!s.url)
+    .slice(0, limit)
+    .map(s => ({
+      title: s.title || '',
+      ...(s.author_name ? { author: s.author_name } : {}),
+      ...(s.year ? { year: s.year } : {}),
+      ...(s.pic && !s.pic.includes('book-default') ? { pic: s.pic } : {}),
+      url: s.url!,
+    }));
+}
+
+/** 按检索词搜豆瓣书目；出错抛出，由调用方记录 */
+export async function searchDoubanBooks(query: string): Promise<DoubanBookHit[]> {
+  return parseDoubanBookHits(JSON.stringify(await fetchDoubanSuggest(query)));
+}
+
+/** 豆瓣条目页的详情（AI 查证用） */
+export interface DoubanSubjectDetail {
+  author?: string;
+  translator?: string;
+  publisher?: string;
+  year?: string;
+  intro?: string;
+  tags: string[];
+  rating?: number;
+}
+
+const DOUBAN_INTRO_MAX = 150;
+
+function htmlToText(html: string): string {
+  return unescapeHtml(html.replace(/<(style|script)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ').trim();
+}
+
+/** Pure: 从豆瓣条目页 HTML 提取作者 / 译者 / 出版社 / 年份 / 简介 / 标签 / 评分；缺失的字段留空，不抛错 */
+export function parseDoubanSubjectDetail(html: string): DoubanSubjectDetail {
+  const detail: DoubanSubjectDetail = { tags: [] };
+
+  const info = html.match(/id="info"[^>]*>([\s\S]*?)<\/div>/);
+  if (info) {
+    const fields: Record<string, string> = {};
+    for (const line of info[1].split(/<br\s*\/?>/i)) {
+      const text = htmlToText(line);
+      const m = text.match(/^([^:：]+)[:：]\s*(.+)$/);
+      if (m) fields[m[1].trim()] = m[2].trim();
+    }
+    if (fields['作者']) detail.author = fields['作者'];
+    if (fields['译者']) detail.translator = fields['译者'];
+    if (fields['出版社']) detail.publisher = fields['出版社'];
+    const year = (fields['出版年'] || fields['出版时间'] || '').match(/\d{4}/);
+    if (year) detail.year = year[0];
+  }
+
+  // 只取 #link-report 里第一个 .intro 块（折叠页是 short 摘要，未折叠页就是全文），避免越界读到后面的页面文字
+  const report = html.match(/id="link-report"[\s\S]*?<div class="intro">([\s\S]*?)<\/div>/);
+  if (report) {
+    const intro = htmlToText(report[1]);
+    if (intro) detail.intro = intro.slice(0, DOUBAN_INTRO_MAX);
+  }
+
+  const tagsSection = html.match(/id="db-tags-section"[\s\S]*?(?=<div id=|$)/);
+  if (tagsSection) {
+    for (const m of tagsSection[0].matchAll(/<a[^>]*class="[^"]*\btag\b[^"]*"[^>]*>([^<]+)<\/a>/g)) detail.tags.push(m[1].trim());
+  }
+  if (!detail.tags.length) {
+    // 未登录的条目页没有 #db-tags-section，标签只在广告参数 criteria = '7:奇幻|7:小说|3:/subject/..' 里
+    const criteria = html.match(/criteria\s*=\s*'([^']*)'/);
+    if (criteria) {
+      detail.tags = criteria[1].split('|').filter(t => t.startsWith('7:')).map(t => t.slice(2).trim()).filter(Boolean);
+    }
+  }
+
+  const rating = parseDoubanRating(html);
+  if (rating !== undefined) detail.rating = rating;
+  return detail;
+}
+
+/** 抓取并解析豆瓣条目页；url 必须是豆瓣书条目页，否则抛错 */
+export async function fetchDoubanSubjectDetail(url: string): Promise<DoubanSubjectDetail> {
+  if (!isAllowedDoubanSubjectUrl(url)) throw new Error('不是允许的豆瓣条目页地址');
+  const buf = await request(url, {
+    'Accept': 'text/html,application/xhtml+xml',
+    'Referer': 'https://book.douban.com/',
+  }, 4, isDoubanBookHost);
+  return parseDoubanSubjectDetail(buf.toString('utf-8'));
 }
 
 const IMAGE_HEADERS = {

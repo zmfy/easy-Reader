@@ -21,6 +21,7 @@ import { BookNotFoundError, LockableField, SimilarWork } from './ai-fill-preview
 export type CoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' };
 
 export interface AiFillApplyInput {
+  title?: string;
   author?: string;
   summary?: string;
   category?: string;
@@ -35,7 +36,7 @@ export interface AiFillApplyInput {
   /** 默认封面上印的书名（预览返回的 coverTitle）；未提供时用清洗后的书名 */
   coverTitle?: string;
   /** 预览返回的 AI 建议原样回传，用于区分「接受 AI 结果」与「手动修改」 */
-  suggested: { author?: string; summary?: string; category?: string };
+  suggested: { title?: string; author?: string; summary?: string; category?: string };
 }
 
 const adaptationSchema = z.object({
@@ -54,6 +55,7 @@ const similarWorkSchema = z.object({
 
 // 上限按「已有内容 / AI 结果可能达到的长度」放宽（导入的简介常超过 5000 字）
 const aiFillApplySchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
   author: z.string().trim().max(200).optional(),
   summary: z.string().trim().max(20000).optional(),
   category: z.string().trim().max(200).optional(),
@@ -69,6 +71,7 @@ const aiFillApplySchema = z.object({
   ratingSubjectUrl: z.string().max(500).optional(),
   coverTitle: z.string().trim().max(200).optional(),
   suggested: z.object({
+    title: z.string().optional(),
     author: z.string().optional(),
     summary: z.string().optional(),
     category: z.string().optional(),
@@ -76,7 +79,7 @@ const aiFillApplySchema = z.object({
 });
 
 const FIELD_LABELS: Record<string, string> = {
-  author: '作者', summary: '简介', category: '分类', is_finished: '连载状态',
+  title: '书名', author: '作者', summary: '简介', category: '分类', is_finished: '连载状态',
   recommended_tags: '推荐标签', similar_works: '类似作品', adaptations: '改编作品', cover: '封面', coverTitle: '封面书名',
 };
 
@@ -94,7 +97,7 @@ export class AiFillApplyError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
-const LOCKABLE: LockableField[] = ['author', 'summary', 'category'];
+const LOCKABLE: LockableField[] = ['title', 'author', 'summary', 'category'];
 
 async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string | undefined> {
   const cover = input.cover;
@@ -142,6 +145,11 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
     // 只比较去掉首尾空白后的内容：现有值可能带换行（导入 / 手动保存），提交值经过 trim
     const current = ((book[field] as string | null | undefined) ?? '').trim();
     const suggestion = input.suggested[field]?.trim();
+    if (field === 'title') {
+      // 书名：只要改了就锁定（不论是否等于 AI 建议），没改就不动书名和锁定状态
+      if (value.trim() !== current) { updates.push('title = ?'); values.push(value.trim()); toLock.push(field); }
+      continue;
+    }
     if (suggestion && value.trim() === suggestion) {
       // 接受 AI 结果：内容已是 AI 的，解除锁定
       if (value.trim() !== current) { updates.push(`${field} = ?`); values.push(value); }
