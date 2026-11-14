@@ -8,7 +8,7 @@ export interface LibraryQuery {
   category?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
-  status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all'
+  status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'damaged' | 'all'
   ai_fill?: 'filled' | 'failed' | 'none' | 'all'
 }
 
@@ -133,7 +133,7 @@ export const libraryApi = {
     ai_fill?: 'all' | 'filled' | 'failed' | 'none';
     /** '1'：只看 AI 判定文件名与正文不符的书 */
     mismatch?: '1';
-    status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'all';
+    status?: 'normal' | 'problems' | 'duplicate' | 'duplicate_groups' | 'garbled' | 'damaged' | 'all';
   } = {}) =>
     http.get<PaginatedResponse<Book>>('/library', { params }),
 

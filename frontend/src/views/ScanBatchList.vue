@@ -22,7 +22,8 @@
               新增 {{ summary(row.summary_counts).new }}，
               重复组 {{ summary(row.summary_counts).duplicate_groups }}，
               系列 {{ summary(row.summary_counts).series }}，
-              乱码 {{ summary(row.summary_counts).garbled }}
+              乱码 {{ summary(row.summary_counts).garbled }}<template v-if="summary(row.summary_counts).damaged">，
+              损坏 {{ summary(row.summary_counts).damaged }}</template>
             </span>
           </template>
         </el-table-column>

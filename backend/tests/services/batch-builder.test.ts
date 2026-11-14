@@ -54,6 +54,7 @@ describe('buildBatchFromScan', () => {
       ],
       garbled: [{ file_path: '/g', reason: 'random bytes' }],
       encoding_fixed: [{ file_path: '/e', from_encoding: 'gbk', to_encoding: 'utf-8' }],
+      damaged: [],
     };
 
     const batch = buildBatchFromScan(taskId, scan, db);
@@ -85,7 +86,7 @@ describe('buildBatchFromScan', () => {
           { file_path: '/b.txt', fingerprint: 'fpB', decision_type: 'soft' as const },
         ],
       }],
-      series_groups: [], garbled: [], encoding_fixed: [],
+      series_groups: [], garbled: [], encoding_fixed: [], damaged: [],
     };
     const batch = buildBatchFromScan('task-soft', scan, db);
     const items = db.prepare("SELECT type FROM scan_batch_items WHERE batch_id = ?").all(batch.id) as Array<{ type: string }>;
@@ -99,7 +100,7 @@ describe('buildBatchesFromScan 按书数拆批', () => {
   const nb = (p: string) => ({ file_path: p, title: p, file_format: 'txt', file_size: 1, fingerprint: 'f' + p, status: 'normal' as const });
   const empty = (): ScanResult => ({
     new_books: [], hard_duplicate_groups: [], ai_duplicate_groups: [], soft_duplicate_groups: [],
-    series_groups: [], garbled: [], encoding_fixed: [],
+    series_groups: [], garbled: [], encoding_fixed: [], damaged: [],
   });
   const itemsOf = (batchId: string) =>
     (db.prepare('SELECT type, payload FROM scan_batch_items WHERE batch_id = ?').all(batchId) as Array<{ type: string; payload: string }>)
@@ -144,5 +145,25 @@ describe('buildBatchesFromScan 按书数拆批', () => {
 
   it('结果为空时仍建一个空批次（与原来一致）', () => {
     expect(buildBatchesFromScan('t', empty(), db, 3)).toHaveLength(1);
+  });
+
+  it('损坏 EPUB 另外成批，只含 damaged 项，计入 summary_counts.damaged', () => {
+    const scan = empty();
+    scan.new_books = [nb('/a.txt'), nb('/b.txt')];
+    const dmg = (p: string) => ({ file_path: p, file_size: 10, file_mtime: 123.5, reason: '解析超时' });
+    scan.damaged = [dmg('/x.epub'), dmg('/y.epub')];
+    const batches = buildBatchesFromScan('t', scan, db);
+    expect(batches).toHaveLength(2);
+    const types = batches.map(b => itemsOf(b.id).map(i => i.type).sort());
+    expect(types).toEqual([['new', 'new'], ['damaged', 'damaged']]);
+    expect(batches.map(b => JSON.parse(b.summary_counts).damaged)).toEqual([0, 2]);
+    expect(itemsOf(batches[1].id)[0].payload).toEqual(dmg('/x.epub'));
+  });
+
+  it('损坏批次同样受每批上限限制', () => {
+    const scan = empty();
+    scan.damaged = Array.from({ length: 5 }, (_, i) => ({ file_path: `/d${i}.epub`, file_size: 1, file_mtime: 1, reason: '解析超时' }));
+    const batches = buildBatchesFromScan('t', scan, db, 2);
+    expect(batches.map(b => JSON.parse(b.summary_counts).damaged)).toEqual([2, 2, 1]);
   });
 });

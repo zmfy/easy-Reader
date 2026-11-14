@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { randomUUID as uuidv4 } from 'crypto';
+import os from 'os';
 import { applyBatch } from '../../src/services/batch-applier';
+import { computeFingerprint } from '../../src/utils/fingerprint';
 import { _setDbForTesting } from '../../src/services/manual-override';
 
 let db: Database.Database;
@@ -18,8 +20,9 @@ function setup(): void {
       duplicate_of TEXT, series_id TEXT, chapter_count INTEGER, fingerprint TEXT,
       first_chapter_hash TEXT, encoding_detected TEXT, manually_edited_fields TEXT,
       imported_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_finished INTEGER DEFAULT 0,
-      file_mtime REAL, fingerprint_version INTEGER
+      file_mtime REAL, fingerprint_version INTEGER, health_check_version INTEGER, damage_reason TEXT
     );
+    CREATE TABLE scan_skipped_files (file_path TEXT PRIMARY KEY, file_size INTEGER NOT NULL, file_mtime REAL, skipped_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT NOT NULL, summary TEXT, cover_url TEXT, author TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE scan_batches (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, applied_at DATETIME, applied_by TEXT, apply_summary TEXT, part_index INTEGER, part_count INTEGER);
     CREATE TABLE scan_batch_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, type TEXT NOT NULL, payload TEXT NOT NULL, admin_decision TEXT, admin_payload TEXT, reviewed_at DATETIME, reviewed_by TEXT);
@@ -34,11 +37,11 @@ afterEach(() => {
   if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
 });
 
-function makeBatch(items: Array<{ type: string; payload: unknown }>): string {
+function makeBatch(items: Array<{ type: string; payload: unknown; decision?: string }>): string {
   const batchId = uuidv4();
   db.prepare(`INSERT INTO scan_batches (id, task_id, status) VALUES (?, ?, 'pending')`).run(batchId, uuidv4());
-  const ins = db.prepare(`INSERT INTO scan_batch_items (id, batch_id, type, payload) VALUES (?, ?, ?, ?)`);
-  for (const it of items) ins.run(uuidv4(), batchId, it.type, JSON.stringify(it.payload));
+  const ins = db.prepare(`INSERT INTO scan_batch_items (id, batch_id, type, payload, admin_decision) VALUES (?, ?, ?, ?, ?)`);
+  for (const it of items) ins.run(uuidv4(), batchId, it.type, JSON.stringify(it.payload), it.decision ?? null);
   return batchId;
 }
 
@@ -250,5 +253,80 @@ describe('applyBatch remembers "not duplicate" decisions', () => {
       applyBatch(batchId, 'admin1', db);
     }
     expect(pairs()).toEqual(['A|B', 'A|C', 'B|C']);
+  });
+});
+
+describe('applyBatch 损坏 EPUB', () => {
+  let dir: string;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'applier-damaged-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const damagedItem = (file: string, decision?: string) => ({
+    type: 'damaged', decision,
+    payload: { file_path: file, file_size: 1234, file_mtime: 1700000000123.25, reason: '文件不完整（可能下载或复制中断）' },
+  });
+  const skipRow = (file: string) => db.prepare('SELECT file_size, file_mtime FROM scan_skipped_files WHERE file_path = ?').get(file);
+  const bookByPath = (file: string) => db.prepare('SELECT * FROM books WHERE file_path = ?').get(file) as any;
+
+  it('有未决定的 damaged 项 → 抛错，批次仍是 pending', () => {
+    const batchId = makeBatch([damagedItem('/x.epub')]);
+    expect(() => applyBatch(batchId, 'admin1', db)).toThrow('请先为每本损坏的书选择导入或跳过');
+    expect((db.prepare('SELECT status FROM scan_batches WHERE id = ?').get(batchId) as any).status).toBe('pending');
+  });
+
+  it('accept → 以 damaged 状态入库，写原因、大小、修改时间、指纹与检查版本，并清掉跳过记录', async () => {
+    const file = path.join(dir, '坏书 作者：张三.epub');
+    fs.writeFileSync(file, 'PK broken zip bytes');
+    db.prepare('INSERT INTO scan_skipped_files (file_path, file_size, file_mtime) VALUES (?, 1, 1)').run(file);
+    const batchId = makeBatch([damagedItem(file, 'accept')]);
+    const result = applyBatch(batchId, 'admin1', db);
+    expect(result.damaged_imported).toBe(1);
+    expect(result.errors).toEqual([]);
+    const row = bookByPath(file);
+    expect(row).toMatchObject({
+      status: 'damaged', damage_reason: '文件不完整（可能下载或复制中断）', file_size: 1234,
+      file_mtime: 1700000000123.25, file_format: 'epub', title: '坏书 作者：张三', author: '张三',
+      fingerprint_version: 2, health_check_version: 1,
+    });
+    expect(row.fingerprint).toBe((await computeFingerprint(file, 'epub')).fingerprint);
+    expect(skipRow(file)).toBeUndefined();
+  });
+
+  it('accept 时文件已不在 → 仍入库，指纹为空，不报错', () => {
+    const batchId = makeBatch([damagedItem('/gone/坏书.epub', 'accept')]);
+    const result = applyBatch(batchId, 'admin1', db);
+    expect(result.errors).toEqual([]);
+    expect(bookByPath('/gone/坏书.epub')).toMatchObject({ status: 'damaged', fingerprint: null, author: null });
+  });
+
+  it('accept 且书库已有同路径的书 → 按路径更新为 damaged', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('b1', '原书', '/x.epub', 'epub', 1, 'normal')").run();
+    applyBatch(makeBatch([damagedItem('/x.epub', 'accept')]), 'admin1', db);
+    expect(db.prepare('SELECT COUNT(*) AS c FROM books').get()).toEqual({ c: 1 });
+    expect(bookByPath('/x.epub')).toMatchObject({ id: 'b1', status: 'damaged', file_size: 1234, health_check_version: 1 });
+  });
+
+  it('accept 且同路径的书是主书 → 指向它的重复书提升为 normal', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('b1', '原书', '/x.epub', 'epub', 1, 'normal')").run();
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status, duplicate_of) VALUES ('b2', '副本', '/y.epub', 'epub', 1, 'duplicate', 'b1')").run();
+    applyBatch(makeBatch([damagedItem('/x.epub', 'accept')]), 'admin1', db);
+    expect(db.prepare('SELECT status, duplicate_of FROM books WHERE id = ?').get('b2')).toEqual({ status: 'normal', duplicate_of: null });
+  });
+
+  it('reject → 写跳过记录，书库无此书', () => {
+    const result = applyBatch(makeBatch([damagedItem('/x.epub', 'reject')]), 'admin1', db);
+    expect(result.damaged_skipped).toBe(1);
+    expect(bookByPath('/x.epub')).toBeUndefined();
+    expect(skipRow('/x.epub')).toEqual({ file_size: 1234, file_mtime: 1700000000123.25 });
+  });
+
+  it('new 项应用：写检查版本、清空 damage_reason，原 damaged 书回到 normal', () => {
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status, damage_reason) VALUES ('b1', '书', '/x.epub', 'epub', 1, 'damaged', '解析超时')").run();
+    applyBatch(makeBatch([
+      { type: 'new', payload: { file_path: '/x.epub', title: '书', file_format: 'epub', file_size: 9, status: 'normal', health_check_version: 1 } },
+      { type: 'new', payload: { file_path: '/y.epub', title: '书2', file_format: 'epub', file_size: 9, status: 'normal', health_check_version: 1 } },
+    ]), 'admin1', db);
+    expect(bookByPath('/x.epub')).toMatchObject({ status: 'normal', damage_reason: null, health_check_version: 1 });
+    expect(bookByPath('/y.epub')).toMatchObject({ status: 'normal', damage_reason: null, health_check_version: 1 });
   });
 });

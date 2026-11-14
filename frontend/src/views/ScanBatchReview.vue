@@ -5,11 +5,12 @@
         <template #actions>
           <el-tag v-if="batch" :type="statusType" size="small">{{ statusLabel }}</el-tag>
           <el-tag v-if="!readOnly && unreviewedCount > 0" type="warning">{{ unreviewedCount }} 项未审视</el-tag>
+          <el-tag v-if="!readOnly && undecidedDamaged > 0" type="danger">还有 {{ undecidedDamaged }} 本损坏的书没选</el-tag>
           <el-button v-if="!readOnly" type="danger" plain @click="onDiscard">废弃批次</el-button>
           <el-button
             v-if="!readOnly"
             type="primary"
-            :disabled="batch?.status !== 'pending'"
+            :disabled="batch?.status !== 'pending' || undecidedDamaged > 0"
             @click="onApply"
           >应用全部</el-button>
         </template>
@@ -32,6 +33,10 @@
           关联重复 {{ appliedSummary.duplicates_linked }} ·
           创建系列 {{ appliedSummary.series_created }} ·
           标乱码 {{ appliedSummary.garbled_marked }}
+          <template v-if="appliedSummary.damaged_imported || appliedSummary.damaged_skipped">
+            · 损坏导入 {{ appliedSummary.damaged_imported ?? 0 }} ·
+            损坏跳过 {{ appliedSummary.damaged_skipped ?? 0 }}
+          </template>
           <span v-if="appliedSummary.errors.length > 0" class="errors">
             · <strong>错误 {{ appliedSummary.errors.length }}</strong>
           </span>
@@ -48,6 +53,7 @@
             <div v-for="item in paged('new')" :key="item.id" class="new-row">
               <span class="path" :title="payload(item).file_path">{{ shortPath(payload(item).file_path) }}</span>
               <span class="meta">{{ payload(item).chapter_count }} 章</span>
+              <el-tag v-if="payload(item).repaired" size="small" type="info">已自动修正</el-tag>
               <BatchItemPreview :batch-id="batch.id" :file-path="payload(item).file_path" />
             </div>
             <el-pagination
@@ -159,6 +165,42 @@
             />
           </div>
         </el-collapse-item>
+
+        <el-collapse-item v-if="grouped.damaged.length > 0" :name="'damaged'">
+          <template #title>
+            <span class="panel-title">文件损坏（逐本选择导入或跳过） <el-badge :value="grouped.damaged.length" type="danger" /></span>
+          </template>
+          <div v-if="activePanels.includes('damaged')" class="panel-body">
+            <p class="damaged-hint">导入后在书库中标为「损坏」，打不开时会提示原因；跳过则不入书库，文件不变时下次扫描不再提示。</p>
+            <div v-for="item in paged('damaged')" :key="item.id" class="damaged-row">
+              <span class="path" :title="payload(item).file_path">{{ shortPath(payload(item).file_path) }}</span>
+              <span class="meta">{{ formatSize(payload(item).file_size) }}</span>
+              <span class="reason">{{ payload(item).reason }}</span>
+              <el-radio-group
+                v-if="!readOnly"
+                class="damaged-choice"
+                size="small"
+                :model-value="item.admin_decision ?? undefined"
+                @change="(v) => onDamagedDecide(item.id, v)"
+              >
+                <el-radio-button value="accept">导入</el-radio-button>
+                <el-radio-button value="reject">跳过</el-radio-button>
+              </el-radio-group>
+              <el-tag v-else-if="item.admin_decision" size="small" type="info" class="damaged-choice">
+                {{ item.admin_decision === 'reject' ? '已跳过' : '已导入' }}
+              </el-tag>
+            </div>
+            <el-pagination
+              v-if="grouped.damaged.length > PAGE_SIZE"
+              v-model:current-page="pages.damaged"
+              :page-size="PAGE_SIZE"
+              :total="grouped.damaged.length"
+              layout="prev, pager, next, ->, total"
+              small
+              background
+            />
+          </div>
+        </el-collapse-item>
       </el-collapse>
       </div>
     </div>
@@ -177,6 +219,7 @@ import SeriesGroupCard from '@/components/SeriesGroupCard.vue'
 import BatchItemPreview from '@/components/BatchItemPreview.vue'
 import { scanBatchesApi } from '@/api/scan-batches'
 import { useSystemNoticeStore } from '@/stores/system-notice'
+import { undecidedDamagedCount } from '@/utils/scan-review'
 import type { ScanBatch, ScanBatchItem } from '@/types'
 
 const PAGE_SIZE = 20
@@ -196,7 +239,7 @@ const loading = ref(false)
 // Default: all collapsed for performance; user must click to expand
 const activePanels = ref<string[]>([])
 const pages = reactive<Record<string, number>>({
-  new: 1, duplicate_group: 1, series: 1, garbled: 1, encoding_fixed: 1,
+  new: 1, duplicate_group: 1, series: 1, garbled: 1, encoding_fixed: 1, damaged: 1,
 })
 
 const readOnly = computed(() => batch.value?.status !== 'pending')
@@ -216,6 +259,9 @@ interface ApplySummary {
   duplicates_linked: number
   series_created: number
   garbled_marked: number
+  // 旧批次的应用结果没有这两项
+  damaged_imported?: number
+  damaged_skipped?: number
   errors: Array<{ item_id: string; message: string }>
 }
 const appliedSummary = computed<ApplySummary | null>(() => {
@@ -237,7 +283,7 @@ function decisionOf(item: ScanBatchItem): 'accepted' | 'rejected' | null {
 
 const grouped = computed(() => {
   const out: Record<string, ScanBatchItem[]> = {
-    new: [], duplicate_group: [], series: [], garbled: [], encoding_fixed: [],
+    new: [], duplicate_group: [], series: [], garbled: [], encoding_fixed: [], damaged: [],
   }
   for (const it of items.value) {
     if (it.type in out) out[it.type].push(it)
@@ -248,16 +294,28 @@ const grouped = computed(() => {
     series: ScanBatchItem[]
     garbled: ScanBatchItem[]
     encoding_fixed: ScanBatchItem[]
+    damaged: ScanBatchItem[]
   }
 })
 
-function paged(type: 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed'): ScanBatchItem[] {
+function paged(type: 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'damaged'): ScanBatchItem[] {
   const all = grouped.value[type]
   const start = (pages[type] - 1) * PAGE_SIZE
   return all.slice(start, start + PAGE_SIZE)
 }
 
 const unreviewedCount = computed(() => items.value.filter(i => !i.admin_decision).length)
+// 损坏的书必须逐本选「导入 / 跳过」才能应用（后端同样拒绝）
+const undecidedDamaged = computed(() => undecidedDamagedCount(items.value))
+
+function formatSize(bytes?: number): string {
+  if (!bytes) return '-'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let v = bytes
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
 
 async function fetchBatch(): Promise<void> {
   loading.value = true
@@ -265,6 +323,8 @@ async function fetchBatch(): Promise<void> {
     const resp = await scanBatchesApi.get(batchId)
     batch.value = resp.data.data!.batch
     items.value = resp.data.data!.items
+    // 有待选择的损坏书时默认展开该栏，免得找不到「应用」为何不可用
+    if (undecidedDamaged.value > 0 && !activePanels.value.includes('damaged')) activePanels.value.push('damaged')
   } finally {
     loading.value = false
   }
@@ -282,6 +342,11 @@ async function onItemReject(itemId: string): Promise<void> {
   await scanBatchesApi.updateItem(batchId, itemId, 'reject')
   await fetchBatch()
 }
+async function onDamagedDecide(itemId: string, v: string | number | boolean | undefined): Promise<void> {
+  if (v !== 'accept' && v !== 'reject') return
+  await scanBatchesApi.updateItem(batchId, itemId, v)
+  await fetchBatch()
+}
 async function onApply(): Promise<void> {
   await ElMessageBox.confirm(
     `确认应用？\n${unreviewedCount.value} 项未审视将按 AI 判定执行（重复=合并、系列=归纳）。`,
@@ -292,7 +357,7 @@ async function onApply(): Promise<void> {
   const r = resp.data.data!
   ElMessage({
     type: r.errors.length > 0 ? 'warning' : 'success',
-    message: `已应用：新增 ${r.inserted} · 更新 ${r.updated} · 关联重复 ${r.duplicates_linked} · 创建系列 ${r.series_created} · 标乱码 ${r.garbled_marked}${r.errors.length > 0 ? ` · 错误 ${r.errors.length}` : ''}`,
+    message: `已应用：新增 ${r.inserted} · 更新 ${r.updated} · 关联重复 ${r.duplicates_linked} · 创建系列 ${r.series_created} · 标乱码 ${r.garbled_marked}${r.damaged_imported || r.damaged_skipped ? ` · 损坏导入 ${r.damaged_imported} · 损坏跳过 ${r.damaged_skipped}` : ''}${r.errors.length > 0 ? ` · 错误 ${r.errors.length}` : ''}`,
     duration: 6000,
   })
   void noticeStore.loadTasks()   // 铃铛里的待审核提醒随之更新（全部审完则消失）
@@ -320,7 +385,7 @@ onMounted(fetchBatch)
 .section-card--flush :deep(.el-collapse-item__content) { padding: 0 24px 16px; }
 .section-card--flush :deep(.el-collapse-item:last-child .el-collapse-item__wrap) { border-bottom: none; }
 .panel-body { padding: 8px 0; }
-.new-row, .fix-row, .garbled-row {
+.new-row, .fix-row, .garbled-row, .damaged-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -330,4 +395,7 @@ onMounted(fetchBatch)
 .path { font-family: var(--font-mono); }
 .meta { color: var(--text-2); }
 .reason { color: var(--danger); font-size: 12px; }
+.damaged-hint { margin: 0 0 8px; font-size: 12px; color: var(--text-2); }
+.damaged-row .path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.damaged-choice { margin-left: auto; flex: none; }
 </style>

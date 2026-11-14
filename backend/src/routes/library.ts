@@ -48,8 +48,9 @@ const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 
 // GET /api/library
 // status query: defaults to "normal-only" (hides duplicate + garbled).
-//   ?status=problems → only books with status in ('duplicate','garbled')
+//   ?status=problems → only books with status in ('duplicate','garbled','damaged')
 //   ?status=garbled  → only garbled
+//   ?status=damaged  → only damaged EPUB
 //   ?status=duplicate → only duplicates
 //   ?status=all      → no status filter (admin debug)
 router.get('/', authMiddleware, (req: Request, res: Response) => {
@@ -78,7 +79,9 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
   // status filter: problems/garbled/duplicate are explicit (ProblemBooks view).
   // include_dirty=true is an alias for status=all (show dirty books in mainline list).
   if (statusFilter === 'problems') {
-    whereClause += " AND status IN ('duplicate','garbled')";
+    whereClause += " AND status IN ('duplicate','garbled','damaged')";
+  } else if (statusFilter === 'damaged') {
+    whereClause += " AND status = 'damaged'";
   } else if (statusFilter === 'garbled') {
     whereClause += " AND status = 'garbled'";
   } else if (statusFilter === 'duplicate') {
@@ -87,7 +90,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     // no status filter
   } else {
     // default: normal-only library view — hide duplicate + garbled
-    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled'))";
+    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged'))";
   }
 
   // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)

@@ -25,7 +25,9 @@ export interface Book {
   file_size?: number;
   imported_at: string;
   // 扫描增强字段（Plan 1）
-  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed';
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged';
+  damage_reason?: string | null;
+  health_check_version?: number | null;
   ai_fill_status?: 'filled' | 'failed' | null;
   duplicate_of?: string | null;
   series_id?: string | null;
@@ -202,6 +204,7 @@ export type ScanBatchItemType =
   | 'series'
   | 'garbled'
   | 'encoding_fixed'
+  | 'damaged'
   | 'ai_fill_failed';
 
 export interface ScanBatchItem {
@@ -228,6 +231,8 @@ export interface NewBookPayload {
   status?: 'normal' | 'encoding_fixed';
   file_mtime?: number;
   fingerprint_version?: number;
+  repaired?: boolean;            // EPUB 打开时被自动修正过
+  health_check_version?: number;
 }
 
 export interface DuplicateGroupPayload {
@@ -260,6 +265,13 @@ export interface EncodingFixedPayload {
   file_path: string;
   from_encoding: string;
   to_encoding: 'utf-8';
+}
+
+export interface DamagedPayload {
+  file_path: string;
+  file_size: number;
+  file_mtime: number | null;
+  reason: string;
 }
 
 export type ManualOverrideType =

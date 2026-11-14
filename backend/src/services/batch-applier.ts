@@ -6,8 +6,24 @@ import {
   NewBookPayload,
   DuplicateGroupPayload,
   SeriesGroupPayload,
+  DamagedPayload,
 } from '../types';
 import { createOverride, isNotDuplicate } from './manual-override';
+import { recordSkip, clearSkip } from './scan-skips';
+import { promoteDuplicatesOf } from './relation-cleanup';
+import { FINGERPRINT_VERSION } from './scan-versions';
+import { HEALTH_CHECK_VERSION } from './epub-health';
+import { computeGenericFingerprintSync } from '../utils/fingerprint';
+import { extractAuthorFromName } from '../utils/title-normalizer';
+
+export const DAMAGED_UNDECIDED_MESSAGE = '请先为每本损坏的书选择导入或跳过';
+
+/** 批次里有还没决定导入 / 跳过的损坏 EPUB：这样的批次不能应用 */
+export function hasUndecidedDamaged(db: Database.Database, batchId: string): boolean {
+  return !!db.prepare(
+    "SELECT 1 FROM scan_batch_items WHERE batch_id = ? AND type = 'damaged' AND admin_decision IS NULL LIMIT 1"
+  ).get(batchId);
+}
 
 export interface ApplyResult {
   inserted: number;
@@ -15,6 +31,8 @@ export interface ApplyResult {
   duplicates_linked: number;
   series_created: number;
   garbled_marked: number;
+  damaged_imported: number;
+  damaged_skipped: number;
   errors: Array<{ item_id: string; message: string }>;
 }
 
@@ -30,6 +48,8 @@ export interface ApplyResult {
  *  - 'garbled': UPDATE matching book.status = 'garbled' (book must already exist
  *      via a 'new' item in same batch or earlier)
  *  - 'encoding_fixed': UPDATE matching book.status = 'encoding_fixed'
+ *  - 'damaged': accept → 以 status='damaged' 入库（或按路径更新）；reject → 记跳过记录。
+ *      必须逐本决定，有未决定的项时抛错
  *
  * Returns aggregated counts. All work in a transaction.
  */
@@ -43,6 +63,7 @@ export function applyBatch(
     | { id: string }
     | undefined;
   if (!batch) throw new Error(`Batch ${batchId} not found or not pending`);
+  if (hasUndecidedDamaged(db, batchId)) throw new Error(DAMAGED_UNDECIDED_MESSAGE);
 
   const items = db.prepare(
     'SELECT id, type, payload, admin_decision, admin_payload FROM scan_batch_items WHERE batch_id = ? ORDER BY type'
@@ -60,6 +81,8 @@ export function applyBatch(
     duplicates_linked: 0,
     series_created: 0,
     garbled_marked: 0,
+    damaged_imported: 0,
+    damaged_skipped: 0,
     errors: [],
   };
 
@@ -72,7 +95,7 @@ export function applyBatch(
       // 仍是重复的书会在随后的 duplicate_group 阶段被重新标记；不清的话，状态正常却指向原书，
       // 删除原书并级联时会把这本书的文件一起删掉
       db.prepare(
-        `UPDATE books SET title = ?, author = COALESCE(NULLIF(author, ''), ?), fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, fingerprint_version = ? WHERE id = ?`
+        `UPDATE books SET title = ?, author = COALESCE(NULLIF(author, ''), ?), fingerprint = ?, first_chapter_hash = ?, chapter_count = ?, encoding_detected = ?, status = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, fingerprint_version = ?, health_check_version = COALESCE(?, health_check_version), damage_reason = NULL WHERE id = ?`
       ).run(
         payload.title,
         payload.author ?? null,
@@ -84,6 +107,7 @@ export function applyBatch(
         payload.file_size,
         payload.file_mtime ?? null,
         payload.fingerprint_version ?? null,
+        payload.health_check_version ?? null,
         existing.id,
       );
       result.updated++;
@@ -91,8 +115,8 @@ export function applyBatch(
     }
     const id = uuidv4();
     db.prepare(
-      `INSERT INTO books (id, title, author, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected, file_mtime, fingerprint_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO books (id, title, author, file_path, file_format, file_size, status, fingerprint, first_chapter_hash, chapter_count, encoding_detected, file_mtime, fingerprint_version, health_check_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       payload.title,
@@ -107,6 +131,7 @@ export function applyBatch(
       payload.encoding_detected ?? null,
       payload.file_mtime ?? null,
       payload.fingerprint_version ?? null,
+      payload.health_check_version ?? null,
     );
     result.inserted++;
     return id;
@@ -311,6 +336,52 @@ export function applyBatch(
         } else if (r.changes > 0 && it.type === 'garbled') {
           result.garbled_marked++;
         }
+      } catch (e) {
+        result.errors.push({ item_id: it.id, message: (e as Error).message });
+      }
+    }
+
+    // Phase 5: damaged（损坏 EPUB）。写入真实的大小与修改时间，之后扫描文件没变就不再重新检查
+    for (const it of items) {
+      if (it.type !== 'damaged') continue;
+      try {
+        const payload = JSON.parse(it.admin_payload ?? it.payload) as DamagedPayload;
+        if (it.admin_decision === 'reject') {
+          recordSkip(db, payload);
+          result.damaged_skipped++;
+          continue;
+        }
+        let fingerprint: string | null = null;
+        try {
+          fingerprint = computeGenericFingerprintSync(payload.file_path).fingerprint;
+        } catch { /* file may have moved; ok */ }
+        const existing = idForPath(payload.file_path);
+        if (existing) {
+          db.prepare(
+            `UPDATE books SET status = 'damaged', damage_reason = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, fingerprint = ?, fingerprint_version = ?, health_check_version = ? WHERE id = ?`
+          ).run(payload.reason, payload.file_size, payload.file_mtime, fingerprint, FINGERPRINT_VERSION, HEALTH_CHECK_VERSION, existing);
+          // 损坏的书不再当主书：指向它的重复书提升为普通书
+          promoteDuplicatesOf(db, [existing]);
+        } else {
+          const base = path.basename(payload.file_path);
+          db.prepare(
+            `INSERT INTO books (id, title, author, file_path, file_format, file_size, file_mtime, status, damage_reason, fingerprint, fingerprint_version, health_check_version)
+             VALUES (?, ?, ?, ?, 'epub', ?, ?, 'damaged', ?, ?, ?, ?)`
+          ).run(
+            uuidv4(),
+            base.replace(/\.[^.]+$/, ''),
+            extractAuthorFromName(base),
+            payload.file_path,
+            payload.file_size,
+            payload.file_mtime,
+            payload.reason,
+            fingerprint,
+            FINGERPRINT_VERSION,
+            HEALTH_CHECK_VERSION,
+          );
+        }
+        clearSkip(db, payload.file_path);
+        result.damaged_imported++;
       } catch (e) {
         result.errors.push({ item_id: it.id, message: (e as Error).message });
       }

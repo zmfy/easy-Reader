@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
-import { applyBatch } from '../services/batch-applier';
+import { applyBatch, hasUndecidedDamaged, DAMAGED_UNDECIDED_MESSAGE } from '../services/batch-applier';
 import { ScanBatch, ScanBatchItem } from '../types';
 import { isPathInsideRoot } from '../utils/path-safe';
 
@@ -94,6 +94,7 @@ router.post('/:id/apply', authMiddleware, adminMiddleware, (req: Request, res: R
     | undefined;
   if (!batch) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '批次不存在'); return; }
   if (batch.status !== 'pending') { errorResponse(res, 409, 'BATCH_ALREADY_APPLIED', '批次状态非 pending'); return; }
+  if (hasUndecidedDamaged(db, batch.id)) { errorResponse(res, 422, 'VALIDATION_ERROR', DAMAGED_UNDECIDED_MESSAGE); return; }
   try {
     const result = applyBatch(req.params.id, req.user!.userId);
     successResponse(res, result, '已应用');
