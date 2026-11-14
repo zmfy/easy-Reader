@@ -8,6 +8,7 @@ import {
   SeriesGroupPayload,
   GarbledPayload,
   EncodingFixedPayload,
+  DamagedPayload,
 } from '../types';
 
 export interface ScanResult {
@@ -18,6 +19,7 @@ export interface ScanResult {
   series_groups: SeriesGroupPayload[];
   garbled: GarbledPayload[];
   encoding_fixed: EncodingFixedPayload[];
+  damaged: DamagedPayload[];
 }
 
 /** 扫描审核每批最多这么多本书（同一本书的新书 / 重复组 / 系列组条目总在同一批） */
@@ -34,6 +36,7 @@ function entriesOf(scan: ScanResult): BatchEntry[] {
     ...scan.series_groups.map(sg => ({ type: 'series', payload: sg, paths: sg.members.map(m => m.file_path) })),
     ...scan.garbled.map(g => ({ type: 'garbled', payload: g, paths: [g.file_path] })),
     ...scan.encoding_fixed.map(e => ({ type: 'encoding_fixed', payload: e, paths: [e.file_path] })),
+    ...scan.damaged.map(d => ({ type: 'damaged', payload: d, paths: [d.file_path] })),
   ];
 }
 
@@ -95,7 +98,12 @@ export function buildBatchesFromScan(
   size: number = SCAN_BATCH_SIZE,
 ): ScanBatch[] {
   const database = customDb ?? getDb();
-  const chunks = partitionScanEntries(entriesOf(scan), size);
+  // 损坏 EPUB 另外成批：需要逐本决定，不能拖住其他书的应用（自动模式只应用不含损坏项的批次）
+  const entries = entriesOf(scan);
+  const chunks = [
+    ...partitionScanEntries(entries.filter(e => e.type !== 'damaged'), size),
+    ...partitionScanEntries(entries.filter(e => e.type === 'damaged'), size),
+  ];
   if (chunks.length === 0) chunks.push([]);
   const insertBatch = database.prepare(
     `INSERT INTO scan_batches (id, task_id, status, summary_counts, part_index, part_count) VALUES (?, ?, 'pending', ?, ?, ?)`
@@ -115,6 +123,7 @@ export function buildBatchesFromScan(
         series: count('series'),
         garbled: count('garbled'),
         encoding_fixed: count('encoding_fixed'),
+        damaged: count('damaged'),
       };
       insertBatch.run(batchId, taskId, JSON.stringify(summary), i + 1, chunks.length);
       for (const e of chunk) insertItem.run(uuidv4(), batchId, e.type, JSON.stringify(e.payload));

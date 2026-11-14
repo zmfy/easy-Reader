@@ -19,6 +19,19 @@ export function deleteBookRelations(db: Database.Database, bookIds: string[]): v
   deleteTtsCache(bookIds);
 }
 
+/**
+ * Promote books whose duplicate_of points at the given books back to normal books
+ * (the primary is gone or damaged, so they'd otherwise stay hidden forever).
+ * Books listed in `skip` are left alone. Call inside the caller's transaction.
+ */
+export function promoteDuplicatesOf(db: Database.Database, bookIds: string[], skip?: Set<string>): void {
+  if (bookIds.length === 0) return;
+  const placeholders = bookIds.map(() => '?').join(',');
+  const dependants = db.prepare(`SELECT id FROM books WHERE duplicate_of IN (${placeholders})`).all(...bookIds) as { id: string }[];
+  const promote = db.prepare("UPDATE books SET status = 'normal', duplicate_of = NULL WHERE id = ?");
+  for (const d of dependants) if (!skip?.has(d.id)) promote.run(d.id);
+}
+
 /** Delete a user's personal reading data (shelf, progress, history, bookmarks, highlights, reader / study prefs). */
 export function deleteUserData(db: Database.Database, userId: string): void {
   for (const table of USER_RELATION_TABLES) {

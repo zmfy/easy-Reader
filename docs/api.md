@@ -255,6 +255,7 @@
 | `sortBy` | `imported_at`（默认）、`title`、`author`、`file_size`、`category`、`rating` |
 | `sortOrder` | `desc`（默认）或 `asc` |
 | `series_grouped` | 为 `1` 时不列出属于某个系列的书（系列见下文） |
+| `status` | 不传时只列出正常的书（不含重复、乱码、损坏）；`damaged` 只列损坏的 EPUB，`problems` 列出重复、乱码和损坏的书 |
 
 `data` 是书籍数组，每本书的主要字段：
 
@@ -273,6 +274,8 @@
 | `rating` | 评分，可能为 `null` |
 | `series_id` | 所属系列 ID，没有为 `null` |
 | `imported_at` | 入库时间 |
+| `status` | `normal`（正常）、`duplicate`（重复）、`garbled`（乱码）或 `damaged`（EPUB 文件损坏） |
+| `damage_reason` | 损坏原因，如「文件不完整（可能下载或复制中断）」；不是损坏的书为 `null` |
 
 ### GET /api/v1/library/:id
 
@@ -419,6 +422,10 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 - 漫画 EPUB 的每一页通常只有一个 `img` 块。
 
 `format` 不是 `html` 或 `blocks` 时返回 422。
+
+### 损坏的书
+
+`status` 为 `damaged` 的书（扫描时发现文件不完整或打不开的 EPUB，管理员选择了仍然导入），以及读取时发现文件已被截断的 EPUB，目录和章节接口都返回 409 `BUSINESS_CONFLICT`，`message` 说明原因，可直接显示，例如「文件不完整或已损坏：文件不完整（可能下载或复制中断）。请重新获取文件后重新扫描」。换成完整文件后重新扫描，书会恢复为 `normal`。
 
 ### 图片
 

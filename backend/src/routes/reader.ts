@@ -9,6 +9,7 @@ import { Book, ReadingProgress, Bookmark } from '../types';
 import { listHighlights, createHighlight, updateHighlightNote, deleteHighlight } from '../services/highlights';
 import { keepChain, deleteMindSubtree, addCustomNode, updateMindNode } from '../services/mind-nodes';
 import { expandHighlight, AiBadOutputError, listMindNodesWithLater } from '../services/mind-expand';
+import { classifyZipDamage } from '../services/epub-health';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
@@ -43,6 +44,21 @@ function findReadableBook(bookId: string, res: Response): Book | null {
   // 后续所有打开都用校验过的真实路径，避免校验后再跟随（被替换的）符号链接
   return { ...book, file_path: realPath };
 }
+// 损坏的 EPUB：提示原因与处理办法（HTTP 409）
+function damagedMessage(reason: string | null | undefined): string {
+  return `文件不完整或已损坏：${reason || '无法解析'}。请重新获取文件后重新扫描`;
+}
+
+// 状态正常的 EPUB 解析失败时，看文件是不是被截断；分类不出原因返回 null
+function classifyEpubFailure(book: Book): string | null {
+  if (book.file_format.toLowerCase() !== 'epub') return null;
+  try {
+    return classifyZipDamage(fs.readFileSync(book.file_path));
+  } catch {
+    return null;
+  }
+}
+
 const window = new JSDOM('').window;
 // @ts-ignore
 const purify = DOMPurify(window);
@@ -53,6 +69,7 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   const db = getDb();
   const book = findReadableBook(req.params.bookId, res);
   if (!book) return;
+  if (book.status === 'damaged') { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(book.damage_reason)); return; }
 
   // PDF 默认在阅读器内逐页显示；仅当管理员明确关闭（'false'）时用浏览器原生打开，
   // 原生模式由浏览器直接渲染原文件，无需 pdf-parse 全量解析
@@ -80,6 +97,8 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   } catch (err) {
     // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
     console.error(`[reader:chapters] book=${req.params.bookId}`, err);
+    const reason = classifyEpubFailure(book);
+    if (reason) { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(reason)); return; }
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节');
   }
 });
@@ -159,6 +178,7 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
 
   const index = parseInt(req.params.index, 10);
   if (isNaN(index) || index < 0) { errorResponse(res, 422, 'VALIDATION_ERROR', '无效章节索引'); return; }
+  if (book.status === 'damaged') { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(book.damage_reason)); return; }
 
   try {
     const plugin = await getReaderPlugin(book);
@@ -178,6 +198,8 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
   } catch (err) {
     // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
     console.error(`[reader:chapter] book=${req.params.bookId}`, err);
+    const reason = classifyEpubFailure(book);
+    if (reason) { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(reason)); return; }
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节内容');
   }
 });

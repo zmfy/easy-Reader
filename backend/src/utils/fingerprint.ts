@@ -62,7 +62,27 @@ async function computeGenericFingerprint(filePath: string, fileSize: number): Pr
   } finally {
     await fd.close();
   }
-  const headHash = sha1(buf);
+  return genericFingerprintOf(buf, fileSize);
+}
+
+/**
+ * 非 txt 格式指纹的同步版本（与 computeFingerprint 对 epub / pdf 的结果相同），
+ * 供事务内的同步代码使用；只读文件开头，不解析内容，损坏的文件也能算
+ */
+export function computeGenericFingerprintSync(filePath: string): Fingerprint {
+  const fileSize = fs.statSync(filePath).size;
+  const buf = Buffer.alloc(Math.min(64 * 1024, fileSize));
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    fs.readSync(fd, buf, 0, buf.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return genericFingerprintOf(buf, fileSize);
+}
+
+function genericFingerprintOf(head: Buffer, fileSize: number): Fingerprint {
+  const headHash = sha1(head);
   return {
     fingerprint: sha1(`0_${fileSize}_${headHash}`),
     first_chapter_hash: headHash,

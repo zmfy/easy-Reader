@@ -18,6 +18,8 @@ export const scanBatchesApi = {
       duplicates_linked: number
       series_created: number
       garbled_marked: number
+      damaged_imported: number
+      damaged_skipped: number
       errors: Array<{ item_id: string; message: string }>
     }>>(`/library/scan-batches/${id}/apply`),
 

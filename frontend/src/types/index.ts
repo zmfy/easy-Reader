@@ -25,7 +25,9 @@ export interface Book {
   file_size?: number
   imported_at: string
   // 扫描增强字段（Plan 1/2）
-  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed'
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged'
+  /** status 为 damaged 时：文件损坏的原因 */
+  damage_reason?: string | null
   ai_fill_status?: 'filled' | 'failed' | null
   rating?: number | null
   duplicate_of?: string | null
@@ -218,7 +220,7 @@ export interface ScanTask {
 }
 
 export type ScanBatchStatus = 'pending' | 'applied' | 'discarded'
-export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed'
+export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed' | 'damaged'
 
 export interface ScanBatch {
   id: string
@@ -261,6 +263,8 @@ export interface NewBookPayload {
   first_chapter_hash?: string
   encoding_detected?: string
   status?: 'normal' | 'encoding_fixed'
+  /** EPUB 打开时被自动修正过 */
+  repaired?: boolean
 }
 
 export interface DuplicateGroupPayload {
@@ -285,6 +289,14 @@ export interface SeriesGroupPayload {
 
 export interface GarbledPayload {
   file_path: string
+  reason: string
+}
+
+/** 打不开或没有章节的 EPUB：逐本选择导入（accept）或跳过（reject） */
+export interface DamagedPayload {
+  file_path: string
+  file_size: number
+  file_mtime: number | null
   reason: string
 }
 

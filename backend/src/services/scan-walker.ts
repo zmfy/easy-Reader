@@ -10,6 +10,8 @@ import {
   isCancelled,
 } from './scan-task';
 import { FINGERPRINT_VERSION, shouldReuseFingerprint } from './scan-versions';
+import { checkEpubHealth, HEALTH_CHECK_VERSION, EpubHealth } from './epub-health';
+import { isSkippedUnchanged } from './scan-skips';
 import {
   ScanOptions,
   NewBookPayload,
@@ -17,22 +19,31 @@ import {
   GarbledPayload,
   DuplicateGroupPayload,
   SeriesGroupPayload,
+  DamagedPayload,
 } from '../types';
 import { buildCandidateGroups, applyNotDuplicateOverrides, mergeDuplicateGroups, ScannedBook } from './dedup-grouper';
 import { listOverrides } from './manual-override';
 import { buildBatchesFromScan, ScanResult } from './batch-builder';
-import { notifyScanReview } from './notices';
+import { notifyScanReview, notifyScanHealth } from './notices';
 import { extractAuthorFromName } from '../utils/title-normalizer';
-import { deleteBookRelations } from './relation-cleanup';
+import { deleteBookRelations, promoteDuplicatesOf } from './relation-cleanup';
 
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
-export async function runScanTask(taskId: string, options: ScanOptions): Promise<void> {
+/** 本次扫描的 EPUB 健康检查计数（扫描结束时用于提醒） */
+export interface ScanHealthCounts {
+  damaged_existing: number;   // 已入库的书新变为损坏
+  recovered: number;          // 已入库的损坏书恢复正常
+  repaired: number;           // 新生成的审核项中被自动修正的 EPUB
+}
+
+export async function runScanTask(taskId: string, options: ScanOptions): Promise<ScanHealthCounts | null> {
+  const health: ScanHealthCounts = { damaged_existing: 0, recovered: 0, repaired: 0 };
   try {
     if (!fs.existsSync(BOOKS_DIR)) {
       finishScanTask(taskId, 'completed');
-      return;
+      return health;
     }
 
     setScanProgress(taskId, { stage: 'walking' });
@@ -63,15 +74,16 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const scanned: ScannedBookEx[] = [];
     const garbled: GarbledPayload[] = [];
     const encodingFixed: EncodingFixedPayload[] = [];
+    const damaged: DamagedPayload[] = [];
     let processed = 0;
 
     // Performance: prefetch all existing books in ONE query so the per-file
     // skip check is an in-memory lookup rather than N individual SQL hits.
     // For 8000+ books this turns 8000 prepare/get round-trips into 1.
-    const prefetched = new Map<string, { id: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null }>();
+    const prefetched = new Map<string, { id: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null; health_check_version?: number | null }>();
     if (!options.full_rescan) {
-      const rows = getDb().prepare('SELECT id, file_path, fingerprint, file_size, file_mtime, fingerprint_version, status FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null }>;
-      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version, status: r.status });
+      const rows = getDb().prepare('SELECT id, file_path, fingerprint, file_size, file_mtime, fingerprint_version, status, health_check_version FROM books').all() as Array<{ id: string; file_path: string; fingerprint?: string; file_size?: number; file_mtime?: number | null; fingerprint_version?: number | null; status?: string | null; health_check_version?: number | null }>;
+      for (const r of rows) prefetched.set(r.file_path, { id: r.id, fingerprint: r.fingerprint, file_size: r.file_size, file_mtime: r.file_mtime, fingerprint_version: r.fingerprint_version, status: r.status, health_check_version: r.health_check_version });
     }
 
     // 已标记为乱码的文件（全量重扫时 prefetched 为空，因此单独查询）
@@ -88,12 +100,46 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const backfillAuthorStmt = getDb().prepare(
       "UPDATE books SET author = ? WHERE id = ? AND (author IS NULL OR author = '')"
     );
+    // EPUB 健康检查结果直接写库（已入库的书不生成审核项）
+    const bookByPathStmt = getDb().prepare('SELECT id, status FROM books WHERE file_path = ?');
+    const markDamagedStmt = getDb().prepare(
+      "UPDATE books SET status = 'damaged', damage_reason = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, health_check_version = ? WHERE id = ?"
+    );
+    // 损坏的书不再当主书：清掉自己的 duplicate_of，指向它的重复书提升为普通书（同 removeOrphanBooks）
+    const markDamaged = (id: string, reason: string, st: fs.Stats): void => {
+      getDb().transaction(() => {
+        markDamagedStmt.run(reason, st.size, st.mtimeMs, HEALTH_CHECK_VERSION, id);
+        promoteDuplicatesOf(getDb(), [id]);
+      })();
+    };
+    const markRecoveredStmt = getDb().prepare(
+      "UPDATE books SET status = 'normal', damage_reason = NULL, health_check_version = ? WHERE id = ?"
+    );
+    const healthVersionStmt = getDb().prepare(
+      'UPDATE books SET health_check_version = ? WHERE id = ?'
+    );
+    const warnUnchecked = (h: EpubHealth, file: string): void => {
+      console.warn(`[scan ${taskId}] EPUB 健康检查未完成（${h.status === 'unreadable' ? '读取失败' : '解析超时'}），下次扫描再查:`, file);
+    };
+    const bumpProgress = (every: number): void => {
+      processed++;
+      if (processed % every === 0 || processed === allFiles.length) {
+        setScanProgress(taskId, { processed_files: processed });
+      }
+    };
 
     for (const fullPath of allFiles) {
-      if (isCancelled(taskId)) return;
+      if (isCancelled(taskId)) return health;
       let st: fs.Stats;
       try { st = fs.statSync(fullPath); } catch { processed++; continue; }
       const pre = prefetched.get(fullPath);
+      const isEpub = path.extname(fullPath).slice(1).toLowerCase() === 'epub';
+      // 已标记损坏、文件没变、检查版本已最新：不再打开（损坏书可能没有指纹，走不到下面的复用分支）
+      if (isEpub && pre && pre.status === 'damaged' && pre.health_check_version === HEALTH_CHECK_VERSION
+        && pre.file_size === st.size && pre.file_mtime === st.mtimeMs) {
+        bumpProgress(50);
+        continue;
+      }
       if (shouldReuseFingerprint({ existing: pre, statSize: st.size, statMtime: st.mtimeMs, fingerprintVersion: FINGERPRINT_VERSION, fullRescan: options.full_rescan })) {
         // Backfill a migration-leftover NULL mtime without re-reading the file.
         // fingerprint_version is NOT written here: shouldReuseFingerprint only
@@ -108,22 +154,68 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           const a = extractAuthorFromName(path.basename(fullPath));
           if (a) backfillAuthorStmt.run(a, pre.id);
         }
-        processed++;
-        if (processed % 50 === 0 || processed === allFiles.length) {
-          setScanProgress(taskId, { processed_files: processed });
+        // 检查规则更新后，已入库的 EPUB 按新规则重查一次，结果直接写库
+        if (pre && isEpub && pre.health_check_version !== HEALTH_CHECK_VERSION) {
+          const h = await checkEpubHealth(fullPath);
+          if (isUncheckedForExisting(h)) {
+            // 这次没读成或超时，状态和检查版本都不动，下次扫描再查
+            warnUnchecked(h, fullPath);
+          } else if (h.status === 'damaged') {
+            markDamaged(pre.id, h.reason, st);
+            if (pre.status !== 'damaged') health.damaged_existing++;
+          } else if (pre.status === 'damaged') {
+            markRecoveredStmt.run(HEALTH_CHECK_VERSION, pre.id);
+            health.recovered++;
+          } else {
+            healthVersionStmt.run(HEALTH_CHECK_VERSION, pre.id);
+          }
+          // 每查一本都更新进度：升级后第一次扫描要逐本打开，进度条不能停住
+          bumpProgress(1);
+          continue;
         }
+        bumpProgress(50);
         continue;
       }
+      let repaired = false;
+      let healthUnchecked = false;
+      if (isEpub) {
+        const h = await checkEpubHealth(fullPath);
+        const existingBook = bookByPathStmt.get(fullPath) as { id: string; status: string | null } | undefined;
+        // 读不了，或已入库的书解析超时：当作这次没检查，照常走原来的新书流程，不写检查版本
+        healthUnchecked = h.status === 'unreadable' || (!!existingBook && isUncheckedForExisting(h));
+        if (healthUnchecked) {
+          warnUnchecked(h, fullPath);
+        } else if (h.status === 'damaged') {
+          if (existingBook) {
+            markDamaged(existingBook.id, h.reason, st);
+            if (existingBook.status !== 'damaged') health.damaged_existing++;
+          } else if (!isSkippedUnchanged(getDb(), fullPath, st.size, st.mtimeMs)) {
+            damaged.push({ file_path: fullPath, file_size: st.size, file_mtime: st.mtimeMs, reason: h.reason });
+          }
+          bumpProgress(5);
+          continue;
+        }
+        // 损坏书换成了完整文件：先恢复状态，新内容仍走新书审核项
+        if (!healthUnchecked && existingBook && existingBook.status === 'damaged') {
+          markRecoveredStmt.run(HEALTH_CHECK_VERSION, existingBook.id);
+          health.recovered++;
+        }
+        repaired = h.status === 'repaired';
+      }
       const result = await processFile(fullPath, options, st);
-      if (result.scanned) scanned.push(result.scanned);
+      if (result.scanned) {
+        if (repaired) {
+          result.scanned.repaired = true;
+          health.repaired++;
+        }
+        if (healthUnchecked) result.scanned.health_unchecked = true;
+        scanned.push(result.scanned);
+      }
       // 已标记为乱码的书仍会重新检测（检测改进后可被「救回」为新书），但仍是乱码时
       // 不再重复生成审核项，否则审核模式每次扫描都会产生待审核批次
       if (result.garbled && !knownGarbledPaths.has(fullPath)) garbled.push(result.garbled);
       if (result.encoding_fixed) encodingFixed.push(result.encoding_fixed);
-      processed++;
-      if (processed % 5 === 0 || processed === allFiles.length) {
-        setScanProgress(taskId, { processed_files: processed });
-      }
+      bumpProgress(5);
     }
 
     if (isCancelled(taskId)) {
@@ -136,10 +228,12 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
         series_groups: [],
         garbled,
         encoding_fixed: encodingFixed,
+        damaged,
       };
       buildBatchesFromScan(taskId, partial);
       notifyScanReview();
-      return;
+      notifyScanHealth(health);
+      return health;
     }
 
     // Phase 2: build candidate set for dedup + series.
@@ -221,6 +315,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       soft_duplicate_groups: softDupPayloads,
       garbled,
       encoding_fixed: encodingFixed,
+      damaged,
     };
 
     // Phase 4: dispatch by mode
@@ -231,13 +326,20 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       r.series_groups.length === 0 &&
       r.soft_duplicate_groups.length === 0 &&
       r.garbled.length === 0 &&
-      r.encoding_fixed.length === 0;
+      r.encoding_fixed.length === 0 &&
+      r.damaged.length === 0;
 
     setScanProgress(taskId, { stage: 'staging' });
     if (options.mode === 'auto') {
       if (!isEmpty(result)) {
-        const { applyBatch } = await import('./batch-applier');
-        for (const batch of buildBatchesFromScan(taskId, result)) applyBatch(batch.id, 'system-auto');
+        const { applyBatch, hasUndecidedDamaged } = await import('./batch-applier');
+        // 损坏 EPUB 要管理员逐本决定导入或跳过：含损坏项的批次留着待审核
+        let needsReview = false;
+        for (const batch of buildBatchesFromScan(taskId, result)) {
+          if (hasUndecidedDamaged(getDb(), batch.id)) needsReview = true;
+          else applyBatch(batch.id, 'system-auto');
+        }
+        if (needsReview) notifyScanReview();
       } else {
         console.log(`[scan ${taskId}] empty result, no batch created`);
       }
@@ -264,11 +366,19 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     }
 
     finishScanTask(taskId, 'completed');
+    notifyScanHealth(health);
+    return health;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     finishScanTask(taskId, 'failed', msg);
     console.error('Scan task failed:', err);
+    return null;
   }
+}
+
+/** 已入库的书：读不了或解析超时都只算这次没检查成（超时可能只是书大、盘慢，不能据此判损坏） */
+function isUncheckedForExisting(h: EpubHealth): boolean {
+  return h.status === 'unreadable' || (h.status === 'damaged' && h.timedOut === true);
 }
 
 interface ScannedBookEx extends ScannedBook {
@@ -277,6 +387,8 @@ interface ScannedBookEx extends ScannedBook {
   file_mtime: number;
   encoding_detected: string;
   status: 'normal' | 'encoding_fixed';
+  repaired?: boolean;
+  health_unchecked?: boolean;
 }
 
 function toNewPayload(b: ScannedBookEx): NewBookPayload {
@@ -292,6 +404,8 @@ function toNewPayload(b: ScannedBookEx): NewBookPayload {
     fingerprint: b.fingerprint,
     encoding_detected: b.encoding_detected,
     status: b.status,
+    ...(b.repaired ? { repaired: true } : {}),
+    ...(b.file_format === 'epub' && !b.health_unchecked ? { health_check_version: HEALTH_CHECK_VERSION } : {}),
   };
 }
 
@@ -351,9 +465,7 @@ export function removeOrphanBooks(db: Database.Database, orphanIds: string[]): v
       const chunk = orphanIds.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => '?').join(',');
       deleteBookRelations(db, chunk);
-      const dependants = db.prepare(`SELECT id FROM books WHERE duplicate_of IN (${placeholders})`).all(...chunk) as { id: string }[];
-      const promote = db.prepare("UPDATE books SET status = 'normal', duplicate_of = NULL WHERE id = ?");
-      for (const d of dependants) if (!orphanSet.has(d.id)) promote.run(d.id);
+      promoteDuplicatesOf(db, chunk, orphanSet);
       db.prepare(`DELETE FROM books WHERE id IN (${placeholders})`).run(...chunk);
     }
   })();

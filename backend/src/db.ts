@@ -185,6 +185,8 @@ function initSchema(): void {
     "ALTER TABLE books ADD COLUMN ai_fill_version INTEGER",
     "ALTER TABLE books ADD COLUMN ai_fill_status TEXT",
     "ALTER TABLE books ADD COLUMN rating REAL",
+    "ALTER TABLE books ADD COLUMN health_check_version INTEGER",
+    "ALTER TABLE books ADD COLUMN damage_reason TEXT",
   ];
   for (const stmt of booksAlters) {
     try { database.exec(stmt); } catch { /* column exists */ }
@@ -196,6 +198,16 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_books_duplicate_of ON books(duplicate_of);
     CREATE INDEX IF NOT EXISTS idx_books_series_id ON books(series_id);
     CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
+  `);
+
+  // 扫描时被管理员跳过的损坏文件：路径 + 大小 + 修改时间都没变就不再提示
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS scan_skipped_files (
+      file_path TEXT PRIMARY KEY,
+      file_size INTEGER NOT NULL,
+      file_mtime REAL,
+      skipped_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // === Plan 2 schema: series ===

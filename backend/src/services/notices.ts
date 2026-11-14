@@ -79,17 +79,23 @@ function fillPendingTitle(p: PendingFill): string {
   return `AI 填充${range}有 ${p.count} 本待确认`;
 }
 
-function scanPendingMessage(db: Database.Database): { batches: number; books: number } {
+function scanPendingMessage(db: Database.Database): { batches: number; books: number; damaged: number } {
   const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending'").all() as Array<{ summary_counts: string | null }>;
   let books = 0;
+  let damaged = 0;
   for (const r of rows) {
-    try { books += JSON.parse(r.summary_counts ?? '{}').new ?? 0; } catch { /* 忽略 */ }
+    try {
+      const c = JSON.parse(r.summary_counts ?? '{}');
+      books += c.new ?? 0;
+      damaged += c.damaged ?? 0;
+    } catch { /* 忽略 */ }
   }
-  return { batches: rows.length, books };
+  return { batches: rows.length, books, damaged };
 }
 
-function scanPendingText(s: { batches: number; books: number }): string {
-  return s.batches > 1 ? `共 ${s.batches} 批待审核，新书 ${s.books} 本，可逐批审核` : `新书 ${s.books} 本，请审核后入库`;
+function scanPendingText(s: { batches: number; books: number; damaged: number }): string {
+  const counts = s.damaged > 0 ? `新书 ${s.books} 本、损坏 ${s.damaged} 本` : `新书 ${s.books} 本`;
+  return s.batches > 1 ? `共 ${s.batches} 批待审核，${counts}，可逐批审核` : `${counts}，请审核后入库`;
 }
 
 /**
@@ -117,6 +123,27 @@ export function notifyScanReview(db: Database.Database = getDb()): void {
   addNotice({
     kind: 'scan_review', level: 'info', title: '扫描完成，有待审核的书',
     message: scanPendingText(s), link: '/library/scan-batches',
+  }, db);
+}
+
+/** 扫描时 EPUB 健康检查的结果：替换上一条；三项都为 0 不提醒（保留上一条） */
+export function notifyScanHealth(
+  counts: { damaged_existing: number; recovered: number; repaired: number },
+  db: Database.Database = getDb()
+): void {
+  const parts: string[] = [];
+  if (counts.damaged_existing > 0) parts.push(`${counts.damaged_existing} 本 EPUB 已损坏`);
+  if (counts.recovered > 0) parts.push(`${counts.recovered} 本恢复正常`);
+  if (counts.repaired > 0) parts.push(`${counts.repaired} 本已自动修正`);
+  if (parts.length === 0) return;
+  const hasDamaged = counts.damaged_existing > 0;
+  // 只留最新一次扫描的结果，否则审核模式下每次扫描都会叠一条
+  db.prepare("DELETE FROM notices WHERE kind = 'scan_health'").run();
+  addNotice({
+    kind: 'scan_health', level: hasDamaged ? 'warning' : 'info',
+    title: `扫描发现 ${parts.join('，')}`,
+    // 只有自动修正时，问题书籍页里没有这些书，不带链接
+    link: hasDamaged || counts.recovered > 0 ? '/library/problems' : undefined,
   }, db);
 }
 

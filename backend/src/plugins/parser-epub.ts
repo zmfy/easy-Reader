@@ -90,6 +90,8 @@ export function groupByIndexPage<T extends { href: string; level?: number }>(
 
 export class EpubParser implements ReaderPlugin {
   format = 'epub';
+  /** load 第一次失败、内存修正 zip 尾部后才打开成功时为 true */
+  repaired = false;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private epub: any = null;
   private chapters: EpubChapter[] = [];
@@ -98,6 +100,7 @@ export class EpubParser implements ReaderPlugin {
   async load(filePath: string): Promise<void> {
     // epub2 v3: class is at require('epub2').EPub
     const { EPub } = require('epub2');
+    this.repaired = false;
     try {
       this.epub = await EPub.createAsync(filePath);
     } catch (err) {
@@ -105,6 +108,7 @@ export class EpubParser implements ReaderPlugin {
       const fixed = repairZipEndRecord(fs.readFileSync(filePath));
       if (!fixed) throw err;
       this.epub = await EPub.createAsync(fixed);
+      this.repaired = true;
     }
     this.buildManifestMap();
     this.buildChapterList();
