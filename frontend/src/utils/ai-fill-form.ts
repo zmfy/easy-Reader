@@ -2,11 +2,12 @@ import type { AiFillApplyInput, AiFillLockableField, AiFillPreview, BookAdaptati
 
 /** AI 填充预览弹窗的表单状态 */
 export interface AiFillForm {
+  title: string
   author: string
   summary: string
   category: string
   is_finished: boolean | null
-  /** 锁定字段是否改用 AI 结果（非锁定字段不使用） */
+  /** 书名、锁定字段是否改用 AI 结果（其他字段不使用） */
   useAi: Record<AiFillLockableField, boolean>
   tags: string[]
   similar: SimilarWork[]
@@ -23,7 +24,7 @@ export const ADAPTATION_SOURCE_LABELS: Record<BookAdaptation['source'], string> 
   missevan: '猫耳FM',
 }
 
-const FIELDS: AiFillLockableField[] = ['author', 'summary', 'category']
+const FIELDS: AiFillLockableField[] = ['title', 'author', 'summary', 'category']
 
 /** AI 只凭书名和自身知识给出的建议（低置信）：默认不采用，由用户点「采用」 */
 export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boolean {
@@ -32,6 +33,7 @@ export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boole
 
 /**
  * 初始化表单：
+ * - 书名建议须由用户勾选采用：默认保留当前书名、不勾选；
  * - 非锁定字段用 AI 建议，AI 没给时保留当前值；
  * - 锁定字段默认保留当前值，当前值为空时用 AI 建议；
  * - 低置信建议一律不预填（保留当前值，可能为空），弹窗里单独提示可采用；
@@ -40,12 +42,14 @@ export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boole
  */
 export function initialForm(p: AiFillPreview): AiFillForm {
   const locked = new Set(p.lockedFields)
-  const useAi = { author: false, summary: false, category: false }
-  const values = { author: '', summary: '', category: '' }
+  const useAi = { title: false, author: false, summary: false, category: false }
+  const values = { title: '', author: '', summary: '', category: '' }
   for (const f of FIELDS) {
     const current = p.current[f] || ''
     const suggestion = isLowConfidence(p, f) ? '' : p.suggested[f] || ''
-    if (locked.has(f)) {
+    if (f === 'title') {
+      values[f] = current
+    } else if (locked.has(f)) {
       useAi[f] = !current && !!suggestion
       values[f] = useAi[f] ? suggestion : current
     } else {
@@ -66,11 +70,24 @@ export function initialForm(p: AiFillPreview): AiFillForm {
   }
 }
 
+/** 切换「采用 AI 结果」后同步字段值：勾选用 AI 建议，取消恢复当前值（书名、锁定字段） */
+export function syncUseAi(form: AiFillForm, p: AiFillPreview, field: AiFillLockableField): void {
+  form[field] = (form.useAi[field] ? p.suggested[field] : p.current[field]) || ''
+}
+
+/** 默认封面上印的书名：书名改了（采用建议或手改）就用新书名，书名为空或没改则沿用预览的 coverTitle */
+export function effectiveCoverTitle(form: Pick<AiFillForm, 'title'>, p: AiFillPreview): string {
+  const title = form.title.trim()
+  return title && title !== p.current.title ? title : p.coverTitle
+}
+
 export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApplyInput {
   const chosen = typeof form.cover === 'number' ? p.coverCandidates[form.cover] : undefined
   // 评分跟着封面走，只在换成豆瓣封面时取；评分只取豆瓣书目：选了改编作品海报（没有 subjectUrl）时，退回第一个书封候选
   const ratingSubjectUrl = chosen ? chosen.subjectUrl ?? p.coverCandidates.find(c => c.subjectUrl)?.subjectUrl : undefined
   return {
+    // 书名清空时沿用当前书名（书名必填）
+    title: form.title.trim() ? form.title : p.current.title,
     author: form.author,
     summary: form.summary,
     category: form.category || '',  // 分类选择器清空时为 null
@@ -80,7 +97,8 @@ export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApp
     adaptations: form.adaptations.map(a => ({ ...a })),
     cover: chosen ? { type: 'douban', pic: chosen.pic } : form.cover === 'default' ? { type: 'default' } : { type: 'keep' },
     ...(ratingSubjectUrl ? { ratingSubjectUrl } : {}),
-    coverTitle: p.coverTitle,
-    suggested: { author: p.suggested.author, summary: p.suggested.summary, category: p.suggested.category },
+    // 默认封面印的是书名：书名改了（采用建议或手改）就跟着改
+    coverTitle: effectiveCoverTitle(form, p),
+    suggested: { title: p.suggested.title, author: p.suggested.author, summary: p.suggested.summary, category: p.suggested.category },
   }
 }

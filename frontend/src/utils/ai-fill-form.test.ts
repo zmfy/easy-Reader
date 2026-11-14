@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialForm, buildApplyPayload } from './ai-fill-form'
+import { initialForm, buildApplyPayload, effectiveCoverTitle, syncUseAi } from './ai-fill-form'
 import type { AiFillPreview } from '@/types'
 
 function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
@@ -15,6 +15,8 @@ function preview(o: Partial<AiFillPreview> = {}): AiFillPreview {
       adaptations: [{ type: '电视剧', title: '三国演义', year: '1994', source: 'douban', url: 'https://movie.douban.com/subject/1/' }],
     },
     lockedFields: [],
+    lookupTrace: [],
+    lookupUsedFallback: false,
     coverTitle: '三国演义',
     coverCandidates: [
       { title: 'a', pic: 'https://img1.doubanio.com/a.jpg', subjectUrl: 'https://book.douban.com/subject/1/', thumbnail: 'data:a' },
@@ -74,6 +76,17 @@ describe('initialForm', () => {
     const f = initialForm(p)
     expect(f.summary).toBe('AI 简介')
     expect(f.useAi.summary).toBe(true)
+  })
+
+  it('does not prefill the title suggestion for a locked title either; other fields unchanged', () => {
+    const p = preview({ lockedFields: ['title'] })
+    p.suggested.title = '三国演义（毛宗岗评本）'
+    p.suggested.confidence = { title: 'high' }
+    const f = initialForm(p)
+    expect(f.title).toBe('三国演义')
+    expect(f.useAi.title).toBe(false)
+    // 作者等其他字段照旧使用 AI 建议
+    expect(f.author).toBe('罗贯中（明）')
   })
 
   it('selects the current cover, else the first candidate, else the default cover', () => {
@@ -142,10 +155,55 @@ describe('buildApplyPayload', () => {
     expect(buildApplyPayload(initialForm(p), p).coverTitle).toBe('三国演义')
   })
 
+  it('keeps the current title by default; ticking adopts the suggestion and the default cover follows', () => {
+    const p = preview({ coverTitle: '三国演义（旧）' })
+    p.suggested.title = '三国演义（毛宗岗评本）'
+    const f = initialForm(p)
+    expect(f.title).toBe('三国演义')
+    expect(f.useAi.title).toBe(false)
+    const kept = buildApplyPayload(f, p)
+    expect(kept.title).toBe('三国演义')
+    expect(kept.coverTitle).toBe('三国演义（旧）')
+    expect(kept.suggested.title).toBe('三国演义（毛宗岗评本）')
+
+    f.useAi.title = true
+    syncUseAi(f, p, 'title')
+    const adopted = buildApplyPayload(f, p)
+    expect(adopted.title).toBe('三国演义（毛宗岗评本）')
+    expect(adopted.coverTitle).toBe('三国演义（毛宗岗评本）')
+
+    f.useAi.title = false
+    syncUseAi(f, p, 'title')
+    expect(buildApplyPayload(f, p).title).toBe('三国演义')
+  })
+
+  it('falls back to the current title when the title is cleared', () => {
+    const p = preview({ coverTitle: '封面书名' })
+    const f = initialForm(p)
+    f.title = '   '
+    const body = buildApplyPayload(f, p)
+    expect(body.title).toBe('三国演义')
+    expect(body.coverTitle).toBe('封面书名')
+  })
+
   it('omits is_finished when unknown', () => {
     const p = preview()
     p.current.is_finished = null
     p.suggested.is_finished = undefined
     expect(buildApplyPayload(initialForm(p), p)).not.toHaveProperty('is_finished')
+  })
+})
+
+describe('effectiveCoverTitle', () => {
+  it('follows a changed title, otherwise keeps the preview cover title', () => {
+    const p = preview({ coverTitle: '封面书名' })
+    expect(effectiveCoverTitle({ title: '新书名' }, p)).toBe('新书名')
+    expect(effectiveCoverTitle({ title: '三国演义' }, p)).toBe('封面书名')
+  })
+
+  it('falls back to the preview cover title when the title is blank', () => {
+    const p = preview({ coverTitle: '封面书名' })
+    expect(effectiveCoverTitle({ title: '' }, p)).toBe('封面书名')
+    expect(effectiveCoverTitle({ title: '   ' }, p)).toBe('封面书名')
   })
 })

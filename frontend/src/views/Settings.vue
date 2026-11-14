@@ -277,6 +277,11 @@
               </el-select>
               <div class="form-hint">同时向 AI 发起请求的书籍数量，MiniMax 个人版建议设为 1 或 2</div>
             </div>
+            <div class="form-field">
+              <label>AI 查证</label>
+              <el-switch v-model="aiLookupEnabled" />
+              <div class="form-hint">AI 填充时多轮搜索豆瓣，核对书名、作者后再取封面、评分和改编；会增加 AI 调用次数</div>
+            </div>
           </div>
           <div class="section-actions">
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
@@ -510,7 +515,7 @@ import HttpsCertCard from '@/components/HttpsCertCard.vue'
 import CategoryTreeCard from '@/components/CategoryTreeCard.vue'
 import { settingsApi } from '@/api/settings'
 import { boldSegments } from '@/utils/inline-bold'
-import { buildAiSettingsPayload } from '@/utils/ai-settings'
+import { buildAiSettingsPayload, parseLookupEnabled } from '@/utils/ai-settings'
 import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemNoticeStore } from '@/stores/system-notice'
@@ -573,6 +578,7 @@ const readerPlugins = ref<Array<{ format: string; label: string; description: st
 const selectedAiPlugin = ref('')
 const aiSummaryLength = ref<number>(100)
 const aiFillConcurrency = ref<number>(2)
+const aiLookupEnabled = ref<boolean>(true)
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
@@ -874,6 +880,7 @@ async function loadSettings() {
   if (Number.isFinite(fillConcStored) && fillConcStored >= 1 && fillConcStored <= 10) {
     aiFillConcurrency.value = fillConcStored
   }
+  aiLookupEnabled.value = parseLookupEnabled(data['ai_lookup_enabled'])
 }
 
 async function loadPlugins() {
@@ -911,6 +918,7 @@ async function saveSettings(tab: string) {
         aiForm,
         aiSummaryLength.value,
         aiFillConcurrency.value,
+        aiLookupEnabled.value,
       ))
     }
     await settingsApi.update(payload)

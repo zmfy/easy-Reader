@@ -136,6 +136,7 @@ easyReader/
 | GET | `/scan/tasks/:id` | 扫描任务进度 — admin |
 | POST | `/scan/tasks/:id/cancel` | 取消扫描 — admin |
 | POST | `/:id/ai-fill/preview` | AI 填充预览 — admin |
+| GET | `/:id/ai-fill/progress` | 预览进行中的 AI 查证进度 — admin |
 | POST | `/:id/ai-fill/apply` | 应用填充结果 — admin |
 | GET | `/:id/ai-metadata` | 已保存的 AI 元信息 |
 | POST | `/ai-fill-batch` | 整库批量填充 — admin |

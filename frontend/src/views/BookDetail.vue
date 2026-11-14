@@ -193,6 +193,7 @@
       v-model="aiPreviewVisible"
       :preview="aiPreview"
       :loading="aiPreviewLoading"
+      :progress="aiProgress"
       :book-id="book.id"
       @applied="onAiApplied"
     />
@@ -217,7 +218,7 @@ import { categoryLabel, toCategoryOptions, type CategoryOption } from '@/utils/c
 import { parseContentMismatch } from '@/utils/ai-suggestions'
 import { settingsApi } from '@/api/settings'
 import { useAuthStore } from '@/stores/auth'
-import type { AiFillPreview, Book, BookAiMetadata, ReadingProgress } from '@/types'
+import type { AiFillPreview, Book, LookupStep, BookAiMetadata, ReadingProgress } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -261,6 +262,8 @@ const saving = ref(false)
 const aiPreviewLoading = ref(false)
 let aiPreviewAbort: AbortController | null = null
 const aiPreview = ref<AiFillPreview | null>(null)
+const aiProgress = ref<LookupStep[]>([])
+let aiProgressTimer: ReturnType<typeof setInterval> | undefined
 const aiPreviewVisible = ref(false)
 const aiConfigured = ref(true)
 const { onShelf, busy: shelfBusy, refresh: refreshShelf, toggle: toggleShelf } = useShelfToggle(() => book.value?.id ?? (route.params.bookId as string))
@@ -400,8 +403,10 @@ async function handleAiFill() {
   const controller = new AbortController()
   aiPreviewAbort = controller
   aiPreview.value = null
+  aiProgress.value = []
   aiPreviewLoading.value = true
   aiPreviewVisible.value = true
+  startAiProgressPolling(controller)
   try {
     // 先预览：AI 与豆瓣检索结果在弹窗中确认 / 修改后才写入
     const resp = await libraryApi.aiFillPreview(route.params.bookId as string, controller.signal)
@@ -414,13 +419,33 @@ async function handleAiFill() {
     ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI 填充失败')
   } finally {
     if (aiPreviewAbort === controller) {
+      stopAiProgressPolling()
       aiPreviewAbort = null
       aiPreviewLoading.value = false
     }
   }
 }
 
+// 等待预览期间轮询查证进度（出错忽略，预览返回或取消即停）
+function startAiProgressPolling(controller: AbortController) {
+  stopAiProgressPolling()
+  const bookId = route.params.bookId as string
+  aiProgressTimer = setInterval(async () => {
+    try {
+      const resp = await libraryApi.aiFillProgress(bookId)
+      if (controller.signal.aborted || aiPreviewAbort !== controller) return
+      aiProgress.value = resp.data.data?.steps ?? []
+    } catch { /* 进度只是辅助显示 */ }
+  }, 1500)
+}
+
+function stopAiProgressPolling() {
+  clearInterval(aiProgressTimer)
+  aiProgressTimer = undefined
+}
+
 function cancelAiPreview() {
+  stopAiProgressPolling()
   aiPreviewAbort?.abort()
   aiPreviewAbort = null
   aiPreviewLoading.value = false

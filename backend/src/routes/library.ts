@@ -28,6 +28,7 @@ import { estimateFromCurrentDb } from '../services/cost-estimator';
 import { getMetadata } from '../services/book-ai-metadata';
 import { matchTitlesToBooks, LibraryBookForLookup } from '../services/title-lookup';
 import { buildAiFillPreview, BookNotFoundError, cleanBookTitle } from '../services/ai-fill-preview';
+import { getLookupProgress } from '../services/lookup-progress';
 import { applyAiFill, AiFillApplyError, parseAiFillApplyBody } from '../services/ai-fill-apply';
 import { renderDefaultCoverSvg } from '../utils/default-cover';
 import { countMissingCovers, fillMissingDefaultCovers } from '../services/default-cover-file';
@@ -591,6 +592,11 @@ router.post('/:id/ai-fill/preview', authMiddleware, adminMiddleware, async (req:
     if (err instanceof BookNotFoundError) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
     errorResponse(res, 500, 'INTERNAL_ERROR', 'AI 填充失败: ' + (err instanceof Error ? err.message : '未知错误'));
   }
+});
+
+// GET /api/library/:id/ai-fill/progress — 预览进行中的查证过程（前端轮询；没有记录时返回空）
+router.get('/:id/ai-fill/progress', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  successResponse(res, getLookupProgress(req.params.id) ?? { steps: [], done: false });
 });
 
 // POST /api/library/:id/ai-fill/apply — 写入用户在预览中确认的结果

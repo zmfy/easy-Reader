@@ -1,7 +1,10 @@
+import fs from 'fs';
+import path from 'path';
 import http from 'http';
 import { AddressInfo } from 'net';
 import {
   parseDoubanRating, parseDoubanSuggestList, pickDoubanBook, doubanFallbackQuery, isAllowedDoubanImageUrl, isAllowedDoubanSubjectUrl, isAllowedCoverImageUrl, request,
+  parseDoubanBookHits, parseDoubanSubjectDetail, fetchDoubanSubjectDetail,
 } from '../../src/utils/cover';
 
 describe('parseDoubanRating', () => {
@@ -144,5 +147,64 @@ describe('request host guard', () => {
 
   it('follows redirects when no guard is given (existing behaviour)', async () => {
     expect((await request(`http://localhost:${port}/a`)).toString()).toBe('ok');
+  });
+});
+
+describe('parseDoubanBookHits', () => {
+  const json = JSON.stringify([
+    { title: '托尔金', url: 'https://book.douban.com/author/1/', pic: 'https://img/a.jpg', type: 'a' },
+    { title: '魔戒', url: 'https://book.douban.com/subject/1/', pic: 'https://img/s1.jpg', author_name: '托尔金', year: '2013', type: 'b' },
+    { title: '无封面', url: 'https://book.douban.com/subject/2/', pic: 'https://img/book-default-s.gif', type: 'b' },
+    { title: '第三本', url: 'https://book.douban.com/subject/3/', pic: 'https://img/s3.jpg', type: 'b' },
+  ]);
+
+  it('过滤作者条目，保留书条目', () => {
+    const hits = parseDoubanBookHits(json);
+    expect(hits.map(h => h.title)).toEqual(['魔戒', '无封面', '第三本']);
+    expect(hits[0]).toEqual({ title: '魔戒', author: '托尔金', year: '2013', pic: 'https://img/s1.jpg', url: 'https://book.douban.com/subject/1/' });
+  });
+  it('book-default 封面的条目保留但没有 pic', () => {
+    expect(parseDoubanBookHits(json)[1]).not.toHaveProperty('pic');
+  });
+  it('limit 生效', () => {
+    expect(parseDoubanBookHits(json, 2)).toHaveLength(2);
+  });
+  it('非 JSON 返回 []', () => {
+    expect(parseDoubanBookHits('<html>')).toEqual([]);
+  });
+});
+
+describe('parseDoubanSubjectDetail', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../fixtures/douban-subject-lotr.html'), 'utf-8');
+
+  it('解析真实条目页', () => {
+    const d = parseDoubanSubjectDetail(html);
+    expect(d.author).toContain('托尔金');
+    expect(d.translator).toContain('邓嘉宛');
+    expect(d.publisher).toBeTruthy();
+    expect(d.year).toBe('2013');
+    expect(d.intro).toBeTruthy();
+    expect(d.intro!.length).toBeLessThanOrEqual(150);
+    expect(d.intro).not.toMatch(/[<>]|text-indent/);
+    expect(d.tags.length).toBeGreaterThan(0);
+    expect(typeof d.rating).toBe('number');
+  });
+  it('优先读 #db-tags-section 的标签', () => {
+    const d = parseDoubanSubjectDetail('<div id="db-tags-section"><div class="indent"><span><a class="  tag" href="/tag/奇幻">奇幻</a><a class="  tag" href="/tag/小说">小说</a></span></div></div>');
+    expect(d.tags).toEqual(['奇幻', '小说']);
+  });
+  it('短简介未折叠时只取简介本身，不越界读后面的页面文字', () => {
+    const d = parseDoubanSubjectDetail('<div class="indent" id="link-report"><div class="intro"><p>一段短简介。</p></div></div>'
+      + '<h2>作者简介</h2><div>作者介绍文字</div><script>var x = "脚本文字";</script>');
+    expect(d.intro).toBe('一段短简介。');
+  });
+  it('空页面不抛错', () => {
+    expect(parseDoubanSubjectDetail('<html></html>')).toEqual({ tags: [] });
+  });
+});
+
+describe('fetchDoubanSubjectDetail', () => {
+  it('非豆瓣条目页 URL 抛错', async () => {
+    await expect(fetchDoubanSubjectDetail('http://127.0.0.1/subject/1/')).rejects.toThrow();
   });
 });
