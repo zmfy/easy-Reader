@@ -50,6 +50,7 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTree: typeof import('element-plus/es')['ElTree']
+    GuideLink: typeof import('./components/GuideLink.vue')['default']
     HttpsCertCard: typeof import('./components/HttpsCertCard.vue')['default']
     InstallHelpDialog: typeof import('./components/InstallHelpDialog.vue')['default']
     LibraryManageCard: typeof import('./components/LibraryManageCard.vue')['default']

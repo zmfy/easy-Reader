@@ -11,7 +11,8 @@
       />
       <span class="hc-switch-label">启用 HTTPS</span>
     </div>
-    <p class="section-desc">需要在手机上安装到桌面（PWA）或从外网用 HTTPS 访问时再开启。使用你自己的证书，本程序不申请、不续签证书。</p>
+    <p class="section-desc hc-desc">需要在手机上安装到桌面（PWA）或从外网用 HTTPS 访问时再开启。使用你自己的证书，本程序不申请、不续签证书。</p>
+    <GuideLink class="hc-guide" :guide="GUIDES.remoteAccess" />
 
     <template v-if="state?.enabled">
     <div class="hc-status">
@@ -22,6 +23,7 @@
         <span v-if="state.listening" class="hc-meta">端口 {{ state.port }}（容器内端口，按 docker-compose 的映射访问）</span>
       </div>
       <p v-if="state.lastError" class="note note--warning hc-error">{{ state.lastError }}</p>
+      <GuideLink v-if="state.lastError" :guide="GUIDES.remoteAccess" anchor="常见报错" label="排查方法参考" />
       <dl v-if="state.cert" class="hc-cert">
         <dt>域名</dt><dd>{{ state.cert.domains.join('、') }}</dd>
         <dt>颁发者</dt><dd>{{ state.cert.issuer }}</dd>
@@ -62,6 +64,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { settingsApi } from '@/api/settings'
 import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { HttpsStatus } from '@/types'
+import GuideLink from './GuideLink.vue'
+import { GUIDES } from '@/utils/links'
 
 const noticeStore = useSystemNoticeStore()
 const state = ref<HttpsStatus | null>(null)
@@ -164,6 +168,8 @@ onMounted(load)
 .hc-badge.is-off { color: var(--text-2); background: var(--bg-2); }
 .hc-meta { font-size: 13px; color: var(--text-2); }
 .hc-error { margin: 10px 0 0; }
+.hc-desc { margin-bottom: 0; }
+.hc-guide { margin-bottom: 16px; }
 .hc-cert { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 0; font-size: 14px; }
 .hc-cert dt { color: var(--text-2); }
 .hc-cert dd { margin: 0; color: var(--text-0); word-break: break-all; }
