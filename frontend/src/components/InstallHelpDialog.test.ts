@@ -16,11 +16,15 @@ describe('InstallHelpDialog', () => {
   it('InstallHelpDialog shows the exact copy for each mode', async () => {
     const insecure = await open('insecure')
     expect(insecure.text()).toContain('需要通过 HTTPS 访问才能安装到桌面')
-    const link = insecure.find('a')
-    expect(link.text()).toBe('查看说明')
-    expect(link.attributes('href')).toBe('https://easyreader.ucool.uk')
+    expect(insecure.find('a').attributes('href')).toBe('https://easyreader.ucool.uk/guides/pwa-setup')
     expect((await open('ios')).text()).toContain('点底部的分享按钮 → 选择『添加到主屏幕』')
     expect((await open('menu')).text()).toContain('请在浏览器菜单中选择『安装应用』或『添加到主屏幕』')
     expect((await open('unsupported')).text()).toContain('当前浏览器不支持安装，请使用 Chrome、Edge 或 Safari')
+  })
+
+  it('InstallHelpDialog links each mode to the matching guide', async () => {
+    expect((await open('ios')).find('a').attributes('href')).toBe('https://easyreader.ucool.uk/guides/pwa-install#iphone-ipad-safari')
+    expect((await open('menu')).find('a').attributes('href')).toBe('https://easyreader.ucool.uk/guides/pwa-install')
+    expect((await open('unsupported')).find('a').attributes('href')).toBe('https://easyreader.ucool.uk/guides/pwa-install')
   })
 })
