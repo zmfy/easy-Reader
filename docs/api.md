@@ -131,6 +131,16 @@
 
 用户名 3–50 位，密码 6–100 位。站点为邀请注册模式时必须提供 `inviteCode`。成功返回 201，内容与登录相同。
 
+### OPDS 密码
+
+阅读 App 连接 OPDS 书目源（见「OPDS 书目源」一节）时，用的是用户名 + **OPDS 专用密码**，不是登录密码。新用户默认没有 OPDS 密码。
+
+- `GET /api/v1/opds/credentials`：返回 `{ enabled, created_at, last_used_at, username }`，不含密码。
+- `POST /api/v1/opds/credentials`：开通；已开通时为重置，旧密码立即失效。返回 201 `{ password, username }`。**密码只在这里返回一次**，服务器只保存哈希。
+- `DELETE /api/v1/opds/credentials`：关闭，旧密码立即失效；未开通时 404。
+
+管理员重置某个用户的登录密码时，该用户的 OPDS 密码也会作废；用户自己修改登录密码不影响 OPDS 密码。管理员可以调用 `DELETE /api/v1/settings/users/:id/opds` 关闭某个用户的 OPDS（未开通时 404），`GET /api/v1/settings/users` 每个用户带 `opds_enabled`、`opds_created_at`。
+
 ## 3. 站点信息
 
 ### GET /api/v1/settings/public（无需登录）

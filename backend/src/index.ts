@@ -16,6 +16,7 @@ import historyRoutes from './routes/history';
 import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
 import noticesRoutes from './routes/notices';
+import opdsCredentialsRoutes from './routes/opds-credentials';
 import { kickApplyWorker } from './services/ai-apply-job';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
@@ -89,6 +90,7 @@ api.use('/history', historyRoutes);
 api.use('/reader', readerRoutes);
 api.use('/settings', settingsRoutes);
 api.use('/notices', noticesRoutes);
+api.use('/opds', opdsCredentialsRoutes);
 
 // API 文档（docs/api.md）：/api/docs 网页查看，/api/docs.md 原文
 api.get('/docs.md', (_req: express.Request, res: express.Response) => {

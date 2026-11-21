@@ -11,6 +11,7 @@ import { User } from '../types';
 import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
 import { disableOpds } from '../services/opds-credentials';
+import { writeAudit } from '../services/audit-log';
 import crypto from 'crypto';
 import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
 import path from 'path';
@@ -248,8 +249,11 @@ router.put('/reader-prefs', authMiddleware, (req: Request, res: Response) => {
 // GET /api/settings/users
 router.get('/users', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const db = getDb();
-  const users = db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at DESC').all() as Omit<User, 'password_hash'>[];
-  successResponse(res, users);
+  const rows = db.prepare(
+    `SELECT u.id, u.username, u.role, u.created_at, o.created_at AS opds_created_at
+       FROM users u LEFT JOIN opds_credentials o ON o.user_id = u.id ORDER BY u.created_at DESC`
+  ).all() as Array<Omit<User, 'password_hash'> & { opds_created_at: string | null }>;
+  successResponse(res, rows.map(u => ({ ...u, opds_enabled: u.opds_created_at !== null })));
 });
 
 // POST /api/settings/users/invite
@@ -358,6 +362,13 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
     disableOpds(db, req.params.id);
   })();
   successResponse(res, null, '密码已修改');
+});
+
+// DELETE /api/settings/users/:id/opds — 管理员关闭某个用户的 OPDS（设备丢失等）
+router.delete('/users/:id/opds', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  if (!disableOpds(getDb(), req.params.id)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '该用户未开通 OPDS'); return; }
+  writeAudit({ user_id: req.user!.userId, action: 'opds_disable', resource_id: req.params.id, details: { by: 'admin' } });
+  successResponse(res, null, 'OPDS 已关闭');
 });
 
 // DELETE /api/settings/users/:id
