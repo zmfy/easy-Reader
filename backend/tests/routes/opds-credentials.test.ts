@@ -4,6 +4,7 @@ import path from 'path';
 import express from 'express';
 import type { AddressInfo } from 'net';
 import type { Server } from 'http';
+import bcrypt from 'bcryptjs';
 
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'opds-cred-route-'));
 process.env.DATA_DIR = DATA;
@@ -41,15 +42,18 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>(r => server.close(() => r())); });
 
 const db = getDb();
+const LOGIN_HASH = bcrypt.hashSync('Login-pass1', 4);
 beforeEach(() => {
   for (const t of ['opds_credentials', 'audit_log']) db.prepare(`DELETE FROM ${t}`).run();
   db.prepare("DELETE FROM users WHERE id IN ('u1', 'a1')").run();
-  db.prepare("INSERT INTO users (id, username, password_hash, role) VALUES ('u1', 'alice', 'x', 'user')").run();
+  db.prepare("INSERT INTO users (id, username, password_hash, role) VALUES ('u1', 'alice', ?, 'user')").run(LOGIN_HASH);
   db.prepare("INSERT INTO users (id, username, password_hash, role) VALUES ('a1', 'boss', 'x', 'admin')").run();
 });
 
-const call = (method: string, url: string, user = 'u1', role = 'user') => fetch(base + url, {
-  method, headers: { 'x-test-user': user, 'x-test-role': role },
+const call = (method: string, url: string, user = 'u1', role = 'user', body?: unknown) => fetch(base + url, {
+  method,
+  headers: { 'content-type': 'application/json', 'x-test-user': user, 'x-test-role': role },
+  body: method === 'POST' ? JSON.stringify(body ?? { currentPassword: 'Login-pass1' }) : undefined,
 });
 const auditActions = () => db.prepare('SELECT action, resource_id FROM audit_log ORDER BY rowid').all();
 
@@ -68,6 +72,12 @@ describe('OPDS 密码自助接口', () => {
     const after = (await (await call('GET', '/opds/credentials')).json()).data;
     expect(after.enabled).toBe(true);
     expect(after).not.toHaveProperty('password');
+  });
+
+  it('开通或重置必须输入正确的登录密码', async () => {
+    expect((await call('POST', '/opds/credentials', 'u1', 'user', {})).status).toBe(422);
+    expect((await call('POST', '/opds/credentials', 'u1', 'user', { currentPassword: 'wrong' })).status).toBe(422);
+    expect((await (await call('GET', '/opds/credentials')).json()).data.enabled).toBe(false);
   });
 
   it('第一次记为开通，再次调用记为重置', async () => {
