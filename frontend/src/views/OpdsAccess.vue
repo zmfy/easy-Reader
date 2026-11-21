@@ -9,7 +9,8 @@
           在 KOReader、KyBook、Yomu、静读天下（Moon+ Reader）等 App 里添加「OPDS 书目」，填写下面的地址、用户名和 OPDS 密码，
           就能浏览、搜索书库并下载到设备上阅读。TXT / UMD 会自动转成 EPUB 下载。
         </p>
-        <GuideLink :guide="GUIDES.opdsApps" label="手机怎么连接、各系统（iOS / 安卓 / Windows / 墨水屏）看书软件推荐与设置步骤参考" />
+        <GuideLink :guide="GUIDES.opdsSetup" label="手机、平板怎么连接与各 App 的添加步骤参考" :note="false" />
+        <GuideLink :guide="GUIDES.readerApps" label="iOS / 安卓 / Windows / Mac / 墨水屏看书软件推荐" />
 
         <div v-if="isHttp" class="http-warning" role="alert">
           当前通过 HTTP 访问，密码会明文传输；在外网请使用 HTTPS 地址。

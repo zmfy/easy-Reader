@@ -137,7 +137,7 @@ docker compose up -d --build
 2. 在 App 里添加「OPDS 书目 / 目录」，地址填页面上显示的 `https://你的域名/opds`，用户名是你的用户名，密码填 OPDS 密码（不是登录密码）。
 3. 之后就能在 App 里按最新入库、最近在读、我的书架、分类、作者、系列浏览和搜索，把书下载到设备上。
 
-EPUB、PDF 下载原文件；TXT 和 UMD 会转成带目录、UTF-8 编码的 EPUB（第一次下载某本书时稍慢），TXT 也可以下载原文。修改登录密码不影响 OPDS 密码；管理员重置你的登录密码时它会作废。管理员可在「设置 → 用户管理」查看谁开通了 OPDS 并替用户关闭。外网访问请使用 HTTPS，HTTP 下密码是明文传输的。详细步骤和各系统看书软件推荐见官网指南[《用阅读 App 看 NAS 书库》](https://easyreader.ucool.uk/guides/opds-reader-apps)。
+EPUB、PDF 下载原文件；TXT 和 UMD 会转成带目录、UTF-8 编码的 EPUB（第一次下载某本书时稍慢），TXT 也可以下载原文。修改登录密码不影响 OPDS 密码；管理员重置你的登录密码时它会作废。管理员可在「设置 → 用户管理」查看谁开通了 OPDS 并替用户关闭。外网访问请使用 HTTPS，HTTP 下密码是明文传输的。详细步骤见官网[《简单书房 OPDS 设置教程》](https://easyreader.ucool.uk/guides/opds-setup)，各系统用什么 App 见[《NAS 书库配什么看书软件》](https://easyreader.ucool.uk/guides/reader-apps)。
 
 ### 听书
 

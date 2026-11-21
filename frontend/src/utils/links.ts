@@ -21,7 +21,8 @@ export const GUIDES = {
   pwaInstall: { slug: 'pwa-install', title: '把 NAS 书库装到手机桌面（iPhone / 安卓）' },
   aiProviders: { slug: 'ai-providers', title: '简单书房的 AI 怎么选：DeepSeek 与 MiniMax 的设置、收费和省钱用法' },
   dockerCompose: { slug: 'docker-compose', title: 'Docker Compose 部署 NAS 小说阅读器' },
-  opdsApps: { slug: 'opds-reader-apps', title: '用阅读 App 看 NAS 书库：OPDS 设置与 iOS / 安卓 / Windows 看书软件推荐' },
+  opdsSetup: { slug: 'opds-setup', title: '简单书房 OPDS 设置教程：开通密码、手机平板连接书库、各 App 添加步骤' },
+  readerApps: { slug: 'reader-apps', title: 'NAS 书库配什么看书软件：iOS / 安卓 / Windows / Mac / 墨水屏阅读 App 推荐' },
 } satisfies Record<string, Guide>
 
 export function guideUrl(guide: Guide, anchor?: string): string {

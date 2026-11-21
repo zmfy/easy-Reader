@@ -54,9 +54,11 @@ describe('OpdsAccess', () => {
     status.mockResolvedValueOnce(ok(disabled))
     const w = mountPage()
     await flushPromises()
-    const link = w.findAll('a').find(a => a.attributes('href') === 'https://easyreader.ucool.uk/guides/opds-reader-apps')
-    expect(link).toBeTruthy()
-    expect(w.text()).toContain('看书软件推荐')
+    const hrefs = w.findAll('a').map(a => a.attributes('href'))
+    expect(hrefs).toContain('https://easyreader.ucool.uk/guides/opds-setup')
+    expect(hrefs).toContain('https://easyreader.ucool.uk/guides/reader-apps')
+    // 「官网较慢」的提示只出现一次
+    expect(w.text().split('官网使用免费云服务器').length - 1).toBe(1)
   })
 
   it('重新进入页面不再显示密码，已开通时可以重置和关闭', async () => {

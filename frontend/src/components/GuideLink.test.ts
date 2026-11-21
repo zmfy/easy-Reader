@@ -21,13 +21,19 @@ describe('GuideLink', () => {
     expect(w.find('a').attributes('href')).toBe('https://easyreader.ucool.uk/guides/remote-access-https#常见报错')
   })
 
+  it('can hide the slow-site note (when several links are listed together)', () => {
+    const w = mount(GuideLink, { props: { guide: GUIDES.aiProviders, note: false } })
+    expect(w.text()).not.toContain('官网使用免费云服务器')
+  })
+
   it('notes that the site may be slow at peak hours', () => {
     const w = mount(GuideLink, { props: { guide: GUIDES.aiProviders } })
     expect(w.text()).toContain('官网使用免费云服务器，高峰时段访问可能较慢，建议错开高峰时段访问')
   })
 
   it('guideUrl builds guide URLs', () => {
-    expect(guideUrl(GUIDES.opdsApps)).toBe('https://easyreader.ucool.uk/guides/opds-reader-apps')
+    expect(guideUrl(GUIDES.opdsSetup)).toBe('https://easyreader.ucool.uk/guides/opds-setup')
+    expect(guideUrl(GUIDES.readerApps)).toBe('https://easyreader.ucool.uk/guides/reader-apps')
     expect(guideUrl(GUIDES.dockerCompose, '第一步-准备两个目录')).toBe('https://easyreader.ucool.uk/guides/docker-compose#第一步-准备两个目录')
     expect(guideUrl(GUIDES.pwaSetup)).toBe('https://easyreader.ucool.uk/guides/pwa-setup')
   })
