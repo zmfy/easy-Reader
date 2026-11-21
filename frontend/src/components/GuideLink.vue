@@ -3,7 +3,7 @@
     <div>
       {{ label }}：<a :href="guideUrl(guide, anchor)" target="_blank" rel="noopener noreferrer">《{{ guide.title }}<span class="guide-link-end">》<IconExternalLink class="guide-link-icon" :size="12" :stroke-width="1.75" /></span></a>
     </div>
-    <div class="guide-link-note">{{ SITE_SLOW_NOTE }}</div>
+    <div v-if="note" class="guide-link-note">{{ SITE_SLOW_NOTE }}</div>
   </div>
 </template>
 
@@ -11,9 +11,11 @@
 import { IconExternalLink } from '@tabler/icons-vue'
 import { guideUrl, SITE_SLOW_NOTE, type Guide } from '@/utils/links'
 
-withDefaults(defineProps<{ guide: Guide; anchor?: string; label?: string }>(), {
+// note：几个链接排在一起时，只让最后一个显示「官网较慢」的提示
+withDefaults(defineProps<{ guide: Guide; anchor?: string; label?: string; note?: boolean }>(), {
   anchor: undefined,
   label: '详细设置方法参考',
+  note: true,
 })
 </script>
 
