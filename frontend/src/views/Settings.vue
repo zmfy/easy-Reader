@@ -312,7 +312,13 @@
                 {{ formatServerTime(row.created_at, 'date') }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="260">
+            <el-table-column label="OPDS">
+              <template #default="{ row }">
+                <span v-if="row.opds_enabled">已开通（{{ formatServerTime(row.opds_created_at, 'date') }}）</span>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="340">
               <template #default="{ row }">
                 <el-button
                   v-if="row.id !== authStore.user?.id"
@@ -326,6 +332,17 @@
                 <el-button size="small" link type="primary" @click="openPwdDialog(row)">
                   修改密码
                 </el-button>
+                <el-popconfirm
+                  v-if="row.opds_enabled"
+                  title="关闭后该用户的阅读 App 都无法再连接书库，确定关闭？"
+                  confirm-button-text="关闭"
+                  cancel-button-text="取消"
+                  @confirm="disableUserOpds(row)"
+                >
+                  <template #reference>
+                    <el-button size="small" link type="warning">关闭 OPDS</el-button>
+                  </template>
+                </el-popconfirm>
                 <el-popconfirm
                   v-if="row.id !== authStore.user?.id"
                   title="确定删除该用户？此操作不可恢复。"
@@ -572,7 +589,7 @@ const inviteExpiry = ref('')
 const inviteEmail = ref('')
 const smtpConfigured = ref(false)
 const smtpPassSet = ref(false)
-const users = ref<Array<{ id: string; username: string; role: string; created_at: string }>>([])
+const users = ref<Array<{ id: string; username: string; role: string; created_at: string; opds_enabled?: boolean; opds_created_at?: string | null }>>([])
 const aiPlugins = ref<Array<{ name: string; label: string; fields: string[]; placeholders?: Record<string, string>; options?: Record<string, Array<{ value: string; label: string }>> }>>([])
 const readerPlugins = ref<Array<{ format: string; label: string; description: string; usePlugin?: boolean }>>([])
 const selectedAiPlugin = ref('')
@@ -996,6 +1013,17 @@ async function toggleRole(user: { id: string; role: string }) {
   await settingsApi.updateUserRole(user.id, newRole)
   user.role = newRole
   ElMessage.success('角色已更新')
+}
+
+async function disableUserOpds(user: { id: string; opds_enabled?: boolean; opds_created_at?: string | null }) {
+  try {
+    await settingsApi.disableUserOpds(user.id)
+    user.opds_enabled = false
+    user.opds_created_at = null
+    ElMessage.success('OPDS 已关闭')
+  } catch (err: unknown) {
+    ElMessage.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || '关闭失败')
+  }
 }
 
 async function deleteUser(id: string) {

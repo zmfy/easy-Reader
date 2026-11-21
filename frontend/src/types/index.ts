@@ -283,6 +283,9 @@ export type AuditAction =
   | 'ai_fill_book'
   | 'ai_fetch_cover'
   | 'ai_suggestion_apply'
+  | 'opds_enable'
+  | 'opds_reset'
+  | 'opds_disable'
 
 export interface AuditLog {
   id: string
