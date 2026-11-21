@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { deleteTtsCache } from './tts';
+import { removeOpdsCache } from './opds-download';
 
 // Tables holding per-book data keyed by book_id. manual_overrides (admin
 // decisions) and audit_log (audit trail) are intentionally kept.
@@ -17,6 +18,8 @@ export function deleteBookRelations(db: Database.Database, bookIds: string[]): v
   }
   // 听书音频缓存（文件）：只是缓存，事务回滚时丢了也无妨
   deleteTtsCache(bookIds);
+  // OPDS 下载用的转换缓存（文件），同上
+  removeOpdsCache(bookIds);
 }
 
 /**
