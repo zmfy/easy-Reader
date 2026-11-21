@@ -16,7 +16,7 @@ import { cleanBookTitle } from '../utils/book-title';
 
 export type DownloadKind = 'epub' | 'pdf' | 'txt';
 /** 转换逻辑改了就加 1，旧缓存自然失效 */
-export const CONVERTER_VERSION = 1;
+export const CONVERTER_VERSION = 2;
 
 export interface Download { filePath: string; mimeType: string; fileName: string }
 
