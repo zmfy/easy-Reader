@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
-import { randomInt } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 
 // OPDS 专用密码：阅读 App 用 HTTP Basic 登录，密码明文存在设备上，所以不用登录密码。
 // 墨水屏上可能要手输，去掉易混字符 0 O o 1 l I
@@ -8,6 +8,27 @@ export const OPDS_PASSWORD_ALPHABET = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRS
 const PASSWORD_LENGTH = 16;
 // 最近使用时间只在距上次超过 10 分钟时写，避免阅读 App 的每个请求都写库
 const LAST_USED_THROTTLE_MS = 10 * 60 * 1000;
+
+// 校验通过的结果缓存几分钟：阅读 App 每翻一页、每次下载都带密码，bcrypt 每次约 60ms 且阻塞事件循环。
+// 键里含当前密码哈希：重置 / 关闭后哈希变了或行没了，缓存自然不再命中；用户状态仍每次查库
+const VERIFIED_TTL_MS = 5 * 60 * 1000;
+const VERIFIED_MAX = 1000;
+const verified = new Map<string, number>();
+
+function verifiedKey(userId: string, passwordHash: string, password: string): string {
+  return `${userId}\n${passwordHash}\n${createHash('sha256').update(password).digest('hex')}`;
+}
+
+function checkPassword(userId: string, passwordHash: string, password: string): boolean {
+  const key = verifiedKey(userId, passwordHash, password);
+  const now = Date.now();
+  const until = verified.get(key);
+  if (until && until > now) return true;
+  if (!bcrypt.compareSync(password, passwordHash)) return false;
+  if (verified.size >= VERIFIED_MAX) verified.clear();
+  verified.set(key, now + VERIFIED_TTL_MS);
+  return true;
+}
 
 export interface OpdsStatus {
   enabled: boolean;
@@ -47,7 +68,7 @@ export function verifyOpdsLogin(
   ).get(username) as
     { id: string; role: 'admin' | 'user'; must_change_password: number | null; password_hash: string; last_used_at: string | null } | undefined;
   if (!row || row.must_change_password) return null;
-  if (!bcrypt.compareSync(password, row.password_hash)) return null;
+  if (!checkPassword(row.id, row.password_hash, password)) return null;
 
   const last = row.last_used_at ? Date.parse(row.last_used_at.replace(' ', 'T') + 'Z') : 0;
   if (!last || Date.now() - last > LAST_USED_THROTTLE_MS) {

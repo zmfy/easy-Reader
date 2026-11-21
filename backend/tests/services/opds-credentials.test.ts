@@ -1,7 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import bcrypt from 'bcryptjs';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const bcrypt = require('bcryptjs');
 
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'opds-cred-'));
 process.env.DATA_DIR = DATA;
@@ -69,6 +70,35 @@ describe('OPDS 密码', () => {
     expect(getOpdsStatus(db, 'u1').last_used_at).toBeNull();
     verifyOpdsLogin(db, 'alice', pw);
     expect(getOpdsStatus(db, 'u1').last_used_at).not.toBeNull();
+  });
+
+  it('同一密码重复校验时不再重复计算 bcrypt（阅读 App 每个请求都带密码）', () => {
+    const pw = issueOpdsPassword(db, 'u1');
+    const spy = jest.spyOn(bcrypt, 'compareSync');
+    try {
+      for (let i = 0; i < 5; i++) expect(verifyOpdsLogin(db, 'alice', pw)).not.toBeNull();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(verifyOpdsLogin(db, 'alice', pw + 'x')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('缓存不影响作废：重置、关闭、改为默认密码后立即失效', () => {
+    const pw = issueOpdsPassword(db, 'u1');
+    expect(verifyOpdsLogin(db, 'alice', pw)).not.toBeNull();
+    issueOpdsPassword(db, 'u1');
+    expect(verifyOpdsLogin(db, 'alice', pw)).toBeNull();
+
+    const pw2 = issueOpdsPassword(db, 'u1');
+    expect(verifyOpdsLogin(db, 'alice', pw2)).not.toBeNull();
+    disableOpds(db, 'u1');
+    expect(verifyOpdsLogin(db, 'alice', pw2)).toBeNull();
+
+    const pw3 = issueOpdsPassword(db, 'u1');
+    expect(verifyOpdsLogin(db, 'alice', pw3)).not.toBeNull();
+    db.prepare('UPDATE users SET must_change_password = 1 WHERE id = ?').run('u1');
+    expect(verifyOpdsLogin(db, 'alice', pw3)).toBeNull();
   });
 
   it('删除用户数据时一并删除 OPDS 密码', () => {
