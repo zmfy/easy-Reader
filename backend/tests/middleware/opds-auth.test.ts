@@ -83,6 +83,14 @@ describe('OPDS Basic 认证', () => {
     expect((await get(basic('alice', alicePw), '10.0.0.4')).status).toBe(200);
   });
 
+  it('同一 IPv6 /64 网段内换地址也共用失败次数', async () => {
+    for (let i = 0; i < 20; i++) {
+      expect((await get(basic('alice', 'bad'), `2001:db8:1:2::${(i + 1).toString(16)}`)).status).toBe(401);
+    }
+    expect((await get(basic('alice', alicePw), '2001:db8:1:2:ffff::9')).status).toBe(429);
+    expect((await get(basic('alice', alicePw), '2001:db8:1:3::1')).status).toBe(200);
+  });
+
   it('同一 IP 密码连续错 20 次后被限流', async () => {
     for (let i = 0; i < 20; i++) expect((await get(basic('alice', 'bad'), '10.0.0.3')).status).toBe(401);
     expect((await get(basic('alice', alicePw), '10.0.0.3')).status).toBe(429);

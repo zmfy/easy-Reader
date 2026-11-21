@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
+import net from 'net';
 import { getDb } from '../db';
 import { verifyOpdsLogin } from '../services/opds-credentials';
 
@@ -15,10 +16,21 @@ function challenge(res: Response): void {
  */
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const FAILURE_LIMIT = 20;
+const FAILURE_MAX_KEYS = 10000;
 const failures = new Map<string, { count: number; resetAt: number }>();
 
+/** 计数键：IPv4 按地址；IPv6 按 /64 网段（一台设备通常能随意换同网段内的地址） */
 function failureKey(req: Request): string {
-  return req.ip || req.socket.remoteAddress || 'unknown';
+  const ip = (req.ip || req.socket.remoteAddress || 'unknown').replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/, '');
+  if (net.isIPv6(ip)) {
+    // 展开 :: 后取前 4 组
+    const [head, tail = ''] = ip.split('::');
+    const h = head ? head.split(':') : [];
+    const t = tail ? tail.split(':') : [];
+    const groups = ip.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h;
+    return groups.slice(0, 4).map(g => parseInt(g || '0', 16).toString(16)).join(':') + '::/64';
+  }
+  return ip;
 }
 
 function isLockedOut(key: string, now: number): boolean {
@@ -32,8 +44,14 @@ function recordFailure(key: string, now: number): void {
   const f = failures.get(key);
   if (!f || f.resetAt <= now) failures.set(key, { count: 1, resetAt: now + FAILURE_WINDOW_MS });
   else f.count += 1;
-  // 防止大量不同 IP 撑大内存：顺手清掉过期记录
-  if (failures.size > 10000) for (const [k, v] of failures) if (v.resetAt <= now) failures.delete(k);
+  // 防止大量不同来源撑大内存：先清过期记录，仍超上限就淘汰最早的（Map 按插入顺序）
+  if (failures.size > FAILURE_MAX_KEYS) {
+    for (const [k, v] of failures) if (v.resetAt <= now) failures.delete(k);
+    for (const k of failures.keys()) {
+      if (failures.size <= FAILURE_MAX_KEYS) break;
+      failures.delete(k);
+    }
+  }
 }
 
 function basicAuth(req: Request, res: Response, next: NextFunction): void {
