@@ -68,6 +68,11 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // OPDS 书目源（阅读 App 用）由后端提供
+      '/opds': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
       // 封面图片由后端提供（生产环境同源，无需代理）
       '/covers': {
         target: 'http://localhost:3000',
