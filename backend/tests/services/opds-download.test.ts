@@ -147,12 +147,12 @@ describe('EPUB 下载', () => {
 
   it('正常的 EPUB 给原文件', async () => {
     const f = path.join(BOOKS, 'ok.epub');
-    fs.writeFileSync(f, sample());
+    fs.writeFileSync(f, await sample());
     expect((await dl.resolveDownload(addBook('e1', f, 'epub'), 'epub')).filePath).toBe(f);
   });
 
   it('读取时需要修正的 EPUB 给修正后的版本', async () => {
-    const buf = Buffer.from(sample());
+    const buf = Buffer.from(await sample());
     const at = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
     buf.writeUInt16LE(buf.readUInt16LE(at + 10) * 2, at + 8);
     const f = path.join(BOOKS, 'broken.epub');

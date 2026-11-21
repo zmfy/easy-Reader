@@ -8,7 +8,7 @@ import { getReaderPlugin } from '../plugins/plugin-manager';
 import { repairZipEndRecord } from '../plugins/parser-epub';
 import { detectEncoding } from '../plugins/parser-txt';
 import { getOverridesMap } from './chapter-normalize';
-import { buildEpub, EpubInput } from './epub-builder';
+import { writeEpub, EpubInput } from './epub-builder';
 import { cleanBookTitle } from '../utils/book-title';
 
 // OPDS 下载：EPUB / PDF 给原文件（读取时需要修正的 EPUB 给修正版），TXT / UMD 转成 EPUB，
@@ -16,7 +16,7 @@ import { cleanBookTitle } from '../utils/book-title';
 
 export type DownloadKind = 'epub' | 'pdf' | 'txt';
 /** 转换逻辑改了就加 1，旧缓存自然失效 */
-export const CONVERTER_VERSION = 2;
+export const CONVERTER_VERSION = 3;
 
 export interface Download { filePath: string; mimeType: string; fileName: string }
 
@@ -59,8 +59,8 @@ function cacheName(book: Book, ext: string, withOverrides: boolean): string {
   return `${book.id}-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 12)}.${ext}`;
 }
 
-/** 生成缓存文件（先写临时文件再改名），生成后删除同一本书同类型的旧缓存 */
-function ensureCached(book: Book, name: string, produce: () => Promise<Buffer>): Promise<string> {
+/** 生成缓存文件（produce 写到临时文件，成功后改名），生成后删除同一本书同类型的旧缓存 */
+function ensureCached(book: Book, name: string, produce: (tmpPath: string) => Promise<void>): Promise<string> {
   const target = path.join(CACHE_DIR, name);
   if (fs.existsSync(target)) return Promise.resolve(target);
   const running = pending.get(target);
@@ -68,11 +68,15 @@ function ensureCached(book: Book, name: string, produce: () => Promise<Buffer>):
 
   const job = convertLimit(async () => {
     if (fs.existsSync(target)) return target;
-    const data = await produce();
     fs.mkdirSync(CACHE_DIR, { recursive: true });
     const tmp = `${target}.tmp-${crypto.randomBytes(4).toString('hex')}`;
-    fs.writeFileSync(tmp, data);
-    fs.renameSync(tmp, target);
+    try {
+      await produce(tmp);
+      fs.renameSync(tmp, target);
+    } catch (err) {
+      fs.rmSync(tmp, { force: true });
+      throw err;
+    }
     const ext = path.extname(name);
     for (const f of fs.readdirSync(CACHE_DIR)) {
       if (f !== name && f.startsWith(`${book.id}-`) && f.endsWith(ext)) fs.rmSync(path.join(CACHE_DIR, f), { force: true });
@@ -93,26 +97,20 @@ function readCover(coverUrl: string | null | undefined): EpubInput['cover'] {
   return { data: fs.readFileSync(file), mimeType };
 }
 
-async function convertToEpub(book: Book): Promise<Buffer> {
+/** TXT / UMD 逐章转成 EPUB 写到 outPath：标题先取全，正文逐章读取、写入 */
+async function convertToEpub(book: Book, outPath: string): Promise<void> {
   const plugin = await getReaderPlugin(book);
   const chapters = await plugin.getChapters();
   const overrides = getOverridesMap(book.id);
-  const out: EpubInput['chapters'] = [];
-  for (const c of chapters) {
-    out.push({
-      title: overrides.get(c.index) ?? c.title,
-      html: await plugin.getChapterContent(c.index),
-      groupTitle: c.groupTitle,
-    });
-  }
-  return buildEpub({
+  await writeEpub({
     id: book.id,
     title: cleanBookTitle(book.title),
     author: book.author,
     summary: book.summary,
     cover: readCover(book.cover_url),
-    chapters: out,
-  });
+    toc: chapters.map(c => ({ title: overrides.get(c.index) ?? c.title, groupTitle: c.groupTitle })),
+    chapterHtml: i => plugin.getChapterContent(chapters[i].index),
+  }, outPath);
 }
 
 /**
@@ -129,24 +127,24 @@ export async function resolveDownload(book: Book, kind: DownloadKind): Promise<D
   if (kind === 'txt') {
     const encoding = detectEncoding(book.file_path);
     if (encoding === 'utf8') return result(book.file_path);
-    const file = await ensureCached(book, cacheName(book, 'txt', false), async () =>
-      Buffer.from(iconv.decode(fs.readFileSync(book.file_path), encoding).replace(/^﻿/, ''), 'utf8'));
+    const file = await ensureCached(book, cacheName(book, 'txt', false), tmp =>
+      fs.promises.writeFile(tmp, iconv.decode(fs.readFileSync(book.file_path), encoding).replace(/^\uFEFF/, ''), 'utf8'));
     return result(file);
   }
 
   if (format === 'epub') {
     const plugin = await getReaderPlugin(book) as unknown as { repaired?: boolean };
     if (!plugin.repaired) return result(book.file_path);
-    const file = await ensureCached(book, cacheName(book, 'epub', false), async () => {
+    const file = await ensureCached(book, cacheName(book, 'epub', false), async tmp => {
       const fixed = repairZipEndRecord(fs.readFileSync(book.file_path));
       if (!fixed) throw new Error('无法修正这本 EPUB');
-      return fixed;
+      await fs.promises.writeFile(tmp, fixed);
     });
     return result(file);
   }
 
   // TXT / UMD → EPUB
-  return result(await ensureCached(book, cacheName(book, 'epub', true), () => convertToEpub(book)));
+  return result(await ensureCached(book, cacheName(book, 'epub', true), tmp => convertToEpub(book, tmp)));
 }
 
 export function removeOpdsCache(bookIds: string[]): void {
