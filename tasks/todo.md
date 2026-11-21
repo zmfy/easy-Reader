@@ -594,8 +594,21 @@
 - [x] 7. 前端预览弹窗进度与「查证过程」、书名行
 - [x] 8. docs/api.md、docs/development.md、CHANGELOG
 - [x] 9. 验证：jest 729 / vitest 174 / tsc / vue-tsc；库副本实测（单本预览、错标、关闭开关、批量 4 本、魔戒全集 / 三体全集 / 网文脚本、UI 截图）
-- [x] 10. 实测发现的问题待定：每本实测 6～8 次 AI 调用（估算按 4）；检索词带作者名时豆瓣常返回 0 条，魔戒全集未能确认、三体全集确认成单本《三体》；确认书名可能带版本营销用语
+- [x] 10. 实测发现的问题待定：每本实测 6～8 次 AI 调用（估算按 4）；检索词带作者名时豆瓣常返回 0 条，魔戒全集未能确认、三体全集确认成单本《三体》；确认书名可能带版本营销用语（已在 5f2746d / d0ac2ae 处理：检索词只写书名、套装保留整套名、确认书名去括号校验、估算改为每本 6 次）
 - [x] 11. 合并 main / study（2026-11-15）
+
+# 设置等处加官网指南链接（feature/guide-links）
+
+- [x] `utils/links.ts` 集中定义指南（slug + 标题 + 锚点），新增 `GuideLink.vue`（显示标题 + 「官网免费云服务器、高峰期较慢」小说明）+ 单测
+- [x] ① HTTPS 证书卡片说明 → remote-access-https
+- [x] ② HTTPS 证书报错提示 → remote-access-https#常见报错
+- [x] ③ 安装到桌面弹窗「需要 HTTPS」→ pwa-setup（替换原来指向官网首页的「查看说明」）
+- [x] ④ AI 设置 › AI 插件 → ai-providers
+- [x] ⑤ 站点公开地址提示 → remote-access-https
+- [x] ⑥ 安装到桌面弹窗 iOS / 菜单安装步骤 → pwa-install
+- [x] ⑦ 书库目录 → docker-compose 目录映射
+- [x] ⑧ 用户菜单加「使用指南」→ 官网 /guides
+- [x] 验证：vitest、vue-tsc、浏览器实测外观与链接；CHANGELOG [Unreleased]
 
 # OPDS 书目源（计划：docs/superpowers/plans/2026-11-21-opds.md）
 

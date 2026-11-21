@@ -35,6 +35,7 @@
               <label>站点公开地址</label>
               <el-input v-model="sysForm.site_url" placeholder="https://your-domain.com:36485" />
               <div class="form-hint">用于生成邀请链接，留空则自动使用当前访问地址</div>
+              <GuideLink :guide="GUIDES.remoteAccess" label="外网访问的设置方法参考" />
             </div>
           </div>
         </section>
@@ -47,6 +48,7 @@
             <div class="form-field">
               <label>书库目录</label>
               <el-input v-model="sysForm.books_dir" placeholder="/app/books" />
+              <GuideLink :guide="GUIDES.dockerCompose" anchor="第一步-准备两个目录" label="书库目录的映射方法参考" />
             </div>
           </div>
         </section>
@@ -203,6 +205,7 @@
               <span class="ai-tip-name">AI 语音</span>
               <span class="ai-tip-desc">听书的 AI 语音目前只支持 MiniMax（选择 MiniMax 后开启「听书功能」），其他插件暂不支持；未开启时阅读器的听书使用浏览器自带语音</span>
             </div>
+            <GuideLink :guide="GUIDES.aiProviders" label="Key 的获取、设置和费用参考" />
           </div>
           <div v-if="aiConfigWarning" class="note note--warning ai-warning">
             <IconAlertTriangle class="ai-warning-icon" :size="16" :stroke-width="1.75" />
@@ -530,6 +533,7 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import HttpsCertCard from '@/components/HttpsCertCard.vue'
 import CategoryTreeCard from '@/components/CategoryTreeCard.vue'
+import GuideLink from '@/components/GuideLink.vue'
 import { settingsApi } from '@/api/settings'
 import { boldSegments } from '@/utils/inline-bold'
 import { buildAiSettingsPayload, parseLookupEnabled } from '@/utils/ai-settings'
@@ -537,7 +541,7 @@ import { applySiteTheme, DEFAULT_THEME } from '@/utils/theme'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemNoticeStore } from '@/stores/system-notice'
 import type { Release, UpdateStatus } from '@/types'
-import { FEEDBACK_URL } from '@/utils/links'
+import { FEEDBACK_URL, GUIDES } from '@/utils/links'
 
 const authStore = useAuthStore()
 const noticeStore = useSystemNoticeStore()
