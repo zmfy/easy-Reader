@@ -5,6 +5,7 @@ export const workboxOptions = {
   globIgnores: ['pdfjs/**'],
   // 离线时打开任意页面回退到缓存的 index.html，由页面显示「没有网络连接」
   navigateFallback: 'index.html',
-  navigateFallbackDenylist: [/^\/api(\/|$)/, /^\/covers(\/|$)/, /^\/manifest\.webmanifest$/, /^\/health$/],
+  // /opds：OPDS 书目源与下载由后端提供，浏览器里打开时要看到登录框和 XML，不能回退成网页
+  navigateFallbackDenylist: [/^\/api(\/|$)/, /^\/opds(\/|$)/, /^\/covers(\/|$)/, /^\/manifest\.webmanifest$/, /^\/health$/],
   cleanupOutdatedCaches: true,
 }
