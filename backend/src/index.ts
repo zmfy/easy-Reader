@@ -17,6 +17,7 @@ import readerRoutes from './routes/reader';
 import settingsRoutes from './routes/settings';
 import noticesRoutes from './routes/notices';
 import opdsCredentialsRoutes from './routes/opds-credentials';
+import opdsRoutes from './routes/opds';
 import { kickApplyWorker } from './services/ai-apply-job';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
@@ -104,6 +105,8 @@ api.get('/docs', (_req: express.Request, res: express.Response) => {
   res.type('html').send(renderApiDocsPage(md));
 });
 
+// OPDS 书目源（阅读 App 用，HTTP Basic + OPDS 专用密码），不在 /api 下
+app.use('/opds', opdsRoutes);
 app.use('/api/v1', api);
 app.use('/api', api);
 
