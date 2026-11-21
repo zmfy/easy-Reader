@@ -67,6 +67,23 @@ describe('buildEpub', () => {
     expect(await parser.getChapterContent(1)).toContain('傲来国');
   });
 
+  it('正文开头已有标题行时不重复，标题行变成章节标题', () => {
+    const zip = new AdmZip(buildEpub(input({ chapters: [
+      { title: '第二回 悟彻菩提', html: '<p>第二回 悟彻菩提</p>\n<p>话表美猴王。</p>' },
+      { title: '第三回', html: '<p>序言一段</p>\n<p>第三回</p>\n<p>正文</p>' },
+      { title: '第四回', html: '<p>没有标题行</p>' },
+    ] })));
+    const c1 = zip.readAsText('OEBPS/text/c0001.xhtml');
+    expect(c1.match(/第二回 悟彻菩提/g)).toHaveLength(2); // <title> 与 <h2> 各一次
+    expect(c1).toContain('<h2>第二回 悟彻菩提</h2>');
+    expect(c1).not.toContain('<p>第二回 悟彻菩提</p>');
+    const c2 = zip.readAsText('OEBPS/text/c0002.xhtml');
+    expect(c2).toContain('<h2>第三回</h2>');
+    expect(c2).not.toContain('<p>第三回</p>');
+    expect(c2.indexOf('序言一段')).toBeGreaterThan(c2.indexOf('<h2>'));
+    expect(zip.readAsText('OEBPS/text/c0003.xhtml')).toContain('<h2>第四回</h2>');
+  });
+
   it('有封面时写入封面并标记 cover-image', () => {
     const png = Buffer.from('89504e470d0a1a0a', 'hex');
     const zip = new AdmZip(buildEpub(input({ cover: { data: png, mimeType: 'image/png' } })));

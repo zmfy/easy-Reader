@@ -48,6 +48,20 @@ function toXhtmlFragment(html: string): string {
     .replace(/<(br|hr|img)(\s[^<>]*?)?\s*\/?>/gi, (_m, tag: string, attrs = '') => `<${tag}${attrs}/>`);
 }
 
+// 解析插件的正文会保留一行章节标题（网页阅读器在标题区去重隐藏）；EPUB 已有 <h2>，去掉开头几段里与标题相同的那一行
+const TITLE_SCAN_PARAGRAPHS = 5;
+function dropTitleParagraph(html: string, title: string): string {
+  const compact = (s: string) => s.replace(/<[^>]*>/g, '').replace(/\s+/g, '');
+  const target = compact(esc(title));
+  if (!target) return html;
+  const re = /<p\b[^>]*>([\s\S]*?)<\/p>\s*/gi;
+  let m: RegExpExecArray | null;
+  for (let i = 0; i < TITLE_SCAN_PARAGRAPHS && (m = re.exec(html)); i++) {
+    if (compact(m[1]) === target) return html.slice(0, m.index) + html.slice(m.index + m[0].length);
+  }
+  return html;
+}
+
 function xhtmlPage(title: string, body: string, lang: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -173,7 +187,7 @@ ${ncxPoints}
   if (input.cover && coverExt) zip.addFile(`OEBPS/cover.${coverExt}`, input.cover.data);
 
   input.chapters.forEach((c, i) => {
-    const body = `<h2>${esc(c.title)}</h2>\n${toXhtmlFragment(c.html)}`;
+    const body = `<h2>${esc(c.title)}</h2>\n${toXhtmlFragment(dropTitleParagraph(c.html, c.title))}`;
     zip.addFile(`OEBPS/${fileOf(i)}`, Buffer.from(xhtmlPage(c.title, body, lang)));
   });
 
