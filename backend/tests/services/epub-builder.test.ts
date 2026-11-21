@@ -92,6 +92,26 @@ describe('buildEpub', () => {
   });
 });
 
+describe('章节标题去重的特殊情况', () => {
+  it('标题带引号（正文里引号未转义）时也不重复', async () => {
+    const zip = new AdmZip(await buildEpub(input({ chapters: [{ title: '第一回 "猴王"出世', html: '<p>第一回 "猴王"出世</p>\n<p>正文</p>' }] })));
+    const c1 = zip.readAsText('OEBPS/text/c0001.xhtml');
+    expect(c1).not.toMatch(/<p>第一回/);
+  });
+
+  it('统一过标题的书：正文里保留的原始标题行也去掉', async () => {
+    const out = path.join(TMP, 'normalized.epub');
+    await writeEpub({
+      id: 'n', title: '书',
+      toc: [{ title: '第1回 灵根孕育', sourceTitle: '第一回　灵根孕育' }],
+      chapterHtml: async () => '<p>第一回　灵根孕育</p>\n<p>正文</p>',
+    }, out);
+    const c1 = new AdmZip(out).readAsText('OEBPS/text/c0001.xhtml');
+    expect(c1).toContain('<h2>第1回 灵根孕育</h2>');
+    expect(c1).not.toContain('第一回');
+  });
+});
+
 describe('writeEpub（逐章写出）', () => {
   let seed = 42;
   const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed; };

@@ -16,7 +16,7 @@ import { cleanBookTitle } from '../utils/book-title';
 
 export type DownloadKind = 'epub' | 'pdf' | 'txt';
 /** 转换逻辑改了就加 1，旧缓存自然失效 */
-export const CONVERTER_VERSION = 3;
+export const CONVERTER_VERSION = 4;
 
 export interface Download { filePath: string; mimeType: string; fileName: string }
 
@@ -108,7 +108,7 @@ async function convertToEpub(book: Book, outPath: string): Promise<void> {
     author: book.author,
     summary: book.summary,
     cover: readCover(book.cover_url),
-    toc: chapters.map(c => ({ title: overrides.get(c.index) ?? c.title, groupTitle: c.groupTitle })),
+    toc: chapters.map(c => ({ title: overrides.get(c.index) ?? c.title, sourceTitle: c.title, groupTitle: c.groupTitle })),
     chapterHtml: i => plugin.getChapterContent(chapters[i].index),
   }, outPath);
 }
