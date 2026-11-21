@@ -28,6 +28,8 @@ beforeAll(async () => {
   const app = express();
   app.set('trust proxy', 'loopback');
   app.get('/opds', ...opdsAuth, (req, res) => { res.json(req.user); });
+  // 模拟慢下载：认证通过后迟迟不响应，客户端中途断开
+  app.get('/opds/slow', ...opdsAuth, () => { /* never responds */ });
   await new Promise<void>(r => { server = app.listen(0, () => r()); });
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/opds`;
 });
@@ -67,6 +69,18 @@ describe('OPDS Basic 认证', () => {
   it('不带认证头的请求（客户端先探测）不计入失败次数', async () => {
     for (let i = 0; i < 25; i++) expect((await get(undefined, '10.0.0.2')).status).toBe(401);
     expect((await get(basic('alice', alicePw), '10.0.0.2')).status).toBe(200);
+  });
+
+  it('认证通过但中途断开的请求（如下载被取消）不计入失败次数', async () => {
+    for (let i = 0; i < 25; i++) {
+      const ctl = new AbortController();
+      const p = fetch(url + '/slow', { headers: { authorization: basic('alice', alicePw), 'x-forwarded-for': '10.0.0.4' }, signal: ctl.signal }).catch(() => undefined);
+      await new Promise(r => setTimeout(r, 30));
+      ctl.abort();
+      await p;
+    }
+    await new Promise(r => setTimeout(r, 50));
+    expect((await get(basic('alice', alicePw), '10.0.0.4')).status).toBe(200);
   });
 
   it('同一 IP 密码连续错 20 次后被限流', async () => {
