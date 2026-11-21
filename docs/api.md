@@ -587,7 +587,26 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 和网页版共用这份设置时，请先读出原有内容，修改后整体写回，保留不认识的字段。
 
-## 10. 最小示例
+## 10. OPDS 书目源
+
+供阅读 App 使用的 OPDS 1.2（Atom XML）书目，地址 `/opds`（不在 `/api` 下，**不使用 JWT**）。
+
+- 认证：HTTP Basic，用户名 + OPDS 专用密码（见「OPDS 密码」）。缺少或错误时返回 401 并带 `WWW-Authenticate: Basic realm="easyReader"`。同一 IP 15 分钟内密码错误 20 次后返回 429（不带认证头的请求不计数）。
+- 链接都是以 `/` 开头的路径，按 feed 地址补全主机即可。列表每页 50 条，`?page=` 翻页，带 `next` / `previous` 链接。
+
+| 路径 | 内容 |
+|---|---|
+| `/opds` | 根目录：最新入库、最近在读、我的书架、分类、作者、系列、全部书籍 |
+| `/opds/recent`、`/opds/all`、`/opds/shelf`、`/opds/history` | 书目列表（书架、最近在读只含当前用户的） |
+| `/opds/categories?path=` → `/opds/categories/books?path=` | 多级分类，选上级包含全部下级 |
+| `/opds/authors` → `/opds/authors/books?name=` | 按作者 |
+| `/opds/series` → `/opds/series/:id` | 按系列 |
+| `/opds/search?q=` | 搜索书名、作者；描述文档 `/opds/opensearch.xml` |
+| `/opds/books/:id/download.<epub\|pdf\|txt>` | 下载 |
+
+只列出书库里正常的书（重复、乱码、损坏的不列）。下载格式：EPUB 给原文件（读取时需要修正的 EPUB 给修正后的文件）、PDF 给原文件；TXT 提供转换后的 EPUB 与 UTF-8 原文；UMD 提供转换后的 EPUB。转换结果有缓存，书名、作者、封面、文件或章节标题变化后重新生成。`Content-Disposition` 带 `filename*=UTF-8''<书名 - 作者.扩展名>`。下载不计入阅读历史。
+
+## 11. 最小示例
 
 ```bash
 BASE=http://nas.local:3000/api/v1
