@@ -50,6 +50,15 @@ describe('OpdsAccess', () => {
     expect(w.text()).toContain('只显示这一次')
   })
 
+  it('链接到官网 OPDS 设置指南与各系统看书软件推荐', async () => {
+    status.mockResolvedValueOnce(ok(disabled))
+    const w = mountPage()
+    await flushPromises()
+    const link = w.findAll('a').find(a => a.attributes('href') === 'https://easyreader.ucool.uk/guides/opds-reader-apps')
+    expect(link).toBeTruthy()
+    expect(w.text()).toContain('看书软件推荐')
+  })
+
   it('重新进入页面不再显示密码，已开通时可以重置和关闭', async () => {
     status.mockResolvedValueOnce(ok(enabled))
     const w = mountPage()
