@@ -1,12 +1,13 @@
 import Database from 'better-sqlite3';
 import { deleteTtsCache } from './tts';
+import { removeOpdsCache } from './opds-download';
 
 // Tables holding per-book data keyed by book_id. manual_overrides (admin
 // decisions) and audit_log (audit trail) are intentionally kept.
 const BOOK_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps', 'ai_suggestions', 'highlights', 'mind_nodes', 'ai_expansions'];
 
 // Tables holding per-user reading data keyed by user_id.
-const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks', 'highlights', 'mind_nodes'];
+const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks', 'highlights', 'mind_nodes', 'opds_credentials'];
 
 /** Delete all rows that reference the given books. Call inside the caller's transaction. */
 export function deleteBookRelations(db: Database.Database, bookIds: string[]): void {
@@ -17,6 +18,8 @@ export function deleteBookRelations(db: Database.Database, bookIds: string[]): v
   }
   // 听书音频缓存（文件）：只是缓存，事务回滚时丢了也无妨
   deleteTtsCache(bookIds);
+  // OPDS 下载用的转换缓存（文件），同上
+  removeOpdsCache(bookIds);
 }
 
 /**

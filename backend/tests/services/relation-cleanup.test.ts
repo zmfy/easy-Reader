@@ -11,6 +11,7 @@ function makeDb() {
     CREATE TABLE reading_progress (id TEXT, user_id TEXT, book_id TEXT);
     CREATE TABLE reading_history (user_id TEXT, book_id TEXT, opened_at TEXT);
     CREATE TABLE bookmarks (id TEXT, user_id TEXT, book_id TEXT);
+    CREATE TABLE opds_credentials (user_id TEXT PRIMARY KEY, password_hash TEXT);
     CREATE TABLE book_chapter_overrides (book_id TEXT, chapter_index INTEGER);
     CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, batch_no INTEGER, apply_job_id TEXT);
     CREATE TABLE book_ai_metadata (book_id TEXT);

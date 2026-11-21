@@ -27,6 +27,7 @@ describe('GuideLink', () => {
   })
 
   it('guideUrl builds guide URLs', () => {
+    expect(guideUrl(GUIDES.opdsApps)).toBe('https://easyreader.ucool.uk/guides/opds-reader-apps')
     expect(guideUrl(GUIDES.dockerCompose, '第一步-准备两个目录')).toBe('https://easyreader.ucool.uk/guides/docker-compose#第一步-准备两个目录')
     expect(guideUrl(GUIDES.pwaSetup)).toBe('https://easyreader.ucool.uk/guides/pwa-setup')
   })

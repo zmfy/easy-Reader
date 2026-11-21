@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/opds-access',
+      name: 'OpdsAccess',
+      component: () => import('@/views/OpdsAccess.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/change-password',
       name: 'ChangePassword',
       component: () => import('@/views/ChangePassword.vue'),
