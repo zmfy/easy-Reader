@@ -398,6 +398,16 @@ function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
   `);
 
+  // OPDS 书目源的专用密码（只存哈希）：阅读 App 用 HTTP Basic 登录，与登录密码分开
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS opds_credentials (
+      user_id TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_used_at DATETIME
+    );
+  `);
+
   // 已审核：待确认页采纳 / 忽略、单本书页确认填充过的书，批量填充跳过；「重置全部填充记录」时清掉
   let reviewedAdded = false;
   try { database.exec('ALTER TABLE books ADD COLUMN ai_reviewed_at DATETIME'); reviewedAdded = true; } catch { /* column exists */ }

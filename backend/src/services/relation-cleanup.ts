@@ -6,7 +6,7 @@ import { deleteTtsCache } from './tts';
 const BOOK_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks', 'book_chapter_overrides', 'book_ai_metadata', 'ai_recaps', 'ai_suggestions'];
 
 // Tables holding per-user reading data keyed by user_id.
-const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks'];
+const USER_RELATION_TABLES = ['shelf', 'reading_progress', 'reading_history', 'bookmarks', 'opds_credentials'];
 
 /** Delete all rows that reference the given books. Call inside the caller's transaction. */
 export function deleteBookRelations(db: Database.Database, bookIds: string[]): void {

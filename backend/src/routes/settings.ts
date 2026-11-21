@@ -10,6 +10,7 @@ import { getTtsConfig } from '../services/tts';
 import { User } from '../types';
 import nodemailer from 'nodemailer';
 import { deleteUserData } from '../services/relation-cleanup';
+import { disableOpds } from '../services/opds-credentials';
 import crypto from 'crypto';
 import { getUpdateStatus, checkForUpdates, readLocalChangelog, applyUpdateCheckerSetting } from '../services/update-check';
 import path from 'path';
@@ -351,7 +352,11 @@ router.put('/users/:id/password', authMiddleware, adminMiddleware, (req: Request
 
   const hash = bcrypt.hashSync(parsed.data.password, 10);
   // 递增令牌版本：该用户此前签发的所有令牌立即失效（被盗号后重置密码可踢下线）
-  db.prepare('UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?').run(hash, req.params.id);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?').run(hash, req.params.id);
+    // 管理员重置密码多因账号泄露：OPDS 专用密码一并作废（用户自己改登录密码则不影响）
+    disableOpds(db, req.params.id);
+  })();
   successResponse(res, null, '密码已修改');
 });
 
