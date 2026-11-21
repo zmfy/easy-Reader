@@ -245,7 +245,9 @@ router.get('/books/:id/download.:ext', async (req: Request, res: Response) => {
   try {
     download = await resolveDownload({ ...book, file_path: realPath }, kind);
   } catch (err) {
-    res.status(500).type('text/plain; charset=utf-8').send(`生成下载文件失败：${(err as Error).message}`);
+    // 错误信息可能带服务器上的文件路径，只写日志，对外给固定提示
+    console.error(`[opds] 生成下载文件失败 book=${book.id} kind=${kind}:`, err);
+    res.status(500).type('text/plain; charset=utf-8').send('生成下载文件失败，请稍后重试或联系管理员');
     return;
   }
   res.setHeader('Content-Type', download.mimeType);

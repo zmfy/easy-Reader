@@ -142,6 +142,23 @@ describe('/opds 下载', () => {
     expect((await get('/opds/books/lnk/download.txt')).status).toBe(404);
   });
 
+  it('生成失败时返回固定提示，不带出服务器路径', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const dl = require('../../src/services/opds-download');
+    const spy = jest.spyOn(dl, 'resolveDownload').mockRejectedValueOnce(new Error("ENOENT: no such file or directory, open '/app/books/secret/x.txt'"));
+    const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const r = await get('/opds/books/xyj/download.epub');
+      expect(r.status).toBe(500);
+      const text = await r.text();
+      expect(text).not.toContain('/app/books');
+      expect(text).toContain('生成下载文件失败');
+    } finally {
+      spy.mockRestore();
+      err.mockRestore();
+    }
+  });
+
   it('下载不记入阅读历史', async () => {
     await get('/opds/books/xyj/download.txt');
     expect(db.prepare('SELECT COUNT(*) AS n FROM reading_history').get().n).toBe(0);
