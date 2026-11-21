@@ -44,6 +44,10 @@ export const settingsApi = {
   updateUserRole: (id: string, role: string) =>
     http.put<ApiResponse<null>>(`/settings/users/${id}/role`, { role }),
 
+  /** 管理员关闭某个用户的 OPDS（阅读 App 连接） */
+  disableUserOpds: (id: string) =>
+    http.delete<ApiResponse<null>>(`/settings/users/${id}/opds`),
+
   deleteUser: (id: string) =>
     http.delete<ApiResponse<null>>(`/settings/users/${id}`),
 

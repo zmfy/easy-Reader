@@ -60,6 +60,10 @@
                 <IconKey class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>修改密码</span>
               </router-link>
+              <router-link to="/opds-access" class="menu-row" @click="closeMenu(); sidebarOpen = false">
+                <IconDeviceTablet class="menu-icon" :size="16" :stroke-width="1.75" />
+                <span>阅读 App（OPDS）</span>
+              </router-link>
               <a :href="GUIDES_URL" target="_blank" rel="noopener noreferrer" class="menu-row" :title="SITE_SLOW_NOTE" @click="closeMenu()">
                 <IconBook class="menu-icon" :size="16" :stroke-width="1.75" />
                 <span>使用指南</span>
@@ -115,7 +119,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 线条图标与 stock-agent 一致（Tabler Icons，按需打包）
-import { IconBook, IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconDeviceMobileDown, IconDots, IconHistory, IconKey, IconLogout, IconMessageCircle, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
+import { IconBook, IconBook2, IconBookmarks, IconBooks, IconBrandGithub, IconDeviceMobileDown, IconDeviceTablet, IconDots, IconHistory, IconKey, IconLogout, IconMessageCircle, IconPlugConnected, IconSettings2 } from '@tabler/icons-vue'
 import { FEEDBACK_URL, GUIDES_URL, ISSUE_URL, SITE_SLOW_NOTE } from '@/utils/links'
 import { settingsApi } from '@/api/settings'
 import { authApi } from '@/api/auth'

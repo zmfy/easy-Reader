@@ -15,7 +15,7 @@ interface ChapterMeta {
   partTitle?: string;
 }
 
-function detectEncoding(filePath: string): string {
+export function detectEncoding(filePath: string): string {
   const stat = fs.statSync(filePath);
   // 采样越大，chardet 对中文(尤其开头有大段 ASCII)的判断越准
   const sampleSize = Math.min(64 * 1024, stat.size);

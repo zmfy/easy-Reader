@@ -131,6 +131,16 @@
 
 用户名 3–50 位，密码 6–100 位。站点为邀请注册模式时必须提供 `inviteCode`。成功返回 201，内容与登录相同。
 
+### OPDS 密码
+
+阅读 App 连接 OPDS 书目源（见「OPDS 书目源」一节）时，用的是用户名 + **OPDS 专用密码**，不是登录密码。新用户默认没有 OPDS 密码。
+
+- `GET /api/v1/opds/credentials`：返回 `{ enabled, created_at, last_used_at, username }`，不含密码。
+- `POST /api/v1/opds/credentials`：开通；已开通时为重置，旧密码立即失效。请求体 `{ "currentPassword": "登录密码" }`，登录密码不正确返回 422（失败次数与登录合并限流）。返回 201 `{ password, username }`。**密码只在这里返回一次**，服务器只保存哈希。
+- `DELETE /api/v1/opds/credentials`：关闭，旧密码立即失效；未开通时 404。
+
+管理员重置某个用户的登录密码时，该用户的 OPDS 密码也会作废；用户自己修改登录密码不影响 OPDS 密码。管理员可以调用 `DELETE /api/v1/settings/users/:id/opds` 关闭某个用户的 OPDS（未开通时 404），`GET /api/v1/settings/users` 每个用户带 `opds_enabled`、`opds_created_at`。
+
 ## 3. 站点信息
 
 ### GET /api/v1/settings/public（无需登录）
@@ -577,7 +587,26 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 和网页版共用这份设置时，请先读出原有内容，修改后整体写回，保留不认识的字段。
 
-## 10. 最小示例
+## 10. OPDS 书目源
+
+供阅读 App 使用的 OPDS 1.2（Atom XML）书目，地址 `/opds`（不在 `/api` 下，**不使用 JWT**）。
+
+- 认证：HTTP Basic，用户名 + OPDS 专用密码（见「OPDS 密码」）。缺少或错误时返回 401 并带 `WWW-Authenticate: Basic realm="easyReader"`。同一 IP 15 分钟内密码错误 20 次后返回 429（不带认证头的请求不计数）。
+- 链接都是以 `/` 开头的路径，按 feed 地址补全主机即可。列表每页 50 条，`?page=` 翻页，带 `next` / `previous` 链接。
+
+| 路径 | 内容 |
+|---|---|
+| `/opds` | 根目录：最新入库、最近在读、我的书架、分类、作者、系列、全部书籍 |
+| `/opds/recent`、`/opds/all`、`/opds/shelf`、`/opds/history` | 书目列表（书架、最近在读只含当前用户的） |
+| `/opds/categories?path=` → `/opds/categories/books?path=` | 多级分类，选上级包含全部下级 |
+| `/opds/authors` → `/opds/authors/books?name=` | 按作者 |
+| `/opds/series` → `/opds/series/:id` | 按系列 |
+| `/opds/search?q=` | 搜索书名、作者；描述文档 `/opds/opensearch.xml` |
+| `/opds/books/:id/download.<epub\|pdf\|txt>` | 下载 |
+
+只列出书库里正常的书（重复、乱码、损坏的不列）。下载格式：EPUB 给原文件（读取时需要修正的 EPUB 给修正后的文件）、PDF 给原文件；TXT 提供转换后的 EPUB 与 UTF-8 原文；UMD 提供转换后的 EPUB。转换结果有缓存，书名、作者、封面、文件或章节标题变化后重新生成。`Content-Disposition` 带 `filename*=UTF-8''<书名 - 作者.扩展名>`。下载不计入阅读历史。
+
+## 11. 最小示例
 
 ```bash
 BASE=http://nas.local:3000/api/v1
