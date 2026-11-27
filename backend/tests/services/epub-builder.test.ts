@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { JSDOM } from 'jsdom';
-import { buildEpub, writeEpub, EpubInput } from '../../src/services/epub-builder';
+import { buildEpub, writeEpub, EpubInput, sanitizeXmlText } from '../../src/services/epub-builder';
 import { EpubParser } from '../../src/plugins/parser-epub';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'epub-builder-'));
@@ -109,6 +109,24 @@ describe('章节标题去重的特殊情况', () => {
     const c1 = new AdmZip(out).readAsText('OEBPS/text/c0001.xhtml');
     expect(c1).toContain('<h2>第1回 灵根孕育</h2>');
     expect(c1).not.toContain('第一回');
+  });
+});
+
+describe('keepTitleParagraph / sanitizeXmlText', () => {
+  it('keepTitleParagraph：正文开头与标题相同的段落保留', async () => {
+    const out = path.join(TMP, 'keep-title.epub');
+    await writeEpub({
+      id: 'k', title: '书', keepTitleParagraph: true,
+      toc: [{ title: '第一章 开端' }],
+      chapterHtml: async () => '<p>第一章 开端</p>\n<p>正文</p>',
+    }, out);
+    const c1 = new AdmZip(out).readAsText('OEBPS/text/c0001.xhtml');
+    expect(c1).toContain('<h2>第一章 开端</h2>');
+    expect(c1).toContain('<p>第一章 开端</p>');
+  });
+
+  it('sanitizeXmlText 去掉 XML 不允许的控制字符，保留 tab / 换行', () => {
+    expect(sanitizeXmlText('a\u0001b\u000Bc\td\ne\rf\u001F')).toBe('abc\td\ne\rf');
   });
 });
 

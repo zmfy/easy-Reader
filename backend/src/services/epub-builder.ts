@@ -33,17 +33,20 @@ const NAMED_ENTITIES: Record<string, string> = {
   lsquo: '&#8216;', rsquo: '&#8217;', copy: '&#169;', reg: '&#174;', times: '&#215;', laquo: '&#171;', raquo: '&#187;',
 };
 
-function esc(s: string): string {
+/** 去掉 XML 1.0 不允许的控制字符（标题、正文写进 EPUB 前都经过这一步；整理版逐字校验也用它） */
+export function sanitizeXmlText(s: string): string {
   // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
+function esc(s: string): string {
+  return sanitizeXmlText(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** 解析插件输出的 HTML → 合法 XHTML 片段：命名实体转数字实体，空元素自闭合 */
 function toXhtmlFragment(html: string): string {
-  return html
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+  return sanitizeXmlText(html)
     .replace(/&([a-zA-Z][a-zA-Z0-9]*);/g, (m, name: string) => {
       if (['amp', 'lt', 'gt', 'quot', 'apos'].includes(name)) return m;
       return NAMED_ENTITIES[name] ?? `&amp;${name};`;
@@ -132,6 +135,8 @@ export interface EpubStreamInput extends Omit<EpubInput, 'chapters'> {
   toc: EpubTocEntry[];
   /** 按需取第 i 章正文 HTML（i 是该条目在 toc 里的位置）：逐章读取、写入，整本书不会同时在内存里 */
   chapterHtml: (index: number) => Promise<string>;
+  /** 不去掉正文开头与标题相同的段落（整理版：正文须与原文逐字一致） */
+  keepTitleParagraph?: boolean;
 }
 
 /** 逐章写出 EPUB 到 outPath；内存里只有当前一章，压缩在线程池里做，不阻塞事件循环。失败时删除半成品 */
@@ -241,7 +246,8 @@ ${ncxPoints}
     for (let i = 0; i < input.toc.length; i++) {
       const { title, sourceTitle } = input.toc[i];
       const html = await input.chapterHtml(i);
-      const body = `<h2>${esc(title)}</h2>\n${toXhtmlFragment(dropTitleParagraph(html, [title, sourceTitle ?? '']))}`;
+      const kept = input.keepTitleParagraph ? html : dropTitleParagraph(html, [title, sourceTitle ?? '']);
+      const body = `<h2>${esc(title)}</h2>\n${toXhtmlFragment(kept)}`;
       await zip.add(`OEBPS/${fileOf(i)}`, Buffer.from(xhtmlPage(title, body, lang)));
     }
     await zip.close();

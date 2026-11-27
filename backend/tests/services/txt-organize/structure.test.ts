@@ -253,4 +253,12 @@ describe('verifyVerbatim', () => {
     expect(await verifyVerbatim(f, structure, iter(['他走进了青牛镇。\n天色已晚。', '很安净。'])))
       .toEqual({ ok: false, firstDiffAt: '他走进了青牛镇。\n天色已晚。\n很安'.length });
   });
+
+  it('normalizeLine：原文每行先经过它再比较（如去掉控制字符）', async () => {
+    const text = '第一章 开端\n正文\u0001甲\n\u0002\n';
+    const { f, structure } = await prepare(text, { 0: chap('第一章 开端') });
+    const strip = (t: string) => t.replace(/[\u0000-\u001F]/g, '');
+    expect(await verifyVerbatim(f, structure, iter(['正文甲']))).toMatchObject({ ok: false });
+    expect(await verifyVerbatim(f, structure, iter(['正文甲']), strip)).toEqual({ ok: true });
+  });
 });

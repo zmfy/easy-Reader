@@ -193,12 +193,22 @@ describe('writeOrganizedEpub', () => {
     expect(fs.existsSync(path.join(organizedDir(), 'bad2.epub'))).toBe(false);
   });
 
-  it('正文开头有与标题相同的行（epub-builder 会去掉它）时报错，不悄悄丢字', async () => {
-    const { f, structure } = await prepare('第一章 开端\n第一章 开端\n正文\n', { 0: chap('第一章 开端') });
+  it('正文开头有与标题相同的行（AI 把重复标题判成 noise:text）→ 整理成功，这一行保留', async () => {
+    const { f, structure } = await prepare('第一章 开端\n第一章 开端\n正文\n', {
+      0: chap('第一章 开端'), 1: { type: 'noise', noiseKind: 'text' },
+    });
     expect(structure.dropLines.has(1)).toBe(false);
-    await expect(writeOrganizedEpub({ newBookId: 'dup', sourcePath: f, structure, title: '书' }))
-      .rejects.toThrow('整理结果与原文不一致');
-    expect(fs.existsSync(path.join(organizedDir(), 'dup.epub'))).toBe(false);
+    const res = await writeOrganizedEpub({ newBookId: 'dup', sourcePath: f, structure, title: '书' });
+    const { chapters, bodies } = await readBack(res.filePath);
+    expect(chapters.map(c => c.title)).toEqual(['第一章 开端']);
+    expect(bodies).toEqual([['第一章 开端', '正文']]);
+  });
+
+  it('原文里的控制字符写 EPUB 时去掉，校验两边同一口径，整理成功', async () => {
+    const { f, structure } = await prepare('第一章 开端\n正文\u0001甲\n\u0002\n乙\n', { 0: chap('第一章 开端') });
+    const res = await writeOrganizedEpub({ newBookId: 'ctl', sourcePath: f, structure, title: '书' });
+    const { bodies } = await readBack(res.filePath);
+    expect(bodies).toEqual([['正文甲', '乙']]);
   });
 
   it('30MB 合成文本：写出期间主线程最长占用 < 200ms（process.threadCpuUsage）', async () => {
@@ -230,11 +240,16 @@ describe('writeOrganizedEpub', () => {
     // 量的是两次定时器之间主线程自己用掉的 CPU 时间（同 epub-builder.test.ts）
     const threadCpu = (prev?: NodeJS.CpuUsage): NodeJS.CpuUsage =>
       (process as unknown as { threadCpuUsage(p?: NodeJS.CpuUsage): NodeJS.CpuUsage }).threadCpuUsage(prev);
+    // 校验在写出时流式比对，不整本读回 EPUB
+    const loadSpy = jest.spyOn(EpubParser.prototype, 'load');
+    const rssBefore = process.memoryUsage().rss;
+    let rssPeak = rssBefore;
     let last = threadCpu();
     let maxGap = 0;
     const timer = setInterval(() => {
       const d = threadCpu(last);
       maxGap = Math.max(maxGap, (d.user + d.system) / 1000);
+      rssPeak = Math.max(rssPeak, process.memoryUsage().rss);
       last = threadCpu();
     }, 5);
     const res = await writeOrganizedEpub({
@@ -242,6 +257,10 @@ describe('writeOrganizedEpub', () => {
     });
     clearInterval(timer);
     expect(maxGap).toBeLessThan(200);
+    // 内存增长与文件大小无关（整本 30MB 原文 / EPUB 不会同时在内存里）
+    expect((rssPeak - rssBefore) / 1048576).toBeLessThan(150);
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
     expect(res.chapterMap).toHaveLength(CHAPTERS);
     expect(fs.existsSync(res.filePath)).toBe(true);
   }, 180000);

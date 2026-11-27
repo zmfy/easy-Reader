@@ -133,10 +133,12 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
 }
 
 /** 去掉首尾空白（含全角空格、\r）后的非空行 */
-async function* normalizedLeft(filePath: string, dropLines: Set<number>): AsyncGenerator<string> {
+async function* normalizedLeft(
+  filePath: string, dropLines: Set<number>, normalizeLine?: (text: string) => string,
+): AsyncGenerator<string> {
   for await (const line of readTxtLines(filePath)) {
     if (dropLines.has(line.lineNo)) continue;
-    const t = line.text.trim();
+    const t = (normalizeLine ? normalizeLine(line.text) : line.text).trim();
     if (t) yield t;
   }
 }
@@ -152,14 +154,16 @@ async function* normalizedRight(chapters: AsyncIterable<string>): AsyncGenerator
 
 /**
  * 逐字校验：左边 = 原文逐行去掉 dropLines、空行、行首尾空白后以 \n 拼接；右边 = 各章段落同样处理后拼接。
+ * normalizeLine：原文每行先经过它再 trim（如去掉写 EPUB 时会去掉的控制字符）。
  * 两边都流式逐行比较；firstDiffAt 为拼接后文本里第一个不一致字符的位置（一边更长时为较短一边的长度）。
  */
 export async function verifyVerbatim(
   filePath: string,
   structure: OrgStructure,
   renderedChapters: AsyncIterable<string>,
+  normalizeLine?: (text: string) => string,
 ): Promise<{ ok: true } | { ok: false; firstDiffAt: number }> {
-  const left = normalizedLeft(filePath, structure.dropLines);
+  const left = normalizedLeft(filePath, structure.dropLines, normalizeLine);
   const right = normalizedRight(renderedChapters);
   // 已比较过的拼接文本长度（含每行后的 \n）
   let offset = 0;
