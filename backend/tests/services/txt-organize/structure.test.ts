@@ -369,6 +369,24 @@ describe('按标题前缀推断分部 / 分卷', () => {
     expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
   });
 
+  it('「第一部分 / 第二部分」被标成章 → 不推断分部，标题不被剥掉', async () => {
+    const { structure } = await prepare('第一部分 缘起\n正文\n第二部分 经过\n正文\n', {
+      0: chap('第一部分 缘起'), 2: chap('第二部分 经过'),
+    });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([[0, '第一部分 缘起'], [0, '第二部分 经过']]);
+    expect(structure.notes).toEqual([]);
+  });
+
+  it('AI 标成卷、标题只给了卷名，但原文卷名后带章号 → 按章处理，章名取原文去掉卷名前缀', async () => {
+    const text = '第六卷通天灵宝第九百八十四章银瞳幻术\n正文\n';
+    const { f, structure } = await prepare(text, { 0: { type: 'volume', title: '第六卷通天灵宝' } });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第六卷通天灵宝', true],
+      [1, '第九百八十四章银瞳幻术', false],
+    ]);
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
   it('前缀允许空白和全角数字', async () => {
     const { structure } = await prepare('第 ２ 部 第３卷 风起 第１章 甲\n正文\n', { 0: chap('第１章 甲') });
     expect(structure.sections.map(s => [s.level, s.title])).toEqual([

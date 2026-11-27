@@ -63,12 +63,15 @@ export function isDuplicateOf(dupText: string, headingText: string): boolean {
 }
 
 const NUM_CHARS = '[零〇一二两三四五六七八九十百千万\\d０-９]+';
-/** 行首「第X部」 */
-const PART_PREFIX_RE = new RegExp(`^第\\s*(${NUM_CHARS})\\s*部`);
+/** 行首「第X部」（「第一部分」不算） */
+const PART_PREFIX_RE = new RegExp(`^第\\s*(${NUM_CHARS})\\s*部(?!分)`);
 /** 行首（可带「第X部」）「第Y卷<卷名>」，后面紧跟「第Z章/节/回/集」 */
-const VOLUME_PREFIX_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部\\s*)?(第\\s*(${NUM_CHARS})\\s*卷.*?)\\s*第\\s*${NUM_CHARS}\\s*[章节回集]`);
+const VOLUME_PREFIX_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部(?!分)\\s*)?(第\\s*(${NUM_CHARS})\\s*卷.*?)\\s*第\\s*${NUM_CHARS}\\s*[章节回集]`);
 /** 行首（可带「第X部」）「第Y卷」 */
-const VOLUME_START_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部\\s*)?第\\s*(${NUM_CHARS})\\s*卷`);
+const VOLUME_START_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部(?!分)\\s*)?第\\s*(${NUM_CHARS})\\s*卷`);
+
+/** 含「第Z章/节/回/集」 */
+const CHAPTER_NUM_RE = new RegExp(`第\\s*${NUM_CHARS}\\s*[章节回集]`);
 
 const numValue = (s: string) =>
   chapterNumberValue(s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)));
@@ -122,7 +125,11 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
         volumeCount++;
         entries.push({ type: 'volume', title: vm[1].trim(), idx: i, synthetic: true });
       }
-      entries.push({ type: 'chapter', title, idx: i, synthetic: false });
+      // AI 给的标题只有卷名（没有章号）时，章名取原文去掉卷名前缀的部分
+      const chapterTitle = CHAPTER_NUM_RE.test(title)
+        ? title
+        : stripTitlePromo(text.slice(text.indexOf(vm[1]) + vm[1].length).trim());
+      entries.push({ type: 'chapter', title: chapterTitle, idx: i, synthetic: false });
       return;
     }
     if (l.type === 'volume') {
