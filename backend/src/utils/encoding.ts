@@ -90,18 +90,21 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
     return { status: 'normal', encoding: 'utf-8' };
   }
 
-  // Level 2: try GBK / GB18030 / BIG5
+  // Level 2: try GB18030 / BIG5
+  // GBK 系一律按 GB18030（GBK 的超集）解码：先试 gbk 时，夹着少量四字节生僻字（𠮷、㐀）的书
+  // 比例照样过线，按 gbk 改写会把这些字永久写坏。普通 GBK 文件两者解码结果相同，此时仍报告为 gbk
   let bestEnc = 'utf-8';
   let bestText = utf8Text;
   let bestRatio = utf8Ratio;
-  for (const enc of ['gbk', 'gb18030', 'big5']) {
+  for (const enc of ['gb18030', 'big5']) {
     const text = tryDecode(sample, enc);
     if (text === null) continue;
     const r = printableRatio(text);
     if (r >= CONFIDENT_RATIO) {
       // confident — fix immediately
       await rewriteAsUtf8(filePath, enc);
-      return { status: 'encoding_fixed', encoding: enc };
+      const label = enc === 'gb18030' && tryDecode(sample, 'gbk') === text ? 'gbk' : enc;
+      return { status: 'encoding_fixed', encoding: label };
     }
     if (r > bestRatio) {
       bestRatio = r;
