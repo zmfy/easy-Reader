@@ -85,3 +85,23 @@ describe('answerQuestion', () => {
     expect(r.sources.map(s => s.chapterIndex)).toEqual([3]);
   });
 });
+
+describe('已读部分取不出文字（扫描版 PDF）', () => {
+  beforeEach(() => {
+    (getReaderPlugin as jest.Mock).mockResolvedValue({
+      getChapters: async () => [0, 1, 2].map(index => ({ index, title: `第 ${index + 1} 页` })),
+      getChapterContent: async () => '',
+    });
+  });
+
+  it('前情提要：明确说明原因，不调用 AI', async () => {
+    await expect(generateRecap(db, book, 2, 0)).rejects.toThrow(/取不出文字.*扫描版/);
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it('问书：明确说明原因，不调用 AI', async () => {
+    await expect(answerQuestion(db, book, { question: '主角是谁', chapterIndex: 2, paragraphIndex: 0, history: [] }))
+      .rejects.toThrow(/取不出文字.*扫描版/);
+    expect(chat).not.toHaveBeenCalled();
+  });
+});

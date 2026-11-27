@@ -13,6 +13,11 @@ const RECAP_CHAPTERS = 3;          // 前情提要回看的章节数
 const CHAPTER_CLIP = 4000;         // 每章送给 AI 的最大字数
 const MAX_HISTORY = 3;             // 问书带上的对话轮数
 
+/** 已读部分一个字都取不出（多为扫描版 PDF）：直接说明原因，不拿空内容去调 AI */
+function noTextError(action: string): Error {
+  return new Error(`已读部分取不出文字（可能是扫描版 PDF，没有文字层），无法${action}`);
+}
+
 export interface RecapResult { content: string; cached: boolean; chapters: string[] }
 export interface AskResult { answer: string; sources: Array<{ chapterIndex: number; title: string }> }
 
@@ -38,6 +43,7 @@ export async function generateRecap(db: Database.Database, book: Book, chapterIn
   }
   parts.push({ title: `${title(current)}（读到这里）`, text: clipMiddle(readPart(await plugin.getChapterContent(current), paragraphIndex), CHAPTER_CLIP) });
 
+  if (parts.every(p => !p.text.trim())) throw noTextError('生成前情提要');
   const content = cleanAiText(await aiManager.chat(buildRecapPrompt(book.title, parts), db));
   if (!content) throw new Error('AI 没有返回内容');
   db.prepare('INSERT OR REPLACE INTO ai_recaps (book_id, chapter_index, paragraph_index, content) VALUES (?, ?, ?, ?)')
@@ -60,6 +66,7 @@ export async function answerQuestion(
   const currentText = clipMiddle(readPart(await plugin.getChapterContent(current), input.paragraphIndex), CHAPTER_CLIP);
 
   const corpus = read.map(c => c.text).join('\n') + '\n' + currentText;
+  if (!corpus.trim()) throw noTextError('问书');
   const terms = extractQueryTerms(input.question, corpus);
   let snippets = findRelevantSnippets(terms, read);
   // 问题里没有可检索的词（如「上一章发生了什么」）：带上前一章
