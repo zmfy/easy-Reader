@@ -54,7 +54,7 @@ export function detectEncoding(filePath: string): string {
 const PREVIEW_BYTES = 64 * 1024;
 
 /** 文件开头 64KB 里有 CR、没有 LF：只用 CR 换行 */
-function isCrOnly(filePath: string): boolean {
+export function isCrOnly(filePath: string): boolean {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buf = Buffer.alloc(PREVIEW_BYTES);
@@ -573,6 +573,13 @@ export class TxtParser implements ReaderPlugin {
   async getChapters(): Promise<TocEntry[]> {
     if (!this.toc) this.toc = this.buildToc();
     return this.toc;
+  }
+
+  /** 现有规则切出的每个章节起点（字节位置与 readTxtLines 同一坐标系）及目录层级（无层级为 0），供 AI 整理给候选行附「规则判定」 */
+  getHeadingStarts(): Array<{ byte: number; level: number }> {
+    if (!this.toc) this.toc = this.buildToc();
+    const toc = this.toc;
+    return this.chapters.map((c, i) => ({ byte: c.startByte, level: toc[i]?.level ?? 0 }));
   }
 
   private buildToc(): TocEntry[] {
