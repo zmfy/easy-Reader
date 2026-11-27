@@ -6,7 +6,7 @@ import { getDb } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import { Book, ReadingProgress, Bookmark } from '../types';
-import { classifyZipDamage } from '../services/epub-health';
+import { checkBookHealth, REASON_PDF_PASSWORD } from '../services/book-health';
 import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
@@ -41,19 +41,16 @@ function findReadableBook(bookId: string, res: Response): Book | null {
   // 后续所有打开都用校验过的真实路径，避免校验后再跟随（被替换的）符号链接
   return { ...book, file_path: realPath };
 }
-// 损坏的 EPUB：提示原因与处理办法（HTTP 409）
+// 损坏的书：提示原因与处理办法（HTTP 409）
 function damagedMessage(reason: string | null | undefined): string {
+  if (reason === REASON_PDF_PASSWORD) return '这本 PDF 需要打开密码，无法阅读。请用其他软件去掉打开密码后重新扫描';
   return `文件不完整或已损坏：${reason || '无法解析'}。请重新获取文件后重新扫描`;
 }
 
-// 状态正常的 EPUB 解析失败时，看文件是不是被截断；分类不出原因返回 null
-function classifyEpubFailure(book: Book): string | null {
-  if (book.file_format.toLowerCase() !== 'epub') return null;
-  try {
-    return classifyZipDamage(fs.readFileSync(book.file_path));
-  } catch {
-    return null;
-  }
+// 状态正常的书打开失败时，用扫描时的健康检查判断原因；不是文件本身的问题（或分类不出）返回 null
+async function classifyFailure(book: Book): Promise<string | null> {
+  const h = await checkBookHealth(book.file_path, book.file_format);
+  return h.status === 'damaged' && !h.timedOut ? h.reason : null;
 }
 
 const window = new JSDOM('').window;
@@ -94,7 +91,7 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   } catch (err) {
     // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
     console.error(`[reader:chapters] book=${req.params.bookId}`, err);
-    const reason = classifyEpubFailure(book);
+    const reason = await classifyFailure(book);
     if (reason) { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(reason)); return; }
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节');
   }
@@ -195,7 +192,7 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
   } catch (err) {
     // 底层异常可能含服务器路径（且 asset 路由无需登录），只记日志、不回显给客户端
     console.error(`[reader:chapter] book=${req.params.bookId}`, err);
-    const reason = classifyEpubFailure(book);
+    const reason = await classifyFailure(book);
     if (reason) { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(reason)); return; }
     errorResponse(res, 500, 'INTERNAL_ERROR', '无法读取章节内容');
   }

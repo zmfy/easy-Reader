@@ -10,7 +10,7 @@ import {
   isCancelled,
 } from './scan-task';
 import { FINGERPRINT_VERSION, shouldReuseFingerprint } from './scan-versions';
-import { checkEpubHealth, HEALTH_CHECK_VERSION, EpubHealth } from './epub-health';
+import { checkBookHealth, HEALTH_CHECK_VERSION, HEALTH_FORMATS, BookHealth } from './book-health';
 import { isSkippedUnchanged } from './scan-skips';
 import {
   ScanOptions,
@@ -31,7 +31,7 @@ import { deleteBookRelations, promoteDuplicatesOf } from './relation-cleanup';
 const SUPPORTED_FORMATS = ['txt', 'pdf', 'epub', 'umd'];
 const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
-/** 本次扫描的 EPUB 健康检查计数（扫描结束时用于提醒） */
+/** 本次扫描的 健康检查计数（扫描结束时用于提醒） */
 export interface ScanHealthCounts {
   damaged_existing: number;   // 已入库的书新变为损坏
   recovered: number;          // 已入库的损坏书恢复正常
@@ -100,7 +100,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const backfillAuthorStmt = getDb().prepare(
       "UPDATE books SET author = ? WHERE id = ? AND (author IS NULL OR author = '')"
     );
-    // EPUB 健康检查结果直接写库（已入库的书不生成审核项）
+    // 健康检查结果直接写库（已入库的书不生成审核项）
     const bookByPathStmt = getDb().prepare('SELECT id, status FROM books WHERE file_path = ?');
     const markDamagedStmt = getDb().prepare(
       "UPDATE books SET status = 'damaged', damage_reason = ?, duplicate_of = NULL, file_size = ?, file_mtime = ?, health_check_version = ? WHERE id = ?"
@@ -118,8 +118,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     const healthVersionStmt = getDb().prepare(
       'UPDATE books SET health_check_version = ? WHERE id = ?'
     );
-    const warnUnchecked = (h: EpubHealth, file: string): void => {
-      console.warn(`[scan ${taskId}] EPUB 健康检查未完成（${h.status === 'unreadable' ? '读取失败' : '解析超时'}），下次扫描再查:`, file);
+    const warnUnchecked = (h: BookHealth, file: string): void => {
+      console.warn(`[scan ${taskId}] 健康检查未完成（${h.status === 'unreadable' ? '读取失败' : '解析超时'}），下次扫描再查:`, file);
     };
     const bumpProgress = (every: number): void => {
       processed++;
@@ -133,9 +133,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       let st: fs.Stats;
       try { st = fs.statSync(fullPath); } catch { processed++; continue; }
       const pre = prefetched.get(fullPath);
-      const isEpub = path.extname(fullPath).slice(1).toLowerCase() === 'epub';
+      const ext = path.extname(fullPath).slice(1).toLowerCase();
+      // 扫描时做健康检查的格式（见 book-health.ts）
+      const isChecked = HEALTH_FORMATS.includes(ext);
       // 已标记损坏、文件没变、检查版本已最新：不再打开（损坏书可能没有指纹，走不到下面的复用分支）
-      if (isEpub && pre && pre.status === 'damaged' && pre.health_check_version === HEALTH_CHECK_VERSION
+      if (isChecked && pre && pre.status === 'damaged' && pre.health_check_version === HEALTH_CHECK_VERSION
         && pre.file_size === st.size && pre.file_mtime === st.mtimeMs) {
         bumpProgress(50);
         continue;
@@ -154,9 +156,9 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
           const a = extractAuthorFromName(path.basename(fullPath));
           if (a) backfillAuthorStmt.run(a, pre.id);
         }
-        // 检查规则更新后，已入库的 EPUB 按新规则重查一次，结果直接写库
-        if (pre && isEpub && pre.health_check_version !== HEALTH_CHECK_VERSION) {
-          const h = await checkEpubHealth(fullPath);
+        // 检查规则更新后，已入库的书按新规则重查一次，结果直接写库
+        if (pre && isChecked && pre.health_check_version !== HEALTH_CHECK_VERSION) {
+          const h = await checkBookHealth(fullPath, ext);
           if (isUncheckedForExisting(h)) {
             // 这次没读成或超时，状态和检查版本都不动，下次扫描再查
             warnUnchecked(h, fullPath);
@@ -178,8 +180,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       }
       let repaired = false;
       let healthUnchecked = false;
-      if (isEpub) {
-        const h = await checkEpubHealth(fullPath);
+      if (isChecked) {
+        const h = await checkBookHealth(fullPath, ext);
         const existingBook = bookByPathStmt.get(fullPath) as { id: string; status: string | null } | undefined;
         // 读不了，或已入库的书解析超时：当作这次没检查，照常走原来的新书流程，不写检查版本
         healthUnchecked = h.status === 'unreadable' || (!!existingBook && isUncheckedForExisting(h));
@@ -333,7 +335,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     if (options.mode === 'auto') {
       if (!isEmpty(result)) {
         const { applyBatch, hasUndecidedDamaged } = await import('./batch-applier');
-        // 损坏 EPUB 要管理员逐本决定导入或跳过：含损坏项的批次留着待审核
+        // 损坏的书要管理员逐本决定导入或跳过：含损坏项的批次留着待审核
         let needsReview = false;
         for (const batch of buildBatchesFromScan(taskId, result)) {
           if (hasUndecidedDamaged(getDb(), batch.id)) needsReview = true;
@@ -377,7 +379,7 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
 }
 
 /** 已入库的书：读不了或解析超时都只算这次没检查成（超时可能只是书大、盘慢，不能据此判损坏） */
-function isUncheckedForExisting(h: EpubHealth): boolean {
+function isUncheckedForExisting(h: BookHealth): boolean {
   return h.status === 'unreadable' || (h.status === 'damaged' && h.timedOut === true);
 }
 
@@ -405,7 +407,7 @@ function toNewPayload(b: ScannedBookEx): NewBookPayload {
     encoding_detected: b.encoding_detected,
     status: b.status,
     ...(b.repaired ? { repaired: true } : {}),
-    ...(b.file_format === 'epub' && !b.health_unchecked ? { health_check_version: HEALTH_CHECK_VERSION } : {}),
+    ...(HEALTH_FORMATS.includes(b.file_format) && !b.health_unchecked ? { health_check_version: HEALTH_CHECK_VERSION } : {}),
   };
 }
 

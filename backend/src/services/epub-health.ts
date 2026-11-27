@@ -1,12 +1,7 @@
 import fs from 'fs';
 import { EpubParser } from '../plugins/parser-epub';
 
-/**
- * 健康检查规则版本；规则变化时加一，已入库的书会按新规则重查
- * 2：content.opf 元素带 opf: 前缀（epub4j / so-novel）的书不再误判为「没有可读的章节」
- * 3：没有 mimetype、container 路径带 ./、条目名大小写不一致、manifest 只有一个条目的书不再误判损坏
- */
-export const HEALTH_CHECK_VERSION = 3;
+// 健康检查规则版本 HEALTH_CHECK_VERSION 在 book-health.ts（所有格式共用）
 /** 单本检查超时（超时后后台解析继续，不再等） */
 export const EPUB_CHECK_TIMEOUT_MS = 15000;
 
@@ -25,10 +20,10 @@ interface HealthParser {
   dispose?(): void;
 }
 
-const REASON_INCOMPLETE = '文件不完整（可能下载或复制中断）';
+export const REASON_INCOMPLETE = '文件不完整（可能下载或复制中断）';
 const REASON_NO_OPF = '缺少书籍目录（content.opf）';
 const REASON_NO_CHAPTERS = '没有可读的章节';
-const REASON_TIMEOUT = '解析超时';
+export const REASON_TIMEOUT = '解析超时';
 const REASON_MAX_LEN = 80;
 
 /** zip 缺少尾部目录（EOCD）或中央目录时，多半是下载 / 复制中断；否则返回 null */
@@ -38,7 +33,7 @@ export function classifyZipDamage(buf: Buffer): string | null {
   return hasEnd && hasCentral ? null : REASON_INCOMPLETE;
 }
 
-function describeError(err: unknown, filePath: string): string {
+export function describeError(err: unknown, filePath: string): string {
   const raw = err instanceof Error ? err.message : String(err);
   const cleaned = raw
     .split(filePath).join('')
@@ -50,7 +45,7 @@ function describeError(err: unknown, filePath: string): string {
 }
 
 /** Node 文件系统错误（带 syscall 与 E 开头的 code），不是 zip / 解析错误 */
-function isFsError(err: unknown): boolean {
+export function isFsError(err: unknown): boolean {
   const e = err as { code?: unknown; syscall?: unknown } | null;
   return !!e && typeof e.code === 'string' && /^E[A-Z]+$/.test(e.code) && typeof e.syscall === 'string';
 }

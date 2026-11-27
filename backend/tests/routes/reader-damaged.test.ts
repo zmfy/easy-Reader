@@ -51,6 +51,8 @@ beforeEach(() => {
   ins.run('n2', '无法分类', path.join(BOOKS, 'junk.epub'), 'epub', 'normal', null);
   ins.run('n3', '同样截断的 pdf', path.join(BOOKS, 'cut.epub'), 'pdf', 'normal', null);
   ins.run('g1', '乱码', '/b/g.txt', 'txt', 'garbled', null);
+  fs.copyFileSync(path.join(__dirname, '../fixtures/pdf-tools/qpdf-user.pdf'), path.join(BOOKS, 'locked.pdf'));
+  ins.run('p1', '加密 PDF', path.join(BOOKS, 'locked.pdf'), 'pdf', 'normal', null);
 });
 
 describe('损坏书的阅读提示', () => {
@@ -74,14 +76,22 @@ describe('损坏书的阅读提示', () => {
     expect((await res.json()).message).toBe('文件不完整或已损坏：文件不完整（可能下载或复制中断）。请重新获取文件后重新扫描');
   });
 
-  it('分类不出原因 → 保持「无法读取章节」', async () => {
+  it('解析不了的 EPUB → 409，原因为「无法解析：…」', async () => {
     const res = await fetch(`${base}/reader/n2/chapters`);
-    expect(res.status).toBe(500);
-    expect((await res.json()).message).toBe('无法读取章节');
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toMatch(/^文件不完整或已损坏：无法解析：/);
   });
 
-  it('非 EPUB 不做分类', async () => {
-    expect((await fetch(`${base}/reader/n3/chapters`)).status).toBe(500);
+  it('状态正常的 PDF 被截断 → 409 文件不完整', async () => {
+    const res = await fetch(`${base}/reader/n3/chapters`);
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toBe('文件不完整或已损坏：文件不完整（可能下载或复制中断）。请重新获取文件后重新扫描');
+  });
+
+  it('状态正常的 PDF 需要打开密码 → 409 并说明去掉密码', async () => {
+    const res = await fetch(`${base}/reader/p1/chapter/0`);
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toBe('这本 PDF 需要打开密码，无法阅读。请用其他软件去掉打开密码后重新扫描');
   });
 });
 

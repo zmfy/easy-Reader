@@ -8,9 +8,10 @@ const BOOKS = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-health-books-'));
 process.env.DATA_DIR = DATA;
 process.env.BOOKS_DIR = BOOKS;
 
-jest.mock('../../src/services/epub-health', () => ({
+jest.mock('../../src/services/book-health', () => ({
   HEALTH_CHECK_VERSION: 1,
-  checkEpubHealth: jest.fn(),
+  HEALTH_FORMATS: ['epub', 'pdf', 'umd', 'txt'],
+  checkBookHealth: jest.fn(),
 }));
 jest.mock('../../src/services/batch-builder', () => ({
   buildBatchesFromScan: jest.fn(() => []),
@@ -31,11 +32,11 @@ const { notifyScanHealth } = require('../../src/services/notices');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { recordSkip } = require('../../src/services/scan-skips');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { checkEpubHealth } = require('../../src/services/epub-health');
+const { checkBookHealth } = require('../../src/services/book-health');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { buildBatchesFromScan } = require('../../src/services/batch-builder');
 
-const check = checkEpubHealth as jest.Mock;
+const check = checkBookHealth as jest.Mock;
 const build = buildBatchesFromScan as jest.Mock;
 const notifyHealth = notifyScanHealth as jest.Mock;
 let db: Database.Database;
@@ -88,7 +89,7 @@ afterAll(() => {
   fs.rmSync(BOOKS, { recursive: true, force: true });
 });
 
-describe('扫描接入 EPUB 健康检查', () => {
+describe('扫描接入健康检查', () => {
   it('新文件损坏 → 进 damaged 列表，不进 new_books', async () => {
     const b = writeBook('broken.epub');
     check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
@@ -220,12 +221,21 @@ describe('扫描接入 EPUB 健康检查', () => {
     expect(nb.health_check_version).toBeUndefined();
   });
 
-  it('TXT 文件不调用检查', async () => {
-    writeBook('plain.txt', 'hello world, this is a plain text book.\n');
+  it('TXT 也做检查：正常的照常入库并带检查版本', async () => {
+    const b = writeBook('plain.txt', 'hello world, this is a plain text book.\n');
     const { result } = await scan();
-    expect(check).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledWith(b.file, 'txt');
     expect(result.new_books).toHaveLength(1);
-    expect(result.new_books[0].health_check_version).toBeUndefined();
+    expect(result.new_books[0].health_check_version).toBe(1);
+  });
+
+  it('PDF 打不开（如需要打开密码）→ 进入损坏列表，带原因', async () => {
+    const b = writeBook('locked.pdf');
+    check.mockResolvedValue({ status: 'damaged', reason: '需要打开密码（加密的 PDF）' });
+    const { result } = await scan();
+    expect(check).toHaveBeenCalledWith(b.file, 'pdf');
+    expect(result.damaged).toEqual([{ file_path: b.file, file_size: b.size, file_mtime: b.mtime, reason: '需要打开密码（加密的 PDF）' }]);
+    expect(result.new_books).toEqual([]);
   });
 
   it('已入库书检查版本过期、解析超时 → 不判损坏，不写检查版本（下次再查）', async () => {
@@ -274,7 +284,8 @@ describe('扫描接入 EPUB 健康检查', () => {
     const d = writeBook('d.txt', 'duplicate text body\n');
     insertBook('p', p);
     insertBook('d', d, { status: 'duplicate', duplicate_of: 'p' });
-    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    // 只有 EPUB 主书损坏，TXT 重复书本身正常
+    check.mockImplementation(async (_f: string, fmt: string) => (fmt === 'epub' ? { status: 'damaged', reason: '没有可读的章节' } : { status: 'ok' }));
     await scan();
     expect(dupRow('p')).toEqual({ status: 'damaged', duplicate_of: null });
     expect(dupRow('d')).toEqual({ status: 'normal', duplicate_of: null });
@@ -285,7 +296,8 @@ describe('扫描接入 EPUB 健康检查', () => {
     const d = writeBook('d.txt', 'duplicate text body\n');
     insertBook('p', { ...p, size: p.size + 1 }, { health_check_version: 1 });
     insertBook('d', d, { status: 'duplicate', duplicate_of: 'p' });
-    check.mockResolvedValue({ status: 'damaged', reason: '没有可读的章节' });
+    // 只有 EPUB 主书损坏，TXT 重复书本身正常
+    check.mockImplementation(async (_f: string, fmt: string) => (fmt === 'epub' ? { status: 'damaged', reason: '没有可读的章节' } : { status: 'ok' }));
     await scan();
     expect(dupRow('d')).toEqual({ status: 'normal', duplicate_of: null });
   });
