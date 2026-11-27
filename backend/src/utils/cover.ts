@@ -361,6 +361,15 @@ export async function downloadCoverFromPic(pic: string, bookId: string): Promise
   }
 }
 
+/** 删除这本书的全部封面文件（saveCoverFile 存下的 <bookId>-… / <bookId>.…） */
+export function removeCoverFiles(bookId: string): void {
+  for (const f of fs.readdirSync(COVERS_DIR)) {
+    if (f.startsWith(`${bookId}.`) || f.startsWith(`${bookId}-`)) {
+      fs.rmSync(path.join(COVERS_DIR, f), { force: true });
+    }
+  }
+}
+
 /** Download the cover image for an already-fetched suggest item. Returns /covers/… or undefined. */
 export async function downloadCover(item: DoubanSuggest, bookId: string): Promise<string | undefined> {
   if (!item.pic) return undefined;

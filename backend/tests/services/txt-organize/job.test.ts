@@ -30,12 +30,25 @@ jest.mock('../../../src/ai/ai-manager', () => ({
   },
 }));
 
+// 写出阶段强制失败（封面已复制之后的失败）
+let mockWriteFail = false;
+jest.mock('../../../src/services/txt-organize/writer', () => {
+  const actual = jest.requireActual('../../../src/services/txt-organize/writer');
+  return {
+    ...actual,
+    writeOrganizedEpub: (...args: unknown[]) =>
+      mockWriteFail ? Promise.reject(new Error('整理结果与原文不一致')) : actual.writeOrganizedEpub(...args),
+  };
+});
+
 /* eslint-disable @typescript-eslint/no-var-requires */
 let db: Database.Database = require('../../../src/db').getDb();
 let job = require('../../../src/services/txt-organize/job') as typeof import('../../../src/services/txt-organize/job');
 /* eslint-enable @typescript-eslint/no-var-requires */
 
+const { saveCoverFile } = require('../../../src/utils/cover') as typeof import('../../../src/utils/cover');
 const BOOKS = process.env.BOOKS_DIR!;
+const COVERS = path.join(process.env.DATA_DIR!, 'covers');
 const ORGANIZED = path.join(process.env.DATA_DIR!, 'organized');
 const ADMIN = { userId: 'u-admin', role: 'admin' as const };
 const READER = { userId: 'u-reader', role: 'user' as const };
@@ -81,6 +94,7 @@ beforeEach(() => {
   mockAiConfigured = true;
   mockFail = false;
   mockChatCalls = 0;
+  mockWriteFail = false;
   db.exec(`
     DELETE FROM txt_organize_jobs; DELETE FROM txt_organize_chapter_map; DELETE FROM scan_batch_items;
     DELETE FROM scan_batches; DELETE FROM notices; DELETE FROM books;
@@ -108,10 +122,18 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
   const org = db.prepare('SELECT * FROM books WHERE organized_from = ?').get('b1') as Record<string, unknown>;
   expect(org).toMatchObject({
     id: done.result_book_id, title: '测试书（整理版）', author: '某人', summary: '简介', category: '玄幻',
-    cover_url: '/covers/b1-x.png', file_format: 'epub', status: 'pending_review', organized_job_id: created.id,
+    file_format: 'epub', status: 'pending_review', organized_job_id: created.id,
     chapter_count: 4,
   });
   expect(org.file_path).toBe(path.join(ORGANIZED, `${org.id}.epub`));
+  // 封面是整理版自己的副本：原书换封面（删掉旧文件）后整理版的封面文件还在
+  expect(org.cover_url).not.toBe('/covers/b1-x.png');
+  expect(org.cover_url).toMatch(new RegExp(`^/covers/${org.id}-[^/]+\\.png$`));
+  const orgCover = path.join(COVERS, (org.cover_url as string).slice('/covers/'.length));
+  expect(fs.readFileSync(orgCover)).toEqual(Buffer.from('89504e470d0a1a0a', 'hex'));
+  saveCoverFile('b1', Buffer.from('new'), 'jpg');
+  expect(fs.existsSync(path.join(COVERS, 'b1-x.png'))).toBe(false);
+  expect(fs.existsSync(orgCover)).toBe(true);
   expect(fs.existsSync(org.file_path as string)).toBe(true);
   // 书库文件夹里没有多出文件
   expect(fs.readdirSync(BOOKS)).toEqual(['b1.txt']);
@@ -219,6 +241,30 @@ it('AI 两次都失败 → 任务 failed，无新书、无批次、无文件', a
   // 失败后可以再发起（新任务）
   mockFail = false;
   expect(job.requestOrganize('b7', READER).id).not.toBe(created.id);
+});
+
+it('封面复制之后失败 → 删除复制的封面和文件', async () => {
+  addBook('b11', { cover: true });
+  mockWriteFail = true;
+  const created = job.requestOrganize('b11', ADMIN);
+  await waitFor(() => getJob(created.id)?.status === 'failed');
+  expect(getJob(created.id)!.error).toBe('整理结果与原文不一致');
+  expect(fs.readdirSync(COVERS).filter(f => f.startsWith(created.id))).toEqual([]);
+  expect(fs.existsSync(path.join(COVERS, 'b11-x.png'))).toBe(true);
+  expect(db.prepare('SELECT COUNT(*) AS n FROM books').get()).toEqual({ n: 1 });
+});
+
+it('远程封面地址原样沿用；本地封面文件缺失时不带封面', async () => {
+  addBook('b12');
+  addBook('b13');
+  db.prepare("UPDATE books SET cover_url = 'https://img1.doubanio.com/view/subject/l/public/s1.jpg' WHERE id = 'b12'").run();
+  db.prepare("UPDATE books SET cover_url = '/covers/b13-missing.png' WHERE id = 'b13'").run();
+  const j12 = job.requestOrganize('b12', ADMIN);
+  const j13 = job.requestOrganize('b13', ADMIN);
+  await waitFor(() => getJob(j12.id)?.status === 'review' && getJob(j13.id)?.status === 'review');
+  const coverOf = (id: string) => (db.prepare('SELECT cover_url FROM books WHERE organized_from = ?').get(id) as { cover_url: string | null }).cover_url;
+  expect(coverOf('b12')).toBe('https://img1.doubanio.com/view/subject/l/public/s1.jpg');
+  expect(coverOf('b13')).toBeNull();
 });
 
 it('原书在任务开始前被删除 → 任务 failed', async () => {

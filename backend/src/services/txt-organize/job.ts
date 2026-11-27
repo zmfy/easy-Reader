@@ -6,6 +6,7 @@ import { getDb } from '../../db';
 import { isAiConfigured } from '../../ai/ai-manager';
 import { TxtParser } from '../../plugins/parser-txt';
 import { resolveRealPathInsideRoot } from '../../utils/path-safe';
+import { removeCoverFiles, saveCoverFile } from '../../utils/cover';
 import { readCover } from '../opds-download';
 import { notifyOrganizeResult } from '../notices';
 import { collectCandidates } from './candidates';
@@ -172,8 +173,9 @@ async function runWorker(): Promise<void> {
     try {
       batchId = await runJob(job, db);
     } catch (err) {
-      // 整理版文件以任务 id 命名：失败时删掉（写出阶段之后失败也不会留下）
+      // 整理版文件和封面副本都以任务 id 命名：失败时删掉（写出阶段之后失败也不会留下）
       fs.rmSync(organizedFilePath(job.id), { force: true });
+      removeCoverFiles(job.id);
       const message = (err as Error).message || String(err);
       db.prepare("UPDATE txt_organize_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(message, job.id);
@@ -187,6 +189,29 @@ async function runWorker(): Promise<void> {
 
 function organizedFilePath(bookId: string): string {
   return path.join(organizedDir(), `${bookId}.epub`);
+}
+
+const COVER_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+/**
+ * 整理版的封面：原书是本地封面文件时复制一份给整理版（原书以后换封面会删掉旧文件），同一份数据嵌进 EPUB；
+ * 远程地址原样沿用（没有文件可复制）；本地文件缺失或复制失败时不带封面，不让任务失败。
+ */
+function copyCover(coverUrl: string | null, newBookId: string): {
+  coverUrl: string | null;
+  cover: { buffer: Buffer; mimeType: string } | null;
+} {
+  if (!coverUrl) return { coverUrl: null, cover: null };
+  if (!coverUrl.startsWith('/covers/')) return { coverUrl, cover: null };
+  try {
+    const local = readCover(coverUrl);
+    if (!local) return { coverUrl: null, cover: null };
+    const url = saveCoverFile(newBookId, local.data, COVER_EXT[local.mimeType] ?? 'jpg');
+    return { coverUrl: url, cover: { buffer: local.data, mimeType: local.mimeType } };
+  } catch (err) {
+    console.warn(`[txt-organize ${newBookId}] 复制封面失败，整理版不带封面:`, err instanceof Error ? err.message : err);
+    return { coverUrl: null, cover: null };
+  }
 }
 
 interface BookRow {
@@ -231,10 +256,9 @@ async function runJob(job: { id: string; book_id: string; requested_by: string }
   // 3. 写整理版 EPUB（逐字校验不一致时 writer 自己删文件并抛错）
   const newBookId = job.id;
   const newTitle = book.title + ORGANIZED_SUFFIX;
-  const cover = readCover(book.cover_url);
+  const { coverUrl, cover } = copyCover(book.cover_url, newBookId);
   const { filePath, chapterMap } = await writeOrganizedEpub({
-    newBookId, sourcePath: srcPath, structure, title: newTitle, author: book.author, summary: book.summary,
-    cover: cover ? { buffer: cover.data, mimeType: cover.mimeType } : null,
+    newBookId, sourcePath: srcPath, structure, title: newTitle, author: book.author, summary: book.summary, cover,
   });
   // 有前言时 chapterMap 比 sections 多一章（第 0 章）
   const organizedToc = [
@@ -252,7 +276,7 @@ async function runJob(job: { id: string; book_id: string; requested_by: string }
     db.prepare(
       `INSERT INTO books (id, title, author, summary, category, cover_url, file_path, file_format, status, file_size, chapter_count, organized_from, organized_job_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'epub', 'pending_review', ?, ?, ?, ?)`
-    ).run(newBookId, newTitle, current.author, current.summary, current.category, current.cover_url, filePath,
+    ).run(newBookId, newTitle, current.author, current.summary, current.category, coverUrl, filePath,
       fs.statSync(filePath).size, chapterMap.length, current.id, job.id);
     const insertMap = db.prepare('INSERT INTO txt_organize_chapter_map (book_id, chapter_index, src_start, src_end) VALUES (?, ?, ?, ?)');
     for (const m of chapterMap) insertMap.run(newBookId, m.chapterIndex, m.srcStart, m.srcEnd);
