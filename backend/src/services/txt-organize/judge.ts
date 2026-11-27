@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { aiManager } from '../../ai/ai-manager';
 import { extractJsonObject } from '../../ai/json-extract';
+import { stripTitlePromo } from '../../plugins/parser-txt';
 import { Candidate } from './candidates';
 
 export type LabelType = 'part' | 'volume' | 'chapter' | 'duplicate' | 'noise';
@@ -91,11 +92,28 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
-interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number }
+const NUMBERING_RE = /第[零〇一二两三四五六七八九十百千万\d]+[章节回集卷部篇]/g;
+
+/**
+ * title 能否由原文只删字得到：去掉空白后 title 是 text 的子序列，
+ * 且 title 里的每个「第N章 / 卷…」编号在原文里原样连续出现——
+ * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」（五取自卷号）
+ */
+function isDeletionOf(title: string, text: string): boolean {
+  const t = Array.from(title.replace(/\s+/g, ''));
+  const s = text.replace(/\s+/g, '');
+  let i = 0;
+  for (const c of s) if (i < t.length && c === t[i]) i++;
+  if (i < t.length) return false;
+  return (t.join('').match(NUMBERING_RE) ?? []).every(n => s.includes(n));
+}
+
+interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number; rewritten: number }
 
 /**
  * 解析一批 AI 输出。id 缺失 / 重复 / 多出、type 不在五种之内 → 整批无效；
  * 单条标签字段不全则保守补全：noise 缺 noiseKind 当 text（保留原文），part / volume / chapter 缺 title 用候选行原文。
+ * AI 只能删减原文得到标题（去附言、去前缀）；改动了原文（如把「六百」改成「五百」）的标题改回原文（去掉行尾附言）。
  */
 function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
   const obj = extractJsonObject(raw);
@@ -105,6 +123,7 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
   const duplicated: number[] = [];
   const extra: string[] = [];
   let repaired = 0;
+  let rewritten = 0;
   for (const item of obj.labels as Record<string, unknown>[]) {
     if (!item || typeof item !== 'object') throw new InvalidBatch('标签格式错误');
     const id = Number(item.id);
@@ -114,8 +133,10 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
     if (!LABEL_TYPES.includes(type)) throw new InvalidBatch(`id ${id} 的 type 无效：${item.type}`);
     const label: Label = { id, type };
     if (type === 'part' || type === 'volume' || type === 'chapter') {
-      if (typeof item.title === 'string' && item.title.trim()) label.title = item.title.trim();
-      else { label.title = textById.get(id)!.trim(); repaired++; }
+      const text = textById.get(id)!;
+      if (typeof item.title !== 'string' || !item.title.trim()) { label.title = text.trim(); repaired++; }
+      else if (isDeletionOf(item.title, text)) label.title = item.title.trim();
+      else { label.title = stripTitlePromo(text.trim()); rewritten++; }
     } else if (type === 'noise') {
       if (item.noiseKind === 'stray_number' || item.noiseKind === 'text') label.noiseKind = item.noiseKind;
       else { label.noiseKind = 'text'; repaired++; }
@@ -130,7 +151,7 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
     throw new InvalidBatch(`多出 id：${extra.length > MAX_LISTED_IDS ? `${shown} 等 ${extra.length} 个` : shown}`);
   }
   const notes = Array.isArray(obj.notes) ? (obj.notes as unknown[]).filter((n): n is string => typeof n === 'string' && n.trim() !== '') : [];
-  return { labels: expected.map(c => byId.get(c.id)!), notes, repaired };
+  return { labels: expected.map(c => byId.get(c.id)!), notes, repaired, rewritten };
 }
 
 /**
@@ -165,6 +186,7 @@ async function judgeBatch(
     labels: [...context, ...batch].map(c => byId.get(c.id)!),
     notes: [...first.notes, ...second.notes],
     repaired: first.repaired + second.repaired,
+    rewritten: first.rewritten + second.rewritten,
   };
 }
 
@@ -195,6 +217,7 @@ export async function judgeCandidates(
     parsed.labels.forEach(l => { labels[l.id] = l; });
     notes.push(...parsed.notes);
     if (parsed.repaired > 0) notes.push(`第 ${b + 1} 批有 ${parsed.repaired} 条标签格式不全，已按保守方式处理`);
+    if (parsed.rewritten > 0) notes.push(`第 ${b + 1} 批有 ${parsed.rewritten} 个标题被 AI 改动了原文，已改回原标题`);
     onBatch?.(b + 1, total);
   }
 
