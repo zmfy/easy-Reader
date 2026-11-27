@@ -18,12 +18,34 @@ const CONFIDENT_RATIO = 0.95;     // 高于此 = 一定是正常文本
 const SUSPICIOUS_RATIO = 0.7;     // 介于此与 CONFIDENT 之间 = 灰色区，需要 AI 复核
 // 低于 SUSPICIOUS_RATIO = 确定乱码（不必请 AI）
 
-async function readSample(filePath: string): Promise<Buffer> {
+async function readChunk(fd: fs.promises.FileHandle, position: number): Promise<Buffer> {
+  const buf = Buffer.alloc(SAMPLE_BYTES);
+  const { bytesRead } = await fd.read(buf, 0, SAMPLE_BYTES, position);
+  return buf.subarray(0, bytesRead);
+}
+
+/**
+ * 编码判断的采样：文件开头 64KB；更大的文件再加结尾 64KB，超过 3 倍时再加中段 64KB。
+ * 只看开头时，前面一大段英文（版权声明等）、后面才是 GBK 正文的书会被当成 UTF-8，正文全是乱码。
+ * 中段 / 结尾从第一个换行之后开始取：0x0A 不会出现在 UTF-8 / GBK / Big5 的多字节字符中间，不会切断字符。
+ * head 单独返回，供 BOM 与 UTF-16（需要从文件开头按两字节对齐）判断用。
+ */
+async function readSample(filePath: string): Promise<{ head: Buffer; sample: Buffer }> {
   const fd = await fs.promises.open(filePath, 'r');
   try {
-    const buf = Buffer.alloc(SAMPLE_BYTES);
-    const { bytesRead } = await fd.read(buf, 0, SAMPLE_BYTES, 0);
-    return buf.subarray(0, bytesRead);
+    const head = await readChunk(fd, 0);
+    const { size } = await fd.stat();
+    if (size <= SAMPLE_BYTES) return { head, sample: head };
+    const positions = size > SAMPLE_BYTES * 3 ? [Math.floor(size / 2), size - SAMPLE_BYTES] : [size - SAMPLE_BYTES];
+    // 每段都截到最后一个换行：采样边界切断多字节字符会多出解码失败的替换符，干扰下面的判断
+    const toLastNewline = (b: Buffer) => { const nl = b.lastIndexOf(0x0a); return nl >= 0 ? b.subarray(0, nl + 1) : b; };
+    const parts = [toLastNewline(head)];
+    for (const pos of positions) {
+      const chunk = await readChunk(fd, pos);
+      const nl = chunk.indexOf(0x0a);
+      if (nl >= 0) parts.push(toLastNewline(chunk.subarray(nl + 1)));
+    }
+    return { head, sample: Buffer.concat(parts) };
   } finally {
     await fd.close();
   }
@@ -66,16 +88,16 @@ async function rewriteAsUtf8(filePath: string, encoding: string): Promise<void> 
  */
 export async function detectAndFixEncoding(filePath: string): Promise<EncodingResult> {
   // Only the first 64KB is needed to classify; the whole file is read only when it must be rewritten
-  const sample = await readSample(filePath);
+  const { head, sample } = await readSample(filePath);
 
   // Level 0: UTF-16 BOM is unambiguous. The byte-ratio path below would
   // misjudge UTF-16 (its interleaved 0x00 bytes drag every 8-bit decode into
   // the gray zone → "uncertain"), so detect it here and transcode to UTF-8,
   // matching parser-txt's encoding handling. iconv strips the BOM on decode.
   const bomEnc =
-    sample.length >= 2 && sample[0] === 0xff && sample[1] === 0xfe
+    head.length >= 2 && head[0] === 0xff && head[1] === 0xfe
       ? 'utf-16le'
-      : sample.length >= 2 && sample[0] === 0xfe && sample[1] === 0xff
+      : head.length >= 2 && head[0] === 0xfe && head[1] === 0xff
         ? 'utf-16be'
         : null;
   if (bomEnc) {
@@ -87,8 +109,8 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
   // when the sample has NULs try both byte orders; accept the one that decodes to confident text.
   // (Which half of a pair is 0x00 doesn't tell the order: newline 0A 00 and fullwidth space 00 30
   // put it on different sides in the same UTF-16LE Chinese text.)
-  if (sample.includes(0)) {
-    const even = sample.subarray(0, sample.length - (sample.length % 2));
+  if (head.includes(0)) {
+    const even = head.subarray(0, head.length - (head.length % 2));
     for (const enc of ['utf-16le', 'utf-16be']) {
       const text = tryDecode(even, enc);
       if (text !== null && printableRatio(text) >= CONFIDENT_RATIO) {
@@ -101,7 +123,9 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
   // Level 1: try UTF-8
   const utf8Text = tryDecode(sample, 'utf-8');
   const utf8Ratio = utf8Text !== null ? printableRatio(utf8Text) : 0;
-  if (utf8Text !== null && utf8Ratio >= CONFIDENT_RATIO) {
+  // 还要看非 ASCII 字符里解码失败的比例：前面一大段英文、后面才是 GBK 正文时，
+  // 正文变成的替换符被英文稀释，总体比例照样过线
+  if (utf8Text !== null && utf8Ratio >= CONFIDENT_RATIO && nonAsciiValidRatio(utf8Text) >= CONFIDENT_RATIO) {
     return { status: 'normal', encoding: 'utf-8' };
   }
 
@@ -139,6 +163,20 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
     };
   }
   return { status: 'garbled', encoding: 'unknown', best_ratio: bestRatio };
+}
+
+/** 非 ASCII 字符中不是解码失败替换符（U+FFFD）的比例；没有非 ASCII 字符时为 1 */
+function nonAsciiValidRatio(text: string): number {
+  let nonAscii = 0;
+  let bad = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code > 0x7f) {
+      nonAscii++;
+      if (code === 0xfffd) bad++;
+    }
+  }
+  return nonAscii === 0 ? 1 : (nonAscii - bad) / nonAscii;
 }
 
 function tryDecode(buf: Buffer, encoding: string): string | null {
@@ -190,4 +228,4 @@ function printableRatio(text: string): number {
 }
 
 // Exported for testing
-export const _internals = { printableRatio, CONFIDENT_RATIO, SUSPICIOUS_RATIO };
+export const _internals = { printableRatio, nonAsciiValidRatio, CONFIDENT_RATIO, SUSPICIOUS_RATIO };
