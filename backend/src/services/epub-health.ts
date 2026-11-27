@@ -4,8 +4,9 @@ import { EpubParser } from '../plugins/parser-epub';
 /**
  * 健康检查规则版本；规则变化时加一，已入库的书会按新规则重查
  * 2：content.opf 元素带 opf: 前缀（epub4j / so-novel）的书不再误判为「没有可读的章节」
+ * 3：没有 mimetype、container 路径带 ./、条目名大小写不一致、manifest 只有一个条目的书不再误判损坏
  */
-export const HEALTH_CHECK_VERSION = 2;
+export const HEALTH_CHECK_VERSION = 3;
 /** 单本检查超时（超时后后台解析继续，不再等） */
 export const EPUB_CHECK_TIMEOUT_MS = 15000;
 

@@ -623,3 +623,19 @@
 - [x] 9. 网页端页面与用户管理
 - [x] 10. 文档、更新日志与端到端实测
 - [x] 验证：后端 jest 全绿 + tsc、前端 vitest + vue-tsc、本地 curl 实测各目录与下载、浏览器查看页面；真实阅读 App 实测待用户在 iPad 上做
+
+# EPUB 兼容性测试集（issue #1 后续，计划见 ~/.claude/plans/declarative-toasting-book.md）
+
+- [x] 1. 公共源文本（3 章，自写文本 + 每章唯一标记）与 `scripts/epub-fixtures/generate.sh`
+- [x] 2. 生成真实工具样本：epub4j 4.2.3 / pandoc(EPUB3、EPUB2) / ebooklib / epub-gen-memory / Calibre → `backend/tests/fixtures/epub-tools/`
+- [x] 3. `backend/tests/plugins/epub-compat.test.ts`：样本循环 + 人工边界用例
+- [x] 4. 失败项逐个查根因修复（实际按「实体解码」「EPUB 解析容错」两个提交），没有需要大改的
+- [x] 5. 必要时 HEALTH_CHECK_VERSION 2→3、CHANGELOG [Unreleased]
+- [x] 6. 验证：jest 965 全绿（跑两遍）、tsc；源码起临时后端扫描 6 个样本→全部正常入库、阅读接口目录与正文正确（未做：全部样本重新生成后复测）
+
+# 其他格式兼容性（EPUB 收尾后，按顺序各自出计划再做）
+
+- [ ] PDF：Calibre 中文样本 + 边界（无 ToUnicode/CMap、加密、扫描版、截断）；文字提取失败要明确提示
+- [ ] TXT：工具导出样本（Calibre / so-novel / 阅读 App 格式）+ 编码与换行边界
+- [ ] 健康检查扩展到 TXT / PDF / UMD
+- [ ] UMD：规范生成器 + 尽量收集真实样本

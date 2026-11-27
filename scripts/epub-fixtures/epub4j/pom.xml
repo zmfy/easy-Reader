@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 只用来下载 epub4j-core 4.2.3（so-novel 使用的版本）及其依赖：mvn dependency:copy-dependencies -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>local.easyreader</groupId>
+  <artifactId>epub4j-fixture</artifactId>
+  <version>1</version>
+  <dependencies>
+    <dependency>
+      <groupId>io.documentnode</groupId>
+      <artifactId>epub4j-core</artifactId>
+      <version>4.2.3</version>
+    </dependency>
+  </dependencies>
+</project>
