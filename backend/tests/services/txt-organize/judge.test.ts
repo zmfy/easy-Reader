@@ -144,6 +144,24 @@ describe('judgeCandidates', () => {
     expect(res.notes).toEqual(['第 1 批有 2 个标题被 AI 改动了原文，已改回原标题']);
   });
 
+  it('改号时去掉「章」或「第」也不放过：每段数字都须原样出现在原文中', async () => {
+    const cands = makeCands(3);
+    cands[0].text = '第五卷名震一方第六百五十九章四叔祖';
+    cands[1].text = '第五卷名震一方第六百五十九章四叔祖';
+    cands[2].text = '第１２章 夜行';
+    const titles: Record<number, string> = { 0: '第五百五十九四叔祖', 1: '五百五十九章四叔祖', 2: '第１章 夜行' };
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
+    }));
+    const res = await judgeCandidates(cands, book, db);
+    expect(res.labels.map(l => l.title)).toEqual([
+      '第五卷名震一方第六百五十九章四叔祖',
+      '第五卷名震一方第六百五十九章四叔祖',
+      '第１２章 夜行',
+    ]);
+    expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
+  });
+
   it('一批两次缺 id → 对半拆分，两半都成功则整体成功，进度仍按原批数', async () => {
     let call = 0;
     const prompts: string[] = [];

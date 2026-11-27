@@ -92,12 +92,12 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
-const NUMBERING_RE = /第[零〇一二两三四五六七八九十百千万\d]+[章节回集卷部篇]/g;
+const DIGIT_RUN_RE = /[零〇一二两三四五六七八九十百千万\d０-９]+/g;
 
 /**
  * title 能否由原文只删字得到：去掉空白后 title 是 text 的子序列，
- * 且 title 里的每个「第N章 / 卷…」编号在原文里原样连续出现——
- * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」（五取自卷号）
+ * 且 title 里每一段连续的数字（中文 / 阿拉伯 / 全角）都是原文里完整的一段数字——
+ * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」（五取自卷号），「第１２章」删字成「第１章」也会被放过
  */
 function isDeletionOf(title: string, text: string): boolean {
   const t = Array.from(title.replace(/\s+/g, ''));
@@ -105,7 +105,8 @@ function isDeletionOf(title: string, text: string): boolean {
   let i = 0;
   for (const c of s) if (i < t.length && c === t[i]) i++;
   if (i < t.length) return false;
-  return (t.join('').match(NUMBERING_RE) ?? []).every(n => s.includes(n));
+  const runs = new Set(s.match(DIGIT_RUN_RE) ?? []);
+  return (t.join('').match(DIGIT_RUN_RE) ?? []).every(n => runs.has(n));
 }
 
 interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number; rewritten: number }
