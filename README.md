@@ -1,8 +1,13 @@
 # easyReader
 
-NAS 自托管小说阅读平台，单容器部署。把书库目录挂进来，扫描入库，就能在浏览器里阅读、听书，并用 AI 补全书籍信息。
+NAS 自托管小说阅读平台，单容器部署。把书库目录挂进来，扫描入库，就能在浏览器里阅读、听书，并用 AI 补全书籍信息；也可以用 KOReader、静读天下等阅读 App 通过 OPDS 连接书库。
 
-https://easyreader.ucool.uk/
+- 官网：<https://easyreader.ucool.uk/>
+- 部署教程（绿联、群晖、威联通、飞牛等）：<https://easyreader.ucool.uk/guides>
+- 更新日志：<https://easyreader.ucool.uk/changelog>
+- Docker 镜像：[`dls7788/easy-reader`](https://hub.docker.com/r/dls7788/easy-reader)（amd64 / arm64）
+
+![阅读器](https://easyreader.ucool.uk/screenshots/reader.png)
 
 ---
 
@@ -42,21 +47,37 @@ https://easyreader.ucool.uk/
 
 ## 快速启动
 
-### 1. 克隆项目
+### 方式一：使用 Docker Hub 镜像（推荐）
+
+不需要下载源码，NAS 上一条命令即可：
+
+```bash
+docker run -d --name easy-reader --restart unless-stopped \
+  -p 8080:3000 \
+  -v /volume1/books:/app/books \
+  -v /volume1/docker/easy-reader:/app/data \
+  dls7788/easy-reader:latest
+```
+
+把两个路径换成你 NAS 上的书库目录和数据目录，然后访问 `http://你的NAS地址:8080`。docker compose 写法、HTTPS 端口等见 [Docker Hub 说明](https://hub.docker.com/r/dls7788/easy-reader)；各品牌 NAS 的图文步骤见官网[部署教程](https://easyreader.ucool.uk/guides)。
+
+### 方式二：从源码构建
+
+#### 1. 克隆项目
 
 ```bash
 git clone https://github.com/zmfy/easy-Reader.git
 cd easy-Reader
 ```
 
-### 2. 配置环境变量
+#### 2. 配置环境变量
 
 ```bash
 cp .env.example .env
 # 编辑 .env，至少修改 JWT_SECRET
 ```
 
-### 3. 准备书库目录
+#### 3. 准备书库目录
 
 ```bash
 mkdir -p books data
@@ -64,7 +85,7 @@ mkdir -p books data
 # 或修改 docker-compose.yml 的 volumes，直接挂载 NAS 上的书库路径
 ```
 
-### 4. 启动
+#### 4. 启动
 
 ```bash
 docker compose up -d --build

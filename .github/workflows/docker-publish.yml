@@ -92,7 +92,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/easy-reader
           readme-filepath: ./DOCKERHUB.md
-          short-description: NAS 自托管小说阅读器：TXT/EPUB/PDF/UMD，AI 补全书籍信息，听书与 AI 问书
+          short-description: NAS 自托管小说阅读器：TXT/EPUB/PDF/UMD，OPDS 连接阅读 App，AI 补全书籍信息，听书与 AI 问书
 
       # 8. 创建 GitHub Release
       - name: Create GitHub Release
