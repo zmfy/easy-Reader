@@ -83,6 +83,21 @@ export async function detectAndFixEncoding(filePath: string): Promise<EncodingRe
     return { status: 'encoding_fixed', encoding: bomEnc };
   }
 
+  // Level 0.5: UTF-16 without BOM. UTF-8 / GBK / Big5 text never contains 0x00 bytes, so only
+  // when the sample has NULs try both byte orders; accept the one that decodes to confident text.
+  // (Which half of a pair is 0x00 doesn't tell the order: newline 0A 00 and fullwidth space 00 30
+  // put it on different sides in the same UTF-16LE Chinese text.)
+  if (sample.includes(0)) {
+    const even = sample.subarray(0, sample.length - (sample.length % 2));
+    for (const enc of ['utf-16le', 'utf-16be']) {
+      const text = tryDecode(even, enc);
+      if (text !== null && printableRatio(text) >= CONFIDENT_RATIO) {
+        await rewriteAsUtf8(filePath, enc);
+        return { status: 'encoding_fixed', encoding: enc };
+      }
+    }
+  }
+
   // Level 1: try UTF-8
   const utf8Text = tryDecode(sample, 'utf-8');
   const utf8Ratio = utf8Text !== null ? printableRatio(utf8Text) : 0;
