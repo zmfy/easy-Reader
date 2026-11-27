@@ -3,6 +3,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { BookFileMetadata, ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
+import { importEsm } from '../utils/import-esm';
 
 /** Text item as returned by pdf.js getTextContent(). transform = [a, b, c, d, x, y]. */
 export interface PdfTextItem {
@@ -112,9 +113,7 @@ interface Pdfjs {
 /** pdfjs-dist 包目录（编码表 cmaps / 标准字体 standard_fonts 都在里面） */
 const PDFJS_DIR = path.dirname(require.resolve('pdfjs-dist/package.json'));
 
-// pdfjs-dist 只提供 ES 模块；后端编译成 CommonJS 时 import() 会被改写成 require，
-// 用 Function 保留真正的动态 import（jest 里需要 --experimental-vm-modules，见 package.json）
-const importEsm = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<unknown>;
+// pdfjs-dist 只提供 ES 模块，用 importEsm 加载（见 utils/import-esm.ts）
 let pdfjs: Promise<Pdfjs> | null = null;
 
 /**

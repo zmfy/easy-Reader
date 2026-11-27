@@ -640,5 +640,9 @@
 - [x] 健康检查扩展到 TXT / PDF / UMD：book-health.ts（PDF 密码 / 截断 / 无页，UMD 打不开 / 无章节，TXT 空文件），HEALTH_CHECK_VERSION 4，阅读接口按原因提示。遗留：正常 UMD 的检查要等 UMD 样本
 - [x] UMD：按规范重写块读取（#/$ 块、#83 偏移分章、#0B 截断补零、#82 封面去飞库 logo、截断/漫画/解压失败给原因）；规范生成器 + umd-compat 21 项
   - 真实样本：books/ 下 6 本 UMD（飞库网等）。修前：脂砚斋 82 章→246 段、易中天 6 章→5 章、每本末章带几千个 NUL；修后全对，其余章节与旧解析逐字一致
-  - 遗留：漫画版 UMD 无样本，只报「暂不支持」；后端全量测试偶发失败（epub-builder 计时、pdf-compat / reader-damaged 并行时偶发）未查
+  - 遗留：漫画版 UMD 无样本，只报「暂不支持」
+- [x] 测试偶发失败：pdf-compat / reader-damaged / book-health「Test environment has been torn down」
+  - 根因：parser-pdf 用 new Function 包 import()；jest 同一 worker 依次跑多个测试文件时，V8 缓存同一段 Function 源码（第 2 次编译才入缓存），第 3 个及之后加载 parser-pdf 的文件拿到的函数把 import() 交给已结束的测试文件 → PDF 一字取不出。清 jest 缓存后 worker 分配变化，3/3 复现；最小复现：3 个只含同一句 new Function 的测试文件
+  - 修复：importEsm 抽到 src/utils/import-esm.ts（生产不变），jest moduleNameMapper 换成 tests/helpers/import-esm.js（原生 import()）。修后冷缓存全量 3/3 无 PDF 失败，生产构建 node 实测读 PDF 正常
+  - 仍有两个已知偶发（未处理）：epub-builder 事件循环计时（负载高时）、encoding-atomic 与 encoding 共用样本目录
   - [ ] 用户在本地容器里检查
