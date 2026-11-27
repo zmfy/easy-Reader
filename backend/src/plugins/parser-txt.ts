@@ -43,6 +43,19 @@ export function detectEncoding(filePath: string): string {
 
 const PREVIEW_BYTES = 64 * 1024;
 
+/** 文件开头 64KB 里有 CR、没有 LF：只用 CR 换行 */
+function isCrOnly(filePath: string): boolean {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(PREVIEW_BYTES);
+    const n = fs.readSync(fd, buf, 0, PREVIEW_BYTES, 0);
+    const head = buf.subarray(0, n);
+    return head.includes(0x0d) && !head.includes(0x0a);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /**
  * Read the first `maxChars` characters of a TXT file, decoded with the detected
  * encoding. Only the first 64KB is read, so it is safe to call on huge files.
@@ -153,6 +166,13 @@ export class TxtParser implements ReaderPlugin {
       this.encoding = 'utf8';
     } else {
       this.encoding = detected;
+      // 只用 CR 换行（老 Mac 文本）：按 LF 找行时整本只有一行、切不出章节 → 读入内存把 CR 换成 LF。
+      // 0x0D 不会出现在 UTF-8 / GBK / Big5 的多字节字符里，按字节替换安全，字节偏移不变
+      if (isCrOnly(filePath)) {
+        const raw = fs.readFileSync(filePath);
+        for (let i = 0; i < raw.length; i++) if (raw[i] === 0x0d) raw[i] = 0x0a;
+        this.memBuffer = raw;
+      }
     }
 
     await this.scanChapters();
