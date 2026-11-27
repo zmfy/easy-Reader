@@ -57,3 +57,54 @@ describe('EpubParser.load', () => {
     expect(await parser.getChapterContent(0)).toContain('正文');
   });
 });
+
+describe('EpubParser assets and cover', () => {
+  /** 正文图片没写进 manifest、封面是 id 为 cover 的图片项（如 COAY 制作的书） */
+  function makeLooseEpub(): string {
+    const zip = new AdmZip();
+    zip.addFile('mimetype', Buffer.from('application/epub+zip'));
+    zip.addFile('META-INF/container.xml', Buffer.from(
+      '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+      + '<rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'));
+    zip.addFile('content.opf', Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?><package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="id">'
+      + '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>小镇</dc:title></metadata>'
+      + '<manifest><item id="c1" href="c1.html" media-type="application/xhtml+xml"/>'
+      + '<item id="ad" href="ad.jpg" media-type="image/jpeg"/>'
+      + '<item id="cover" href="cover.jpg" media-type="image/jpeg"/></manifest>'
+      + '<spine><itemref idref="c1"/></spine></package>'));
+    zip.addFile('c1.html', Buffer.from('<html><body><p><img src="pic1.jpg"/></p></body></html>'));
+    zip.addFile('pic1.jpg', Buffer.alloc(3000, 1));
+    zip.addFile('notes.txt', Buffer.from('secret'));
+    zip.addFile('ad.jpg', Buffer.alloc(3000, 2));
+    zip.addFile('cover.jpg', Buffer.alloc(3000, 3));
+    const file = path.join(dir, 'loose.epub');
+    fs.writeFileSync(file, zip.toBuffer());
+    return file;
+  }
+
+  it('serves images that exist in the zip but are missing from the manifest', async () => {
+    const parser = new EpubParser();
+    await parser.load(makeLooseEpub());
+    const asset = await parser.getAsset('pic1.jpg');
+    expect(asset?.mimeType).toBe('image/jpeg');
+    expect(asset?.buffer.length).toBe(3000);
+    expect(await parser.getAsset('notes.txt')).toBeNull();
+    expect(await parser.getAsset('nope.jpg')).toBeNull();
+  });
+
+  it('finds the cover image by id / file name', async () => {
+    const parser = new EpubParser();
+    await parser.load(makeLooseEpub());
+    const cover = await parser.getCoverImage();
+    expect(cover?.buffer).toEqual(Buffer.alloc(3000, 3));
+  });
+
+  it('returns null when the book has no cover', async () => {
+    const file = path.join(dir, 'plain.epub');
+    fs.writeFileSync(file, makeEpub());
+    const parser = new EpubParser();
+    await parser.load(file);
+    expect(await parser.getCoverImage()).toBeNull();
+  });
+});

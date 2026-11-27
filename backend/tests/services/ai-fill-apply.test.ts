@@ -1,4 +1,6 @@
 import fs from 'fs';
+import os from 'os';
+import AdmZip from 'adm-zip';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { applyAiFill, AiFillApplyInput } from '../../src/services/ai-fill-apply';
@@ -233,6 +235,48 @@ describe('applyAiFill rating follows the cover', () => {
     await applyAiFill('b1', input({ cover: { type: 'keep' }, ratingSubjectUrl: 'https://book.douban.com/subject/1/' }));
     expect(rating).not.toHaveBeenCalled();
     expect(row().rating).toBe(8.1);
+  });
+});
+
+/** 最小 EPUB；withCover 时 OPF 用 <meta name="cover"> 指向一张 2KB 的 jpg */
+function writeEpub(withCover: boolean): string {
+  const zip = new AdmZip();
+  zip.addFile('mimetype', Buffer.from('application/epub+zip'));
+  zip.addFile('META-INF/container.xml', Buffer.from(
+    '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+    + '<rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'));
+  zip.addFile('book.opf', Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?><package version="2.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="id">'
+    + '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>测试书</dc:title>'
+    + (withCover ? '<meta name="cover" content="img1"/>' : '') + '</metadata>'
+    + '<manifest><item id="c1" href="c1.html" media-type="application/xhtml+xml"/>'
+    + (withCover ? '<item id="img1" href="front.jpg" media-type="image/jpeg"/>' : '') + '</manifest>'
+    + '<spine><itemref idref="c1"/></spine></package>'));
+  zip.addFile('c1.html', Buffer.from('<html><body><p>正文</p></body></html>'));
+  if (withCover) zip.addFile('front.jpg', Buffer.alloc(2048, 7));
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ai-apply-epub-')), 'b.epub');
+  fs.writeFileSync(file, zip.toBuffer());
+  return file;
+}
+
+describe('applyAiFill embedded cover', () => {
+  const useFile = (file: string) => testDb.prepare("UPDATE books SET file_path = ?, file_format = 'epub', rating = 8.1 WHERE id = 'b1'").run(file);
+
+  it('saves the cover from the book file and keeps the rating', async () => {
+    useFile(writeEpub(true));
+    await applyAiFill('b1', input({ cover: { type: 'embedded' } }));
+    const url = row().cover_url as string;
+    expect(url).toMatch(/^\/covers\/b1-.+\.jpg$/);
+    expect(fs.readFileSync(path.join(COVERS(), path.basename(url)))).toEqual(Buffer.alloc(2048, 7));
+    expect(download).not.toHaveBeenCalled();
+    expect(row().rating).toBe(8.1);
+  });
+
+  it('rejects with 422 and writes nothing when the file has no cover', async () => {
+    useFile(writeEpub(false));
+    await expect(applyAiFill('b1', input({ author: '罗贯中', cover: { type: 'embedded' } }))).rejects.toMatchObject({ status: 422 });
+    expect(row().cover_url).toBe('/covers/b1.jpg');
+    expect(row().author).toBe('旧作者');
   });
 });
 

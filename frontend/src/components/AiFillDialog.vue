@@ -159,7 +159,7 @@ async function onResetFailed(): Promise<void> {
 
 async function onResetAll(): Promise<void> {
   try {
-    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败),审核过的书也会清掉审核标记、重新参与批量填充。之后点「开始填充」会重新处理所有书(已有字段不会被覆盖,只补缺失的评分/封面等)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
+    await ElMessageBox.confirm('将重置全部填充记录(不论成功/失败),审核过的书也会清掉审核标记、重新参与批量填充。之后点「开始填充」会重新处理所有书(已有字段不会被覆盖,只补缺失的评分等)。封面会重新选择:书内自带封面 → 豆瓣 → 默认封面(手动填写的外部封面地址不变)。继续?', '重置全部填充', { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' })
   } catch { return }
   try {
     const resp = await libraryApi.aiFillResetAll()

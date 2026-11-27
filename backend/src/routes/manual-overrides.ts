@@ -4,7 +4,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
 import {
   createOverride,
-  listOverrides,
+  listOverridesWithNames,
   deleteOverride,
   deleteAllOverrides,
 } from '../services/manual-override';
@@ -21,7 +21,7 @@ const createSchema = z.object({
 
 router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const type = req.query.type as ManualOverrideType | undefined;
-  successResponse(res, listOverrides(type));
+  successResponse(res, listOverridesWithNames(type));
 });
 
 router.post('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {

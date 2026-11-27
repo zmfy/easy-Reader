@@ -4,6 +4,7 @@ import { getDb } from '../db';
 import { aiManager } from '../ai/ai-manager';
 import { Book } from '../types';
 import { buildBookEvidence } from './book-evidence';
+import { embeddedCoverDataUri } from './embedded-cover';
 import { FillConfidence, detectContentMismatch, fieldConfidence } from '../ai/fill-prompt';
 import { DoubanCandidate, fetchCoverThumbnailDataUri } from '../utils/cover';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
@@ -50,6 +51,8 @@ export interface AiFillPreview {
   /** 默认封面上印的书名：AI 给出的书名，否则为清洗后的文件名书名（预览与保存一致） */
   coverTitle: string;
   coverCandidates: Array<DoubanCandidate & { thumbnail: string }>;
+  /** 文件内置封面（data URI，目前只有 EPUB）；没有时省略 */
+  embeddedCover?: string;
   /** AI 判定正文与文件名不是同一部作品时给出（预览只读，不写库；持久标记由后台批量填充写入） */
   contentMismatch?: { title: string; author?: string; reason?: string };
   /** AI 查证过程（搜了什么、打开了哪个条目） */
@@ -132,6 +135,7 @@ async function buildPreview(db: Database.Database, book: Book): Promise<AiFillPr
   const allCovers = [...outcome.coverCandidates, ...adaptationCovers];
   const thumbnails = await Promise.all(allCovers.map(c => fetchCoverThumbnailDataUri(c.pic)));
   const coverCandidates = allCovers.flatMap((c, i) => (thumbnails[i] ? [{ ...c, thumbnail: thumbnails[i]! }] : []));
+  const embeddedCover = embeddedCoverDataUri(evidence.cover);
 
   const edited = new Set(parseEditedFields(book.manually_edited_fields));
 
@@ -191,6 +195,7 @@ async function buildPreview(db: Database.Database, book: Book): Promise<AiFillPr
     lockedFields: LOCKABLE.filter(f => edited.has(f)),
     coverTitle: str(info.title) || cleanedTitle,
     coverCandidates,
+    ...(embeddedCover ? { embeddedCover } : {}),
     ...(contentMismatch ? { contentMismatch } : {}),
     lookupTrace: outcome.steps,
     lookupUsedFallback: outcome.usedFallback,

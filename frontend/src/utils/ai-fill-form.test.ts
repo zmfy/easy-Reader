@@ -97,6 +97,13 @@ describe('initialForm', () => {
     expect(initialForm({ ...noCover, coverCandidates: [] }).cover).toBe('default')
   })
 
+  it('prefers the in-file cover over douban candidates when there is no current cover', () => {
+    const p = preview({ embeddedCover: 'data:image/jpeg;base64,AA' })
+    expect(initialForm(p).cover).toBe('current')
+    p.current.cover_url = null
+    expect(initialForm(p).cover).toBe('embedded')
+  })
+
   it('copies the lists so editing the form does not mutate the preview', () => {
     const p = preview()
     const f = initialForm(p)
@@ -125,6 +132,15 @@ describe('buildApplyPayload', () => {
     const body = buildApplyPayload(f, p)
     expect(body.cover).toEqual({ type: 'douban', pic: 'https://img1.doubanio.com/b.jpg' })
     expect(body.ratingSubjectUrl).toBe('https://book.douban.com/subject/2/')
+  })
+
+  it('maps the in-file cover without a rating subject', () => {
+    const p = preview({ embeddedCover: 'data:image/jpeg;base64,AA' })
+    const f = initialForm(p)
+    f.cover = 'embedded'
+    const body = buildApplyPayload(f, p)
+    expect(body.cover).toEqual({ type: 'embedded' })
+    expect(body.ratingSubjectUrl).toBeUndefined()
   })
 
   it('maps current / default covers without a rating subject (rating follows the cover)', () => {

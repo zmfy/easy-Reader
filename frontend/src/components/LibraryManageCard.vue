@@ -65,6 +65,14 @@
           >
             <span>{{ t.label }}</span><IconChevronRight :size="14" :stroke-width="2" class="menu-arrow" />
           </el-dropdown-item>
+          <el-dropdown-item command="page:scan-batches" divided>
+            <IconHistory :size="16" :stroke-width="1.9" /><span>扫描批次记录</span>
+            <span class="menu-meta">查看以前的扫描审核</span>
+          </el-dropdown-item>
+          <el-dropdown-item command="page:manual-overrides">
+            <IconClipboardCheck :size="16" :stroke-width="1.9" /><span>人工修正记录</span>
+            <span class="menu-meta">审核时判定的「不是重复」等</span>
+          </el-dropdown-item>
         </el-dropdown-menu>
       </template>
     </el-dropdown>
@@ -77,7 +85,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { IconChevronDown, IconChevronRight, IconRefresh, IconSparkles } from '@tabler/icons-vue'
+import { IconChevronDown, IconChevronRight, IconClipboardCheck, IconHistory, IconRefresh, IconSparkles } from '@tabler/icons-vue'
 import ScanOptionsDialog from './ScanOptionsDialog.vue'
 import AiFillDialog from './AiFillDialog.vue'
 import { libraryApi } from '@/api/library'
@@ -144,6 +152,7 @@ const badgeCount = computed(() => actionTodos.value.length + (fillPaused.value &
 function onCommand(cmd: string): void {
   if (cmd === 'scan') void handleScan()
   else if (cmd === 'fill') showFillDialog.value = true
+  else if (cmd.startsWith('page:')) void router.push(`/library/${cmd.slice(5)}`)
   else todos.value.find(t => `todo:${t.key}` === cmd)?.action()
 }
 

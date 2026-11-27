@@ -35,6 +35,17 @@
             <span class="badge">当前</span>
           </button>
           <button
+            v-if="preview.embeddedCover"
+            type="button"
+            class="cover-item"
+            :class="{ selected: form.cover === 'embedded' }"
+            title="书文件里自带的封面"
+            @click="form.cover = 'embedded'"
+          >
+            <img :src="preview.embeddedCover" alt="文件内封面" />
+            <span class="badge">文件内</span>
+          </button>
+          <button
             v-for="(c, i) in preview.coverCandidates"
             :key="c.pic"
             type="button"

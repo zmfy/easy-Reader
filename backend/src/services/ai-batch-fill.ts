@@ -7,6 +7,7 @@ import { setScanProgress, isCancelled } from './scan-task';
 import { writeAudit } from './audit-log';
 import { downloadCoverFromPic, fetchRating } from '../utils/cover';
 import { createDefaultCover } from './default-cover-file';
+import { saveEmbeddedCover } from './embedded-cover';
 import { extractMetadataFromAiResponse, getMetadata } from './book-ai-metadata';
 import { AI_FILL_VERSION } from './scan-versions';
 import { lookupKey } from './title-lookup';
@@ -133,13 +134,20 @@ export function stampFillVersion(db: Database.Database, bookId: string): void {
   db.prepare('UPDATE books SET ai_fill_version = ? WHERE id = ?').run(AI_FILL_VERSION, bookId);
 }
 
-/** Clear AI-fill stamps on all books so the next AI-fill scan re-processes them. */
+/**
+ * Clear AI-fill stamps on all books so the next AI-fill scan re-processes them.
+ * 系统生成的封面（AI 下载 / 文件内 / 默认封面，都在 /covers/ 下）同时标记为待重选，
+ * 下次批量填充按 书内 → 豆瓣 → 默认 重新选；手动填的外部封面地址不动。
+ */
 export function resetAllFills(db: Database.Database): number {
-  const info = db.prepare(
-    `UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL, ai_reviewed_at = NULL
-     WHERE ai_fill_version IS NOT NULL OR ai_fill_status IS NOT NULL OR ai_reviewed_at IS NOT NULL`
-  ).run();
-  return info.changes;
+  return db.transaction(() => {
+    const info = db.prepare(
+      `UPDATE books SET ai_fill_version = NULL, ai_fill_status = NULL, ai_reviewed_at = NULL
+       WHERE ai_fill_version IS NOT NULL OR ai_fill_status IS NOT NULL OR ai_reviewed_at IS NOT NULL`
+    ).run();
+    db.prepare("UPDATE books SET cover_refill = 1 WHERE cover_url LIKE '/covers/%'").run();
+    return info.changes;
+  })();
 }
 
 export async function batchFill(input: BatchFillInput): Promise<BatchFillResult> {
@@ -256,8 +264,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
         return; // skip field writes; finally still stamps version (permanent failure)
       }
 
-      const current = db.prepare('SELECT title, author, summary, category, cover_url, rating, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
-        | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; rating?: number | null; manually_edited_fields?: string }
+      const current = db.prepare('SELECT title, author, summary, category, cover_url, cover_refill, rating, manually_edited_fields FROM books WHERE id = ?').get(b.id) as
+        | { title?: string; author?: string; summary?: string; category?: string; cover_url?: string; cover_refill?: number | null; rating?: number | null; manually_edited_fields?: string }
         | undefined;
       if (!current) {
         result.failed.push({ book_id: b.id, file_path: b.file_path, error: 'book not found' });
@@ -346,17 +354,26 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
 
       // 封面 + 评分，尽力而为：查证确认的书用确认的条目；查证关闭或失败走兜底时沿用原有行为取第一个候选；
       // 查证跑了却没有可信的确认（没找到、作者冲突、未确认）时，见过的条目都不用——不下封面、不写评分。
-      // 找不到封面（套装、合集常见）就生成默认封面
+      // 找不到封面（套装、合集常见）就生成默认封面。重置全部填充记录后（cover_refill）已有的系统封面也重新选
       const titleForCover = trusted?.title || lookupInput.title;
-      const needCover = !current.cover_url;
+      const needCover = !current.cover_url || current.cover_refill === 1;
       const needRating = current.rating == null;
       let coverUrl: string | undefined;
-      let coverSource: 'douban' | 'default' = 'douban';
+      let coverSource: 'embedded' | 'douban' | 'default' = 'douban';
+      // 文件自带封面（EPUB）优先，没有再用豆瓣，最后默认封面
+      if (needCover && bookEvidence.cover) {
+        try {
+          coverUrl = saveEmbeddedCover(b.id, bookEvidence.cover);
+          coverSource = 'embedded';
+        } catch {
+          // 写文件失败就照常走豆瓣
+        }
+      }
       const candidate = trusted
         ? lookup.coverCandidates.find(c => c.subjectUrl === trusted.hit.url)
         : lookup.usedFallback ? lookup.coverCandidates[0] : undefined;
       try {
-        if (needCover && candidate) coverUrl = await downloadCoverFromPic(candidate.pic, b.id);
+        if (needCover && !coverUrl && candidate) coverUrl = await downloadCoverFromPic(candidate.pic, b.id);
         if (needRating) {
           // 确认的条目已打开过详情时直接用其评分，否则抓条目页
           const ratingUrl = trusted ? trusted.hit.url : candidate?.subjectUrl;
@@ -376,6 +393,8 @@ export async function batchFill(input: BatchFillInput): Promise<BatchFillResult>
           // 默认封面写文件失败也不影响这本书
         }
       }
+      // 重选标记只用一次：这次没换成（如默认封面写文件失败）也保留原封面
+      if (current.cover_refill) db.prepare('UPDATE books SET cover_refill = NULL WHERE id = ?').run(b.id);
       if (coverUrl) {
         db.prepare('UPDATE books SET cover_url = ? WHERE id = ?').run(coverUrl, b.id);
         result.covers_fetched++;
