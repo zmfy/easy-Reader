@@ -1093,6 +1093,8 @@ const organizeJob = computed(() => organize.value?.job ?? null)
 const organizeRequesting = ref(false)
 let organizePollTimer: ReturnType<typeof setTimeout> | undefined
 let organizeUnmounted = false
+// 请求序号：发起整理前后各加一，在此之前发出的轮询结果作废，免得旧状态覆盖 POST 返回的任务
+let organizeSeq = 0
 
 function isOrganizeRunning() {
   const s = organizeJob.value?.status
@@ -1107,9 +1109,14 @@ function scheduleOrganizePoll() {
 }
 
 async function loadOrganize() {
+  const seq = ++organizeSeq
   try {
-    organize.value = (await readerApi.getOrganize(bookId)).data.data ?? null
-  } catch { /* 忽略 */ }
+    const data = (await readerApi.getOrganize(bookId)).data.data ?? null
+    if (seq !== organizeSeq) return
+    organize.value = data
+  } catch {
+    if (seq !== organizeSeq) return
+  }
   scheduleOrganizePoll()
 }
 
@@ -1120,12 +1127,17 @@ async function handleRequestOrganize() {
     })
   } catch { return }
   organizeRequesting.value = true
+  clearTimeout(organizePollTimer)
+  organizeSeq++
   try {
     const job = (await readerApi.requestOrganize(bookId)).data.data?.job ?? null
+    organizeSeq++
     if (organize.value) organize.value = { ...organize.value, job }
     scheduleOrganizePoll()
   } catch (err) {
     ElMessage.warning(errorMessage(err, '发起整理失败'))
+    // 409（已有任务、开关被关闭等）：同步成后端的真实状态
+    await loadOrganize()
   } finally {
     organizeRequesting.value = false
   }
