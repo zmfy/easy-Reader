@@ -4,7 +4,7 @@ import path from 'path';
 import { readTxtLines } from '../../../src/services/txt-organize/lines';
 import { Candidate } from '../../../src/services/txt-organize/candidates';
 import { Label } from '../../../src/services/txt-organize/judge';
-import { buildStructure, isStrictStrayNumber, verifyVerbatim, OrgStructure } from '../../../src/services/txt-organize/structure';
+import { buildStructure, displayTitle, isStrictStrayNumber, verifyVerbatim, OrgStructure } from '../../../src/services/txt-organize/structure';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txt-struct-'));
 let seq = 0;
@@ -61,7 +61,7 @@ async function* iter(arr: string[]) {
   for (const x of arr) yield x;
 }
 
-const chap = (title: string): L => ({ type: 'chapter', title });
+const chap = (): L => ({ type: 'chapter' });
 
 describe('isStrictStrayNumber', () => {
   it('整行只有「第 N 章 / 节 / 回 / 集」才算', () => {
@@ -75,13 +75,53 @@ describe('isStrictStrayNumber', () => {
   });
 });
 
+describe('displayTitle', () => {
+  it('去掉行首「正文」（及其后的空白 / 冒号）', () => {
+    expect(displayTitle('正文 第一百二十章 风起', {})).toBe('第一百二十章 风起');
+    expect(displayTitle('正文：第一章 开端', {})).toBe('第一章 开端');
+  });
+
+  it('去掉后面紧跟编号的《书名》前缀', () => {
+    expect(displayTitle('《鬼吹灯之龙岭迷窟》 第四十八章 香鞋', {})).toBe('第四十八章 香鞋');
+    // 后面不是编号：不去
+    expect(displayTitle('《山海经》读后', {})).toBe('《山海经》读后');
+  });
+
+  it('放在该卷下的章去掉卷名前缀', () => {
+    expect(displayTitle('第五卷名震一方第六百四十八章至木灵婴', { volumePrefix: '第五卷名震一方' })).toBe('第六百四十八章至木灵婴');
+  });
+
+  it('放在该部下的卷去掉部名前缀', () => {
+    expect(displayTitle('第一部第二卷《龙岭迷窟》', { partPrefix: '第一部' })).toBe('第二卷《龙岭迷窟》');
+  });
+
+  it('去掉行尾附言', () => {
+    expect(displayTitle('  第0118章 医术高人【求月票！！】 ', {})).toBe('第0118章 医术高人');
+  });
+
+  it('编号和正文里的「第N…」原样保留', () => {
+    expect(displayTitle('第一O一章 车祸', {})).toBe('第一O一章 车祸');
+    expect(displayTitle('第五章 第十二回合', {})).toBe('第五章 第十二回合');
+  });
+
+  it('不在该卷下（卷前缀与所在卷不同）的章保留卷名前缀', () => {
+    expect(displayTitle('第五卷名震一方第六百五十三章 乱入', {})).toBe('第五卷名震一方第六百五十三章 乱入');
+    expect(displayTitle('第五卷名震一方第六百五十三章 乱入', { volumePrefix: '第六卷通天灵宝' })).toBe('第五卷名震一方第六百五十三章 乱入');
+  });
+
+  it('去掉后为空时返回原文', () => {
+    expect(displayTitle('正文', {})).toBe('正文');
+    expect(displayTitle('第五卷名震一方', { volumePrefix: '第五卷名震一方' })).toBe('第五卷名震一方');
+  });
+});
+
 describe('buildStructure', () => {
   it('《凡人修仙传》写法：chapter + stray_number 合并，第2章行进 dropLines，正文连续', async () => {
     const text = '第一章 山边小村\n韩立出生在山村。\n第2章\n他有个哥哥。\n第二章 青牛镇\n镇上很安静。\n';
     const { f, structure } = await prepare(text, {
-      0: chap('第一章 山边小村'),
+      0: chap(),
       2: { type: 'noise', noiseKind: 'stray_number' },
-      4: chap('第二章 青牛镇'),
+      4: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第一章 山边小村', false], [0, '第二章 青牛镇', false],
@@ -99,7 +139,7 @@ describe('buildStructure', () => {
   it('AI 把含正文的行判成 stray_number（如「第2章韩立说」）→ 不删，当正文', async () => {
     const text = '第一章 开端\n正文一。\n第2章韩立说\n正文二。\n';
     const { f, structure } = await prepare(text, {
-      0: chap('第一章 开端'),
+      0: chap(),
       2: { type: 'noise', noiseKind: 'stray_number' },
     });
     expect(structure.dropLines.has(2)).toBe(false);
@@ -116,16 +156,16 @@ describe('buildStructure', () => {
       '第二部', '第四章 云南', '正文D', '',
     ].join('\r\n');
     const { f, structure } = await prepare(text, {
-      0: { type: 'part', title: '第一部' },
-      2: { type: 'volume', title: '第一卷 精绝古城' },
-      4: chap('第一章 牛心山'),
-      6: chap('第二章 古墓'),
+      0: { type: 'part' },
+      2: { type: 'volume' },
+      4: chap(),
+      6: chap(),
       7: { type: 'duplicate' },
-      9: { type: 'volume', title: '第二卷 龙岭迷窟' },
+      9: { type: 'volume' },
       10: { type: 'noise', noiseKind: 'stray_number' },
-      12: chap('第三章 盗洞'),
-      14: { type: 'part', title: '第二部' },
-      15: chap('第四章 云南'),
+      12: chap(),
+      14: { type: 'part' },
+      15: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第一部', true],
@@ -147,27 +187,27 @@ describe('buildStructure', () => {
   it('只有 noise:text 夹在卷后也算正文，卷不是 groupOnly', async () => {
     const text = '第一卷 起\n第一卷《起》开篇说明\n第一章 甲\n正文\n';
     const { structure } = await prepare(text, {
-      0: { type: 'volume', title: '第一卷 起' },
+      0: { type: 'volume' },
       1: { type: 'noise', noiseKind: 'text' },
-      2: chap('第一章 甲'),
+      2: chap(),
     });
     expect(structure.sections[0].groupOnly).toBe(false);
     expect(structure.dropLines.has(1)).toBe(false);
   });
 
   it('只有 chapter 的书 level 全为 0；章不在卷里时不跳级', async () => {
-    const a = await prepare('第一章 甲\n正文\n第二章 乙\n正文\n', { 0: chap('第一章 甲'), 2: chap('第二章 乙') });
+    const a = await prepare('第一章 甲\n正文\n第二章 乙\n正文\n', { 0: chap(), 2: chap() });
     expect(a.structure.sections.map(s => s.level)).toEqual([0, 0]);
 
     const b = await prepare('楔子\n正文\n第一卷 起\n第一章 甲\n正文\n', {
-      0: chap('楔子'), 2: { type: 'volume', title: '第一卷 起' }, 3: chap('第一章 甲'),
+      0: chap(), 2: { type: 'volume' }, 3: chap(),
     });
     expect(b.structure.sections.map(s => [s.level, s.title])).toEqual([[0, '楔子'], [0, '第一卷 起'], [1, '第一章 甲']]);
 
     // 有部的书：部之前的卷不在部里 → 0；部前的章 → 卷下一层
     const c = await prepare('第一卷 起\n第一章 甲\n正文\n第一部\n第二卷 承\n第二章 乙\n正文\n', {
-      0: { type: 'volume', title: '第一卷 起' }, 1: chap('第一章 甲'),
-      3: { type: 'part', title: '第一部' }, 4: { type: 'volume', title: '第二卷 承' }, 5: chap('第二章 乙'),
+      0: { type: 'volume' }, 1: chap(),
+      3: { type: 'part' }, 4: { type: 'volume' }, 5: chap(),
     });
     expect(c.structure.sections.map(s => s.level)).toEqual([0, 1, 0, 1, 2]);
   });
@@ -176,7 +216,7 @@ describe('buildStructure', () => {
     const text = '书名：测试\n作者：某人\n\n第2章\n第一章 开端\n正文\n';
     const { f, structure } = await prepare(text, {
       3: { type: 'noise', noiseKind: 'stray_number' },
-      4: chap('第一章 开端'),
+      4: chap(),
     });
     const first = Buffer.byteLength('书名：测试\n作者：某人\n\n第2章\n');
     expect(structure.preface).toEqual({ srcStart: 0, srcEnd: first });
@@ -190,7 +230,7 @@ describe('buildStructure', () => {
 describe('duplicate 兜底', () => {
   it('「第5章 怎么像找对象？」后的「第0005章怎么像找对象？？」→ 去掉', async () => {
     const text = '第5章 怎么像找对象？\n第0005章怎么像找对象？？\n正文。\n';
-    const { f, structure } = await prepare(text, { 0: chap('第5章 怎么像找对象？'), 1: { type: 'duplicate' } });
+    const { f, structure } = await prepare(text, { 0: chap(), 1: { type: 'duplicate' } });
     expect(structure.dropLines.has(1)).toBe(true);
     expect(structure.notes).toEqual([]);
     expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
@@ -198,23 +238,23 @@ describe('duplicate 兜底', () => {
 
   it('「第六卷通天灵宝第九百九十一章紫雾」后的「第九百九十一章紫雾」→ 去掉', async () => {
     const text = '第六卷通天灵宝第九百九十一章紫雾\n第九百九十一章紫雾\n正文。\n';
-    const { structure } = await prepare(text, { 0: chap('第九百九十一章 紫雾'), 1: { type: 'duplicate' } });
+    const { structure } = await prepare(text, { 0: chap(), 1: { type: 'duplicate' } });
     expect(structure.dropLines.has(1)).toBe(true);
     // 没有「保留为正文」的提醒；卷名前缀推断出一个分卷
     expect(structure.notes).toEqual(['从章节标题前缀推断出 1 个分卷']);
   });
 
   it('全角数字、编号不同但同名：「第５章」与「第五章」相同；编号不同则保留', async () => {
-    const a = await prepare('第五章 夜\n第５章 夜\n正文\n', { 0: chap('第五章 夜'), 1: { type: 'duplicate' } });
+    const a = await prepare('第五章 夜\n第５章 夜\n正文\n', { 0: chap(), 1: { type: 'duplicate' } });
     expect(a.structure.dropLines.has(1)).toBe(true);
-    const b = await prepare('第五章 夜\n第六章 夜\n正文\n', { 0: chap('第五章 夜'), 1: { type: 'duplicate' } });
+    const b = await prepare('第五章 夜\n第六章 夜\n正文\n', { 0: chap(), 1: { type: 'duplicate' } });
     expect(b.structure.dropLines.has(1)).toBe(false);
     expect(b.structure.notes).toHaveLength(1);
   });
 
   it('AI 把正文句子判成 duplicate → 不删，当正文，记一条 note，逐字校验仍通过', async () => {
     const text = '第二章 青牛镇\n第二章的时候他走进了镇子，看见很多人。\n镇上很安静。\n';
-    const { f, structure } = await prepare(text, { 0: chap('第二章 青牛镇'), 1: { type: 'duplicate' } });
+    const { f, structure } = await prepare(text, { 0: chap(), 1: { type: 'duplicate' } });
     expect(structure.dropLines.has(1)).toBe(false);
     expect(structure.notes).toEqual(['第 2 行被判为重复标题，但与上一标题不一致，已保留为正文：第二章的时候他走进了镇子，看见很多人。']);
     const chapters = await render(f, structure);
@@ -230,7 +270,7 @@ describe('duplicate 兜底', () => {
 
   it('被保留的 duplicate 让卷不再是 groupOnly', async () => {
     const { structure } = await prepare('第一卷 起\n第一卷开始的那天下雨了\n第一章 甲\n正文\n', {
-      0: { type: 'volume', title: '第一卷 起' }, 1: { type: 'duplicate' }, 2: chap('第一章 甲'),
+      0: { type: 'volume' }, 1: { type: 'duplicate' }, 2: chap(),
     });
     expect(structure.sections[0].groupOnly).toBe(false);
   });
@@ -239,7 +279,7 @@ describe('duplicate 兜底', () => {
 describe('verifyVerbatim', () => {
   it('verifyVerbatim：正文少一个字 → ok=false 并给出位置；完全一致 → ok=true', async () => {
     const text = '第一章 开端\r\n　　他走进了青牛镇。  \r\n\r\n天色已晚。\r\n第二章 镇上\r\n很安静。\r\n';
-    const { f, structure } = await prepare(text, { 0: chap('第一章 开端'), 4: chap('第二章 镇上') });
+    const { f, structure } = await prepare(text, { 0: chap(), 4: chap() });
     // 段落首尾空白、空段落不影响比较
     expect(await verifyVerbatim(f, structure, iter(['他走进了青牛镇。\n\n  天色已晚。', '很安静。']))).toEqual({ ok: true });
     // 少一个「晚」字：左边「他走进了青牛镇。\n天色已晚。\n很安静。」第 13 个字符处不同
@@ -257,7 +297,7 @@ describe('verifyVerbatim', () => {
 
   it('normalizeLine：原文每行先经过它再比较（如去掉控制字符）', async () => {
     const text = '第一章 开端\n正文\u0001甲\n\u0002\n';
-    const { f, structure } = await prepare(text, { 0: chap('第一章 开端') });
+    const { f, structure } = await prepare(text, { 0: chap() });
     const strip = (t: string) => t.replace(/[\u0000-\u001F]/g, '');
     expect(await verifyVerbatim(f, structure, iter(['正文甲']))).toMatchObject({ ok: false });
     expect(await verifyVerbatim(f, structure, iter(['正文甲']), strip)).toEqual({ ok: true });
@@ -278,24 +318,25 @@ describe('按标题前缀推断分部 / 分卷', () => {
       '',
     ].join('\n');
     const { f, structure } = await prepare(text, {
-      0: chap('第六百四十七章 旧章'),
-      2: chap('第六百四十八章 至木灵婴'),
-      4: chap('第六百四十九章 无前缀'),
-      6: chap('第六百五十章 又带前缀'),
-      8: chap('第六百五十一章 新卷'),
-      10: chap('第六百五十二章 无前缀二'),
-      12: chap('第六百五十三章 乱入'),
+      0: chap(),
+      2: chap(),
+      4: chap(),
+      6: chap(),
+      8: chap(),
+      10: chap(),
+      12: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第六百四十七章 旧章', false],
       [0, '第五卷名震一方', true],
-      [1, '第六百四十八章 至木灵婴', false],
+      [1, '第六百四十八章至木灵婴', false],
       [1, '第六百四十九章 无前缀', false],
       [1, '第六百五十章 又带前缀', false],
       [0, '第六卷通天灵宝', true],
       [1, '第六百五十一章 新卷', false],
       [1, '第六百五十二章 无前缀二', false],
-      [1, '第六百五十三章 乱入', false],
+      // 乱入的旧卷前缀：不在该卷下，标题保留前缀
+      [1, '第五卷名震一方第六百五十三章 乱入', false],
     ]);
     // 推断出的卷：区间为空，落在触发它的章的开头
     const vol5 = structure.sections[1];
@@ -316,11 +357,11 @@ describe('按标题前缀推断分部 / 分卷', () => {
       '第十一卷真仙降世第一千零二章 丙', '正文3', '',
     ].join('\n');
     const { f, structure } = await prepare(text, {
-      0: { type: 'volume', title: '第十卷魔界之战' },
-      1: chap('第一千章 甲'),
-      3: { type: 'volume', title: '第十卷魔界之战' },
-      4: chap('第一千零一章 乙'),
-      6: chap('第一千零二章 丙'),
+      0: { type: 'volume' },
+      1: chap(),
+      3: { type: 'volume' },
+      4: chap(),
+      6: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第十卷魔界之战', true],
@@ -346,13 +387,13 @@ describe('按标题前缀推断分部 / 分卷', () => {
       '第二部', '第一卷 黄皮子坟', '第三章 林场', '正文C', '',
     ].join('\n');
     const { f, structure } = await prepare(text, {
-      0: { type: 'volume', title: '第一卷《精绝古城》' },
-      1: chap('第一章 牛心山'),
-      3: { type: 'volume', title: '第一部第二卷《龙岭迷窟》' },
-      4: chap('第二章 盗洞'),
-      6: { type: 'part', title: '第二部' },
-      7: { type: 'volume', title: '第一卷 黄皮子坟' },
-      8: chap('第三章 林场'),
+      0: { type: 'volume' },
+      1: chap(),
+      3: { type: 'volume' },
+      4: chap(),
+      6: { type: 'part' },
+      7: { type: 'volume' },
+      8: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第一部', true],
@@ -371,15 +412,15 @@ describe('按标题前缀推断分部 / 分卷', () => {
 
   it('「第一部分 / 第二部分」被标成章 → 不推断分部，标题不被剥掉', async () => {
     const { structure } = await prepare('第一部分 缘起\n正文\n第二部分 经过\n正文\n', {
-      0: chap('第一部分 缘起'), 2: chap('第二部分 经过'),
+      0: chap(), 2: chap(),
     });
     expect(structure.sections.map(s => [s.level, s.title])).toEqual([[0, '第一部分 缘起'], [0, '第二部分 经过']]);
     expect(structure.notes).toEqual([]);
   });
 
-  it('AI 标成卷、标题只给了卷名，但原文卷名后带章号 → 按章处理，章名取原文去掉卷名前缀', async () => {
+  it('AI 标成卷，但原文卷名后带章号 → 按章处理，章名取原文去掉卷名前缀', async () => {
     const text = '第六卷通天灵宝第九百八十四章银瞳幻术\n正文\n';
-    const { f, structure } = await prepare(text, { 0: { type: 'volume', title: '第六卷通天灵宝' } });
+    const { f, structure } = await prepare(text, { 0: { type: 'volume' } });
     expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
       [0, '第六卷通天灵宝', true],
       [1, '第九百八十四章银瞳幻术', false],
@@ -388,7 +429,7 @@ describe('按标题前缀推断分部 / 分卷', () => {
   });
 
   it('前缀允许空白和全角数字', async () => {
-    const { structure } = await prepare('第 ２ 部 第３卷 风起 第１章 甲\n正文\n', { 0: chap('第１章 甲') });
+    const { structure } = await prepare('第 ２ 部 第３卷 风起 第１章 甲\n正文\n', { 0: chap() });
     expect(structure.sections.map(s => [s.level, s.title])).toEqual([
       [0, '第 ２ 部'], [1, '第３卷 风起'], [2, '第１章 甲'],
     ]);

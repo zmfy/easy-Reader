@@ -70,11 +70,27 @@ const VOLUME_PREFIX_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部(?!分)\\s*)?
 /** 行首（可带「第X部」）「第Y卷」 */
 const VOLUME_START_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部(?!分)\\s*)?第\\s*(${NUM_CHARS})\\s*卷`);
 
-/** 含「第Z章/节/回/集」 */
-const CHAPTER_NUM_RE = new RegExp(`第\\s*${NUM_CHARS}\\s*[章节回集]`);
-
 const numValue = (s: string) =>
   chapterNumberValue(s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)));
+
+/** 行首「正文」及其后的空白 / 冒号 */
+const BODY_PREFIX_RE = /^正文[\s:：]*/;
+/** 行首《书名》前缀（后面紧跟「第N章 / 节 / 回 / 集 / 卷 / 部」） */
+const BOOK_NAME_PREFIX_RE = new RegExp(`^《[^》]*》\\s*(?=第\\s*${NUM_CHARS}\\s*[章节回集卷部])`);
+
+/**
+ * 目录里显示的标题：一律由原文按固定规则得出（AI 只判断类型，章卷编号不会被改动）。
+ * 原文去掉首尾空白和行尾附言后，依次去掉行首「正文」、后面紧跟编号的《书名》、所在部的「第X部」前缀、所在卷的「第Y卷<卷名>」前缀；
+ * 其余一字不动，去完为空时返回原文
+ */
+export function displayTitle(originalText: string, context: { volumePrefix?: string; partPrefix?: string }): string {
+  const original = originalText.trim();
+  let s = stripTitlePromo(original).replace(BODY_PREFIX_RE, '').replace(BOOK_NAME_PREFIX_RE, '');
+  for (const prefix of [context.partPrefix, context.volumePrefix]) {
+    if (prefix && s.startsWith(prefix)) s = s.slice(prefix.length).trim();
+  }
+  return s || original;
+}
 
 interface GroupEntry {
   type: 'part' | 'volume' | 'chapter';
@@ -87,7 +103,7 @@ interface GroupEntry {
 /**
  * 按原文标题行的「第X部」「第Y卷<卷名>」前缀补出 AI 没标出的部 / 卷（编号只增不减），
  * 并去掉与当前卷编号相同的单独分卷标题行（重复的卷标题，加入 dropLines）。
- * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷）
+ * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷），标题由 displayTitle 从原文得出
  */
 function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<number>, notes: string[]): GroupEntry[] {
   const entries: GroupEntry[] = [];
@@ -100,13 +116,12 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     const l = labels[i];
     if (!isStructural(l)) return;
     const text = c.text.trim();
-    const title = l.title || c.text;
     if (l.type === 'part') {
       const m = text.match(PART_PREFIX_RE);
       const n = m ? numValue(m[1]) : NaN;
       if (!Number.isNaN(n)) curPart = n;
       curVolume = null;
-      entries.push({ type: 'part', title, idx: i, synthetic: false });
+      entries.push({ type: 'part', title: displayTitle(text, {}), idx: i, synthetic: false });
       return;
     }
     const pm = text.match(PART_PREFIX_RE);
@@ -116,6 +131,8 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
       partCount++;
       entries.push({ type: 'part', title: pm[0], idx: i, synthetic: true });
     }
+    // 在所在部下：去掉「第X部」前缀
+    const partPrefix = pm && numValue(pm[1]) === curPart ? pm[0] : undefined;
     // 章标题前的卷名前缀（AI 标成卷但后面还带章号的行，也按章处理）
     const vm = text.match(VOLUME_PREFIX_RE);
     if (vm) {
@@ -125,11 +142,9 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
         volumeCount++;
         entries.push({ type: 'volume', title: vm[1].trim(), idx: i, synthetic: true });
       }
-      // AI 给的标题只有卷名（没有章号）时，章名取原文去掉卷名前缀的部分
-      const chapterTitle = CHAPTER_NUM_RE.test(title)
-        ? title
-        : stripTitlePromo(text.slice(text.indexOf(vm[1]) + vm[1].length).trim());
-      entries.push({ type: 'chapter', title: chapterTitle, idx: i, synthetic: false });
+      // 在所在卷下：去掉卷名前缀；乱入的旧卷前缀保留
+      const volumePrefix = n === curVolume ? vm[1].trim() : undefined;
+      entries.push({ type: 'chapter', title: displayTitle(text, { partPrefix, volumePrefix }), idx: i, synthetic: false });
       return;
     }
     if (l.type === 'volume') {
@@ -141,12 +156,10 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
         return;
       }
       if (!Number.isNaN(n)) curVolume = n;
-      // 卷名不重复部名
-      const stripped = title.replace(PART_PREFIX_RE, '').trim();
-      entries.push({ type: 'volume', title: stripped || title, idx: i, synthetic: false });
+      entries.push({ type: 'volume', title: displayTitle(text, { partPrefix }), idx: i, synthetic: false });
       return;
     }
-    entries.push({ type: 'chapter', title, idx: i, synthetic: false });
+    entries.push({ type: 'chapter', title: displayTitle(text, { partPrefix }), idx: i, synthetic: false });
   });
   if (partCount > 0) notes.push(`从章节标题前缀推断出 ${partCount} 个分部`);
   if (volumeCount > 0) notes.push(`从章节标题前缀推断出 ${volumeCount} 个分卷`);

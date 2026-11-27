@@ -14,7 +14,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txt-position-map-'));
 process.env.DATA_DIR = path.join(dir, 'data');
 
 type L = Omit<Label, 'id'>;
-const chap = (title: string): L => ({ type: 'chapter', title });
+const chap = (): L => ({ type: 'chapter' });
 
 // 原书：前言 + 四章；「第七章」是夹在第二章正文里的另一套编号，现有规则把它切成了单独一章（原书第 2 章）。
 // 整理版把它判为 stray_number 去掉、正文并回「第二章 青牛镇」：整理版 = 前言、第一章、第二章（b1–b4）、第三章
@@ -25,10 +25,10 @@ const TEXT = [
   '第三章 结局', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6',
 ].join('\r\n');
 const LABELS: Record<number, L> = {
-  3: chap('第一章 开端'),
-  6: chap('第二章 青牛镇'),
+  3: chap(),
+  6: chap(),
   10: { type: 'noise', noiseKind: 'stray_number' },
-  13: chap('第三章 结局'),
+  13: chap(),
 };
 
 let seq = 0;

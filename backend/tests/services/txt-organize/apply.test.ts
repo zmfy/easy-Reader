@@ -53,10 +53,10 @@ const TEXT = [
 ].join('\r\n');
 type L = Omit<Label, 'id'>;
 const LABELS: Record<number, L> = {
-  3: { type: 'chapter', title: '第一章 开端' },
-  6: { type: 'chapter', title: '第二章 青牛镇' },
+  3: { type: 'chapter' },
+  6: { type: 'chapter' },
   10: { type: 'noise', noiseKind: 'stray_number' },
-  13: { type: 'chapter', title: '第三章 结局' },
+  13: { type: 'chapter' },
 };
 
 let seq = 0;

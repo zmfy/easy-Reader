@@ -22,7 +22,7 @@ jest.mock('../../../src/ai/ai-manager', () => ({
       if (mockFail) return '不是 JSON';
       const labels = [...prompt.matchAll(/^#(\d+)\t([^\t]+)\t/gm)].map(m => (
         /^第.+章/.test(m[2])
-          ? { id: Number(m[1]), type: 'chapter', title: m[2] }
+          ? { id: Number(m[1]), type: 'chapter' }
           : { id: Number(m[1]), type: 'noise', noiseKind: 'text' }
       ));
       return JSON.stringify({ labels, notes: ['第二章疑似缺字'] });

@@ -13,11 +13,11 @@ const makeCands = (n: number): Candidate[] => Array.from({ length: n }, (_, i) =
 
 /** 候选行在提示词里形如 `#12\t...`，从中取出本次提示词包含的 id */
 const idsIn = (prompt: string) => [...prompt.matchAll(/^#(\d+)\t/gm)].map(m => Number(m[1]));
-const chapterJson = (ids: number[], mark = '') => JSON.stringify({
-  labels: ids.map(id => ({ id, type: 'chapter', title: `第${id}章${mark}` })), notes: [],
+const chapterJson = (ids: number[], type = 'chapter') => JSON.stringify({
+  labels: ids.map(id => ({ id, type })), notes: [],
 });
-/** 区分是哪一次调用返回的标题：只能是原文删字所得，所以用「标」「题」「标题」轮换 */
-const callMark = (call: number) => [' 标', ' 题', ' 标题'][(call - 1) % 3];
+/** 区分是哪一次调用返回的标签：按调用次数轮换 type */
+const callType = (call: number) => ['chapter', 'volume', 'part'][(call - 1) % 3];
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -30,7 +30,7 @@ describe('judgeCandidates', () => {
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
       prompts.push(prompt);
       call++;
-      return chapterJson(idsIn(prompt), callMark(call));
+      return chapterJson(idsIn(prompt), callType(call));
     });
     const res = await judgeCandidates(makeCands(700), book, db);
     expect(res.batches).toBe(3);
@@ -40,10 +40,10 @@ describe('judgeCandidates', () => {
     expect(idsIn(prompts[2])).toEqual(Array.from({ length: 120 }, (_, i) => 580 + i));
     expect(res.labels).toHaveLength(700);
     expect(res.labels.map(l => l.id)).toEqual(Array.from({ length: 700 }, (_, i) => i));
-    expect(res.labels[279].title).toBe('第279章 标');
-    expect(res.labels[280].title).toBe('第280章 题');
-    expect(res.labels[599].title).toBe('第599章 标题');
-    expect(res.labels[600].title).toBe('第600章 标题');
+    expect(res.labels[279].type).toBe('chapter');
+    expect(res.labels[280].type).toBe('volume');
+    expect(res.labels[599].type).toBe('part');
+    expect(res.labels[600].type).toBe('part');
   });
 
   it('每批提示词带上一批的结构摘要', async () => {
@@ -53,8 +53,8 @@ describe('judgeCandidates', () => {
       const ids = idsIn(prompt);
       return JSON.stringify({
         labels: ids.map(id => id === 0
-          ? { id, type: 'volume', title: '第一卷 起' }
-          : { id, type: 'chapter', title: `第${id}章 题${id}` }),
+          ? { id, type: 'volume' }
+          : { id, type: 'chapter' }),
         notes: [],
       });
     });
@@ -63,7 +63,7 @@ describe('judgeCandidates', () => {
     await judgeCandidates(cands, book, db);
     expect(prompts[0]).toContain('测试书');
     expect(prompts[0]).toContain('某作者');
-    expect(prompts[1]).toContain('第299章 题299');
+    expect(prompts[1]).toContain('第299章 标题299');
     expect(prompts[1]).toContain('第一卷 起');
   });
 
@@ -87,181 +87,32 @@ describe('judgeCandidates', () => {
     await expect(judgeCandidates(makeCands(400), book, db)).rejects.toThrow('AI 判定失败：第 2 批（缺少 id：280）');
   });
 
-  it('type 非法 → 本批无效；part 空 title / noise 无 noiseKind 按保守方式补全', async () => {
-    const bad = (label: object) => JSON.stringify({ labels: [{ id: 0, type: 'chapter', title: 'a' }, { id: 1, ...label }], notes: [] });
-    for (const label of [{ type: 'bogus' }, { type: 'part', title: ' ' }, { type: 'noise' }, { type: 'chapter', title: 'x' }]) {
+  it('type 非法 → 本批无效；noise 无 noiseKind 按保守方式补全', async () => {
+    const bad = (label: object) => JSON.stringify({ labels: [{ id: 0, type: 'chapter' }, { id: 1, ...label }], notes: [] });
+    for (const label of [{ type: 'bogus' }, { type: 'noise' }]) {
       const spy = jest.spyOn(aiManager, 'chat').mockResolvedValue(bad(label));
       if (label.type === 'bogus') {
         await expect(judgeCandidates(makeCands(2), book, db)).rejects.toThrow('AI 判定失败：第 1 批（id 1 的 type 无效：bogus）');
         expect(spy).toHaveBeenCalledTimes(2);
       } else {
         const res = await judgeCandidates(makeCands(2), book, db);
-        if (label.type === 'part') expect(res.labels[1].title).toBe('第1章 标题1');
-        if (label.type === 'noise') expect(res.labels[1].noiseKind).toBe('text');
+        expect(res.labels[1].noiseKind).toBe('text');
       }
       spy.mockRestore();
     }
   });
 
-  it('单条标签不全：noise 缺 noiseKind 补 text、chapter 缺 title 用原文，notes 加一条提示', async () => {
+  it('noise 缺 noiseKind 补 text，notes 加一条提示；AI 多给的 title 忽略', async () => {
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
       labels: idsIn(prompt).map(id => id === 1 ? { id, type: 'noise' }
-        : id === 2 ? { id, type: 'chapter' }
-        : { id, type: 'chapter', title: `第${id}章` }),
+        : id === 2 ? { id, type: 'chapter', title: '第五百章 被改的标题' }
+        : { id, type: 'chapter' }),
       notes: ['原备注'],
     }));
     const res = await judgeCandidates(makeCands(4), book, db);
     expect(res.labels[1]).toEqual({ id: 1, type: 'noise', noiseKind: 'text' });
-    expect(res.labels[2]).toEqual({ id: 2, type: 'chapter', title: '第2章 标题2' });
-    expect(res.labels[3].title).toBe('第3章');
-    expect(res.notes).toEqual(['原备注', '第 1 批有 2 条标签格式不全，已按保守方式处理']);
-  });
-
-  it('标题只能由原文删字得到：改动原文（六百→五百）时改回原标题（去掉附言），只删前缀 / 附言的照收', async () => {
-    const cands = makeCands(5);
-    cands[0].text = '第五卷名震一方第六百五十九章四叔祖';
-    cands[1].text = '第五卷名震一方第六百四十八章至木灵婴';
-    cands[2].text = '第0118章 医术高人【求月票！！】';
-    cands[3].text = '第12章 夜行【求推荐票】';
-    const titles: Record<number, string> = {
-      0: '第五百五十九章四叔祖',
-      1: '第六百四十八章至木灵婴',
-      2: '第0118章 医术高人',
-      3: '第十二章 夜行',
-      4: '第4章  标题4',
-    };
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual([
-      '第五卷名震一方第六百五十九章四叔祖',
-      '第六百四十八章至木灵婴',
-      '第0118章 医术高人',
-      '第12章 夜行',
-      '第4章  标题4',
-    ]);
-    expect(res.notes).toEqual(['第 1 批有 2 个标题被 AI 改动了原文，已改回原标题']);
-  });
-
-  it('改号时去掉「章」或「第」也不放过：每段数字都须原样出现在原文中', async () => {
-    const cands = makeCands(3);
-    cands[0].text = '第五卷名震一方第六百五十九章四叔祖';
-    cands[1].text = '第五卷名震一方第六百五十九章四叔祖';
-    cands[2].text = '第１２章 夜行';
-    const titles: Record<number, string> = { 0: '第五百五十九四叔祖', 1: '五百五十九章四叔祖', 2: '第１章 夜行' };
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual([
-      '第五卷名震一方第六百五十九章四叔祖',
-      '第五卷名震一方第六百五十九章四叔祖',
-      '第１２章 夜行',
-    ]);
-    expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
-  });
-
-  it('「第N章 / 卷」须以相同编号和单位出现在原文中：卷号挪作章号不放过，同时保留卷名和章号的照收', async () => {
-    const cands = makeCands(2);
-    cands[0].text = '第五卷名震一方第六百五十九章四叔祖';
-    cands[1].text = '第五卷名震一方第六百五十九章四叔祖';
-    const titles: Record<number, string> = { 0: '第五章四叔祖', 1: '第五卷 第六百五十九章 四叔祖' };
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual([
-      '第五卷名震一方第六百五十九章四叔祖',
-      '第五卷 第六百五十九章 四叔祖',
-    ]);
-    expect(res.notes).toEqual(['第 1 批有 1 个标题被 AI 改动了原文，已改回原标题']);
-  });
-
-  it('数字后的单位须与原文一致：去掉「第」挪用卷号也不放过，只删「第」或附言的照收', async () => {
-    const orig = '第五卷名震一方第六百五十九章四叔祖';
-    const titles = ['五章四叔祖', '五 章 四叔祖', '卷五章四叔祖', '第六百五十九章四叔祖', '六百五十九章四叔祖', '第六百五十九章四叔祖'];
-    const cands = makeCands(titles.length);
-    cands.forEach(c => { c.text = orig; });
-    cands[5].text = `${orig}【求月票】`;
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual([orig, orig, orig, '第六百五十九章四叔祖', '六百五十九章四叔祖', '第六百五十九章四叔祖']);
-    expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
-  });
-
-  it('原文的章卷编号是一个整体：编号里含 O / 大写数字 / 廿卅 / 千分位逗号时，删掉其中一部分也不放过', async () => {
-    const pairs: [string, string][] = [
-      ['第一O一章 车祸', '第一章 车祸'],
-      ['第一Ｏ一章 x', '第一章 x'],
-      ['第壹佰章 x', '第壹章 x'],
-      ['第廿二章 x', '第二章 x'],
-      ['第卅二章 x', '第二章 x'],
-      ['第1,001章 x', '第001章 x'],
-      ['第一O一章 车祸', '一章 车祸'],
-      ['第一O一章 车祸', '第一O一 车祸'],
-    ];
-    const cands = makeCands(pairs.length);
-    pairs.forEach(([text], i) => { cands[i].text = text; });
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: pairs[id][1] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual(pairs.map(([text]) => text));
-    expect(res.notes).toEqual([`第 1 批有 ${pairs.length} 个标题被 AI 改动了原文，已改回原标题`]);
-  });
-
-  it('「第」不能接到正文里另一个数字上：标题里带「第」的编号须是原文中带「第」的编号，章号不能整个删掉；繁体 / 小数编号也是整体', async () => {
-    const pairs: [string, string][] = [
-      ['第五章 十二回合', '第十二回合'],
-      ['第二章 一部手机', '第一部手机'],
-      ['第一章 两节课', '第两节课'],
-      ['第十章 三部曲', '第三部曲'],
-      ['第三章 七集团', '第七集团'],
-      ['第一章 二节', '第二节'],
-      ['第十章 x 一百', '第一百'],
-      ['第十章 x 一百', '一百'],
-      ['兩百二十章 x', '百二十章 x'],
-      ['貳拾章 x', '拾章 x'],
-      ['陸拾章 x', '拾章 x'],
-      ['1.5章 x', '5章 x'],
-    ];
-    const cands = makeCands(pairs.length);
-    pairs.forEach(([text], i) => { cands[i].text = text; });
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: pairs[id][1] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual(pairs.map(([text]) => text));
-    expect(res.notes).toEqual([`第 1 批有 ${pairs.length} 个标题被 AI 改动了原文，已改回原标题`]);
-  });
-
-  it('完整保留编号的删字照收：去前缀 / 只删「第」/ 去附言 / 名字里的数字', async () => {
-    const pairs: [string, string][] = [
-      ['第五卷名震一方第六百四十八章至木灵婴', '第六百四十八章至木灵婴'],
-      ['第一百二十章 风起', '一百二十章 风起'],
-      ['正文 第一百二十章 风起', '第一百二十章 风起'],
-      ['《鬼吹灯之龙岭迷窟》 第四十八章 香鞋', '第四十八章 香鞋'],
-      ['第一O一章 车祸【求月票】', '第一O一章 车祸'],
-      ['第一O一章 车祸', '第一O一章 车祸'],
-      ['第三章 三对三', '第三章 三对三'],
-      ['第八章 一抓,一拳,一掌', '第八章 一抓,一拳,一掌'],
-      ['第十章 十', '第十章 十'],
-      ['第1,001章 x', '第1,001章 x'],
-      ['兩百二十章 x【求月票】', '兩百二十章 x'],
-      ['1.5章 x', '1.5章 x'],
-      ['第五章 十二回合', '第五章 十二回合'],
-    ];
-    const cands = makeCands(pairs.length);
-    pairs.forEach(([text], i) => { cands[i].text = text; });
-    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
-      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: pairs[id][1] })), notes: [],
-    }));
-    const res = await judgeCandidates(cands, book, db);
-    expect(res.labels.map(l => l.title)).toEqual(pairs.map(([, title]) => title));
-    expect(res.notes).toEqual([]);
+    expect(res.labels[2]).toEqual({ id: 2, type: 'chapter' });
+    expect(res.notes).toEqual(['原备注', '第 1 批有 1 条标签格式不全，已按保守方式处理']);
   });
 
   it('一批两次缺 id → 对半拆分，两半都成功则整体成功，进度仍按原批数', async () => {
@@ -271,7 +122,7 @@ describe('judgeCandidates', () => {
       call++;
       prompts.push(prompt);
       const ids = idsIn(prompt);
-      return chapterJson(call <= 2 ? ids.slice(1) : ids, callMark(call));
+      return chapterJson(call <= 2 ? ids.slice(1) : ids, callType(call));
     });
     const progress: Array<[number, number]> = [];
     const res = await judgeCandidates(makeCands(500), book, db, (d, t) => progress.push([d, t]));
@@ -281,9 +132,9 @@ describe('judgeCandidates', () => {
     expect(idsIn(prompts[3])).toEqual(Array.from({ length: 150 }, (_, i) => 150 + i));
     expect(res.labels).toHaveLength(500);
     expect(res.labels.map(l => l.id)).toEqual(Array.from({ length: 500 }, (_, i) => i));
-    expect(res.labels[0].title).toBe('第0章 标题');
-    expect(res.labels[279].title).toBe('第279章 标');
-    expect(res.labels[299].title).toBe('第299章 题'); // 重叠部分以第 2 批为准
+    expect(res.labels[0].type).toBe('part');
+    expect(res.labels[279].type).toBe('chapter');
+    expect(res.labels[299].type).toBe('volume'); // 重叠部分以第 2 批为准
     expect(res.batches).toBe(2);
     expect(progress).toEqual([[1, 2], [2, 2]]);
   });
@@ -315,8 +166,8 @@ describe('judgeCandidates', () => {
     const halves = prompts.slice(3);
     expect(idsIn(halves[0])).toEqual(Array.from({ length: 170 }, (_, i) => 280 + i));
     expect(idsIn(halves[1])).toEqual([...Array.from({ length: 20 }, (_, i) => 280 + i), ...Array.from({ length: 150 }, (_, i) => 450 + i)]);
-    expect(halves[0]).toContain('最近章节标题：第295章 / 第296章 / 第297章 / 第298章 / 第299章');
-    expect(halves[1]).toContain('最近章节标题：第295章 / 第296章 / 第297章 / 第298章 / 第299章');
+    expect(halves[0]).toContain('最近章节标题：第295章 标题295 / 第296章 标题296 / 第297章 标题297 / 第298章 标题298 / 第299章 标题299');
+    expect(halves[1]).toContain('最近章节标题：第295章 标题295 / 第296章 标题296 / 第297章 标题297 / 第298章 标题298 / 第299章 标题299');
     expect(res.labels).toHaveLength(600);
   });
 
@@ -359,7 +210,7 @@ describe('judgeCandidates', () => {
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
       labels: idsIn(prompt).map(id => id === 0
         ? { id, type: 'noise', noiseKind: 'text' }
-        : id === 1 ? { id, type: 'duplicate' } : { id, type: 'chapter', title: `章${id}` }),
+        : id === 1 ? { id, type: 'duplicate' } : { id, type: 'chapter' }),
       notes: [],
     }));
     await expect(judgeCandidates(makeCands(4), book, db)).rejects.toThrow(/duplicate/);
@@ -370,7 +221,7 @@ describe('judgeCandidates', () => {
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
       call++;
       return JSON.stringify({
-        labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: `第${id}章` })), notes: [`备注${call}`],
+        labels: idsIn(prompt).map(id => ({ id, type: 'chapter' })), notes: [`备注${call}`],
       });
     });
     const res = await judgeCandidates(makeCands(400), book, db);

@@ -29,7 +29,7 @@ const write = (text: string | Buffer) => {
 };
 
 type L = Omit<Label, 'id'>;
-const chap = (title: string): L => ({ type: 'chapter', title });
+const chap = (): L => ({ type: 'chapter' });
 
 /** 按行号给出判定结果，生成结构（同 structure.test.ts 的 prepare） */
 async function prepare(text: string, labelsByLine: Record<number, L>) {
@@ -76,14 +76,14 @@ const GUI = [
   '第二章 古墓', '正文B', '', '正文B2', '第二卷 龙岭迷窟', '第1章', '', '第三章 盗洞', '正文C',
 ].join('\r\n');
 const GUI_LABELS: Record<number, L> = {
-  3: { type: 'part', title: '第一部' },
-  5: { type: 'volume', title: '第一卷 精绝古城' },
-  7: chap('第一章 牛心山'),
-  9: chap('第二章 古墓'),
+  3: { type: 'part' },
+  5: { type: 'volume' },
+  7: chap(),
+  9: chap(),
   10: { type: 'duplicate' },
-  14: { type: 'volume', title: '第二卷 龙岭迷窟' },
+  14: { type: 'volume' },
   15: { type: 'noise', noiseKind: 'stray_number' },
-  17: chap('第三章 盗洞'),
+  17: chap(),
 };
 
 describe('writeOrganizedEpub', () => {
@@ -147,7 +147,7 @@ describe('writeOrganizedEpub', () => {
   it('前言只有空行和要去掉的行时不生成「前言」章', async () => {
     const { f, structure } = await prepare('\n第2章\n\n第一章 开端\n正文\n', {
       1: { type: 'noise', noiseKind: 'stray_number' },
-      3: chap('第一章 开端'),
+      3: chap(),
     });
     expect(structure.preface).not.toBeNull();
     const res = await writeOrganizedEpub({ newBookId: 'np', sourcePath: f, structure, title: '书' });
@@ -168,7 +168,7 @@ describe('writeOrganizedEpub', () => {
         const id = candidates.length;
         candidates.push({ id, lineNo: line.lineNo, byteStart: line.byteStart, byteEnd: line.byteEnd, text: line.text,
           bodyChars: 1, bodyLines: 1, prevSnippet: '', nextSnippet: '', ruleHint: 'none' });
-        labels.push({ id, ...chap(line.text) });
+        labels.push({ id, ...chap() });
       }
     }
     const structure = buildStructure(candidates, labels, fs.statSync(f).size);
@@ -195,7 +195,7 @@ describe('writeOrganizedEpub', () => {
 
   it('正文开头有与标题相同的行（AI 把重复标题判成 noise:text）→ 整理成功，这一行保留', async () => {
     const { f, structure } = await prepare('第一章 开端\n第一章 开端\n正文\n', {
-      0: chap('第一章 开端'), 1: { type: 'noise', noiseKind: 'text' },
+      0: chap(), 1: { type: 'noise', noiseKind: 'text' },
     });
     expect(structure.dropLines.has(1)).toBe(false);
     const res = await writeOrganizedEpub({ newBookId: 'dup', sourcePath: f, structure, title: '书' });
@@ -211,7 +211,7 @@ describe('writeOrganizedEpub', () => {
       '第一部第二卷《龙岭迷窟》第三章 盗洞', '正文C', '',
     ].join('\n');
     const { f, structure } = await prepare(text, {
-      0: chap('第一章 牛心山'), 2: chap('第二章 古墓'), 4: chap('第三章 盗洞'),
+      0: chap(), 2: chap(), 4: chap(),
     });
     const res = await writeOrganizedEpub({ newBookId: 'infer', sourcePath: f, structure, title: '书' });
     const { chapters, bodies } = await readBack(res.filePath);
@@ -228,7 +228,7 @@ describe('writeOrganizedEpub', () => {
   });
 
   it('原文里的控制字符写 EPUB 时去掉，校验两边同一口径，整理成功', async () => {
-    const { f, structure } = await prepare('第一章 开端\n正文\u0001甲\n\u0002\n乙\n', { 0: chap('第一章 开端') });
+    const { f, structure } = await prepare('第一章 开端\n正文\u0001甲\n\u0002\n乙\n', { 0: chap() });
     const res = await writeOrganizedEpub({ newBookId: 'ctl', sourcePath: f, structure, title: '书' });
     const { bodies } = await readBack(res.filePath);
     expect(bodies).toEqual([['正文甲', '乙']]);
