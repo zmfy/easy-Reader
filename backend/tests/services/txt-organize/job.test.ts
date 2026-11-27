@@ -30,15 +30,23 @@ jest.mock('../../../src/ai/ai-manager', () => ({
   },
 }));
 
-// 写出阶段强制失败（封面已复制之后的失败）
+// 写出阶段强制失败（封面已复制之后的失败）；mockTouchSource：写出之后改动原文件
 let mockWriteFail = false;
+let mockTouchSource = false;
 jest.mock('../../../src/services/txt-organize/writer', () => {
   const actual = jest.requireActual('../../../src/services/txt-organize/writer');
   return {
     ...actual,
     writeOrganizedEpub: (...args: unknown[]) => {
       if (mockWriteFail) return Promise.reject(new Error('整理结果与原文不一致'));
-      return actual.writeOrganizedEpub(...args);
+      const written = actual.writeOrganizedEpub(...args);
+      if (!mockTouchSource) return written;
+      // 写出完成后原文件被改（只改修改时间：内容不变，writer 的逐字校验发现不了）
+      const { sourcePath } = args[0] as { sourcePath: string };
+      return written.then((r: unknown) => {
+        jest.requireActual('fs').utimesSync(sourcePath, new Date(), new Date(Date.now() + 60_000));
+        return r;
+      });
     },
   };
 });
@@ -124,6 +132,7 @@ beforeEach(() => {
   mockFail = false;
   mockChatCalls = 0;
   mockWriteFail = false;
+  mockTouchSource = false;
   mockCleanupThrow = false;
   mockNotifyThrow = false;
   db.exec(`
@@ -378,3 +387,13 @@ it('成功后发通知抛错 → 任务仍为 review，后面排队的任务照�
   warn.mockRestore();
 });
 
+it('整理期间原文件被修改 → 任务 failed，不留整理版', async () => {
+  addBook('b18');
+  mockTouchSource = true;
+  const created = job.requestOrganize('b18', ADMIN);
+  await waitStatus(created.id, 'failed');
+  expect(getJob(created.id)!.error).toBe('原文件在整理期间被修改，请重新发起整理');
+  expect(db.prepare("SELECT COUNT(*) AS n FROM books WHERE organized_from = 'b18'").get()).toEqual({ n: 0 });
+  expect(db.prepare('SELECT COUNT(*) AS n FROM scan_batches').get()).toEqual({ n: 0 });
+  expect(fs.existsSync(path.join(ORGANIZED, `${created.id}.epub`))).toBe(false);
+});

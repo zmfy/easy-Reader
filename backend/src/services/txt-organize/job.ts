@@ -279,6 +279,12 @@ async function runJob(job: { id: string; book_id: string; requested_by: string }
   const { filePath, chapterMap } = await writeOrganizedEpub({
     newBookId, sourcePath: srcPath, structure, title: newTitle, author: book.author, summary: book.summary, cover,
   });
+  // 整理期间原文件被改过：对照表和逐字校验都对不上新文件，不能生成审核
+  let after: fs.Stats | null = null;
+  try { after = fs.statSync(srcPath); } catch { /* 被删掉也算修改 */ }
+  if (!after || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
+    throw new Error('原文件在整理期间被修改，请重新发起整理');
+  }
   // 有前言时 chapterMap 比 sections 多一章（第 0 章）
   const organizedToc = [
     ...(chapterMap.length > structure.sections.length ? [{ title: '前言', level: 0 }] : []),
