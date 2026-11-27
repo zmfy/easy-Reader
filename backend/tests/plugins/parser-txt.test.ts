@@ -103,10 +103,10 @@ describe('TxtParser keeps volume headings separate', () => {
 describe('TxtParser merge compares every number in the heading', () => {
   it('keeps 「第十卷…第2130章」 and 「第十卷…第2131章」 apart even when the first has no body', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
-    fs.writeFileSync(file, '第十卷魔界之战第两千一百三十章斗兽\n\n第十卷魔界之战第两千一百三十一章得晶\n正文。\n', 'utf-8');
+    fs.writeFileSync(file, '第十卷魔界之战第二千一百三十章斗兽\n\n第十卷魔界之战第两千一百三十一章得晶\n正文。\n', 'utf-8');
     const p = new TxtParser();
     await p.load(file);
-    expect((await p.getChapters()).map(c => c.title)).toEqual(['第十卷魔界之战第两千一百三十章斗兽', '第十卷魔界之战第两千一百三十一章得晶']);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第十卷魔界之战第二千一百三十章斗兽', '第十卷魔界之战第两千一百三十一章得晶']);
   });
 });
 
@@ -172,6 +172,13 @@ describe('TxtParser 网文抓取的大文件（《校花的贴身高手》《剑
     expect(await text(p, 1)).toEqual(['第6章 这土包子是谁？', '正文六。']);
   });
 
+  it('后一个标题在章名后多出文字（「太极」→「太极图」）用后一个；多出的是「，到网址」这类水印则保留第一个', async () => {
+    const p = await load('第二千零二章太极\n第二千零二章太极图\n正文一。\n第二千一百三十章斗兽\n第二千一百三十章斗兽，到网址\n正文二。\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第二千零二章太极图', '第二千一百三十章斗兽']);
+    expect(await text(p, 0)).toEqual(['第二千零二章太极图', '正文一。']);
+    expect(await text(p, 1)).toEqual(['第二千一百三十章斗兽', '正文二。']);
+  });
+
   it('同一标题一字不差写两遍：正文里保留一份', async () => {
     const p = await load('第53章 请神\n第53章 请神\n正文。\n第54章 下一章\n正文。\n');
     expect(await text(p, 0)).toEqual(['第53章 请神', '正文。']);
@@ -200,6 +207,19 @@ describe('TxtParser 网文抓取的大文件（《校花的贴身高手》《剑
       ['第一卷 笼中雀', 0], ['第一章 惊蛰', 1], ['第二章 开门', 1], ['第二卷 山水郎', 0], ['第一章 走', 1],
     ]);
     expect(await text(p, 1)).toEqual(['第一章 惊蛰', '正文一。']);
+  });
+
+  it('卷末说明「第二卷《山水郎》结束。」是正文；之后没写卷名的章节回到第一层', async () => {
+    const p = await load('第一卷 笼中雀\n第一卷 笼中雀 第一章 惊蛰\n正文一。\n第二卷 山水郎\n第二卷 山水郎 第二章 走\n正文二。\n    第二卷《山水郎》结束。\n------------\n第三章 添土\n正文三。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([
+      ['第一卷 笼中雀', 0], ['第一章 惊蛰', 1], ['第二卷 山水郎', 0], ['第二章 走', 1], ['第三章 添土', 0],
+    ]);
+    expect(await text(p, 3)).toContain('第二卷《山水郎》结束。');
+  });
+
+  it('「第一回跟皇帝老爷打交道，钱俊说话都不利索了。」是正文句子，不是标题', async () => {
+    expect(looksLikeSentence('第一回跟皇帝老爷打交道，钱俊说话都不利索了。')).toBe(true);
+    expect(looksLikeSentence('第一千一百三十九章神念附灵。')).toBe(false);
   });
 
   it('全角空格 / 不换行空格缩进的标题照样识别；超长的「第…」行算正文', async () => {

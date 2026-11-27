@@ -17,6 +17,8 @@ interface ChapterMeta {
   partTitle?: string;
   /** 并入本章的同编号标题行（如「第5章 …」后面的「第0005章…」），读正文时去掉 */
   mergedHeadings?: string[];
+  /** 本章正文里有卷末说明（「第二卷《山水郎》结束。」）：之后的章节不再归入这一卷 */
+  endsVolume?: boolean;
 }
 
 export function detectEncoding(filePath: string): string {
@@ -85,12 +87,14 @@ export function readTxtPreview(filePath: string, maxChars: number): string {
 /**
  * 以「第X章 / 回…」开头、但其实是正文句子的行（如《社戏》「第一回是民国元年我初到北京的时候，当时一个朋友对我说，北京戏」）。
  * 标题里可能有问号、感叹号（「第二十七章 赌运气？」）、结尾句号（「第一千一百三十九章神念附灵。」）、
- * 甚至两个逗号（「第二百一十四章 一个恩赐，或者，一个诅咒」），所以只认更像正文的两种：
- * 句号后面还有字，或两个以上逗号且整行较长。
+ * 甚至两个逗号（「第二百一十四章 一个恩赐，或者，一个诅咒」），所以只认更像正文的三种：
+ * 句号后面还有字；两个以上逗号且整行较长；有逗号又以句号结尾。
  */
 export function looksLikeSentence(line: string): boolean {
   const text = line.trim();
-  return /。\s*\S/.test(text) || ((text.match(/，/g)?.length ?? 0) >= 2 && text.length > 25);
+  return /。\s*\S/.test(text) || ((text.match(/，/g)?.length ?? 0) >= 2 && text.length > 25)
+    // 有逗号又以句号结尾（「第一回跟皇帝老爷打交道，钱俊说话都不利索了。」）
+    || (text.includes('，') && /。$/.test(text));
 }
 
 const SEPARATOR_LINE_RE = /^[=＝\-－_*＊~～#＃─━·]{5,}$/;
@@ -125,6 +129,8 @@ const MAX_HEADING_BYTES = 400;
  */
 const HEADING_START_RE = /^(?:正文|第|[【［\[〔（(]|chapter|楔子|序|引子|前言|尾声|后记|终章|番外)/i;
 const SEPARATOR_START_RE = /^[=＝\-－_*＊~～#＃─━·]/;
+/** 卷末说明：「第二卷《山水郎》结束。」「第一卷 完」——是正文，不是分卷标题 */
+const VOLUME_END_RE = /^第[零〇一二两三四五六七八九十百千万\d]+卷[^章节回集]*(结束|完结|终了|完)[。！!.]*$/;
 
 /**
  * UTF-8 行首第一个字符的字节（编成一个整数），只包含 HEADING_START_RE / SEPARATOR_START_RE 可能匹配的字符。
@@ -208,6 +214,11 @@ const headingNumber = (title: string) => {
     || key.match(SPECIAL_CHAPTER_RE)?.[1]
     || '';
 };
+
+/** 标题去掉编号、求票附言、结尾问号 / 叹号 / 句号后的章名部分（合并重复标题时比较用） */
+const headingName = (title: string) => compact(headingKey(stripTitlePromo(title)))
+  .replace(/^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回])+/, '')
+  .replace(/[？?！!。.…]+$/, '');
 
 /**
  * 章节开头重复的标题只留一份：完整的标题行，或拆成「第二回」「史大郎…」几行、
@@ -342,6 +353,12 @@ export class TxtParser implements ReaderPlugin {
         // 判断是不是标题时不看末尾的求票附言（附言里的逗号、感叹号会让标题像正文句子）
         const headingText = stripTitlePromo(lineText);
         const key = headingText.length < 60 ? headingKey(headingText) : '';
+        if (VOLUME_END_RE.test(compact(key))) {
+          sawBody = true;
+          const current = chapters[chapters.length - 1];
+          if (current) current.endsVolume = true;
+          return;
+        }
         const isHeading = key !== '' && (chapterPattern.test(key) || ENGLISH_CHAPTER_RE.test(key) || SPECIAL_CHAPTER_RE.test(key))
           && !looksLikeSentence(headingText);
         if (isHeading) {
@@ -349,13 +366,20 @@ export class TxtParser implements ReaderPlugin {
           if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
             // 上一个标题之后没有正文，又是同一编号的标题，并为一章。网页抓取的书常把每章标题写两遍：
             // 「第二回史大郎…」+「第二回」「史大郎…」；「第5章 怎么像找对象？」+「第0005章怎么像找对象？？」。
-            // 保留第一个标题；第一个只有编号（「第二回」）时换成后面较完整的。
+            // 保留第一个标题；后一个是在它的章名后面接着多出文字时（「第二回」→「第二回 史大郎…」、
+            // 「太极」→「太极图」）换成后一个。多出的部分以标点开头（「斗兽，到网址」这类水印）不算。
             // 编号不同（如「第七卷 倒吊人」后接「第一章 欢迎」）仍各自成章
-            const prevHasName = compact(headingKey(stripTitlePromo(prev.title)))
-              .replace(/^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回])+/, '').length > 0;
-            if (!prevHasName && lineText.length > prev.title.length) prev.title = lineText;
-            // 与标题一字不差的重复行由 dropRepeatedTitle 处理，不再记入（否则标题会被去掉两次）
-            else if (compact(lineText) !== compact(prev.title)) (prev.mergedHeadings ??= []).push(lineText);
+            const prevName = headingName(prev.title);
+            const nextName = headingName(lineText);
+            const extendsPrev = nextName.length > prevName.length && nextName.startsWith(prevName)
+              && /^[\p{L}\p{N}]/u.test(nextName.slice(prevName.length));
+            if (extendsPrev) {
+              (prev.mergedHeadings ??= []).push(prev.title);
+              prev.title = lineText;
+            } else if (compact(lineText) !== compact(prev.title)) {
+              // 与标题一字不差的重复行由 dropRepeatedTitle 处理，不再记入（否则标题会被去掉两次）
+              (prev.mergedHeadings ??= []).push(lineText);
+            }
             return;
           }
           if (prev) {
@@ -478,11 +502,19 @@ export class TxtParser implements ReaderPlugin {
       if (volumeTitle && title.startsWith(volumeTitle) && title.slice(volumeTitle.length).trim()) {
         title = title.slice(volumeTitle.length).trim();
       }
+      let entry: TocEntry;
       if (c.partTitle) {
         inGroup = true;
-        return { index: c.index, title, level: 1, groupTitle: c.partTitle };
+        entry = { index: c.index, title, level: 1, groupTitle: c.partTitle };
+      } else {
+        entry = { index: c.index, title, level: inGroup ? 1 : 0 };
       }
-      return { index: c.index, title, level: inGroup ? 1 : 0 };
+      // 卷末说明之后、下一个分卷之前的章节（原文没写卷名）放回第一层，不挂在已结束的卷下面
+      if (c.endsVolume && volumeTitle) {
+        inGroup = false;
+        volumeTitle = '';
+      }
+      return entry;
     });
   }
 
