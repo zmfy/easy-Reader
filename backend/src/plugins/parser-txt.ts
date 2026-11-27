@@ -222,6 +222,22 @@ const headingNumber = (title: string) => {
     || '';
 };
 
+/**
+ * 合并重复标题时比较的编号：有章 / 节 / 回 / 集编号时只比最后一个（「第六卷通天灵宝第九百九十一章」与「第九百九十一章」相同），
+ * 没有时同 headingNumber（「第一卷」「楔子」）
+ */
+const chapterUnitNumber = (title: string) => {
+  const units = headingKey(title).match(/第[零〇一二两三四五六七八九十百千万\d]+[章节回集]/g);
+  if (!units) return headingNumber(title);
+  const last = units[units.length - 1];
+  const n = chapterNumberValue(last.slice(1, -1));
+  return Number.isNaN(n) ? last : `第${n}${last.slice(-1)}`;
+};
+
+/** 两个同编号标题之间只夹着这么少的文字时，视为网站插入的杂行（「请到」「凡人修仙传」），仍合并为一章 */
+const MAX_JUNK_LINES = 2;
+const MAX_JUNK_CHARS = 40;
+
 /** 标题去掉编号、求票附言、结尾问号 / 叹号 / 句号后的章名部分（合并重复标题时比较用） */
 const headingName = (title: string) => compact(headingKey(stripTitlePromo(title)))
   .replace(/^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回])+/, '')
@@ -328,6 +344,14 @@ export class TxtParser implements ReaderPlugin {
       let remainder = Buffer.alloc(0);
       // 当前章节标题之后是否出现过正文
       let sawBody = false;
+      // 当前标题之后的正文行数 / 字数（字数是估计值，只用来判断是不是夹在两个重复标题之间的杂行）
+      let bodyLines = 0;
+      let bodyChars = 0;
+      const markBody = (chars: number) => {
+        sawBody = true;
+        bodyLines++;
+        bodyChars += chars;
+      };
       // 「第 X 部 名称」（编号后有空格，排除「第一部总结」「第二部分是…」这类正文）
       const partPattern = /^第[零〇一二两三四五六七八九十百千万\d]+部\s+\S/;
       let pendingPart: string | null = null;
@@ -341,14 +365,14 @@ export class TxtParser implements ReaderPlugin {
           segmentStarts.push(absoluteStart);
         }
         if (end - start > MAX_HEADING_BYTES) {
-          sawBody = true;
+          markBody(end - start);
           return;
         }
         if (encoding === 'utf8') {
           const first = skipUtf8Space(data, start, end);
           if (first >= end) return;   // 空行
           if (!UTF8_CANDIDATE_STARTS.has(utf8CharKey(data, first))) {
-            sawBody = true;
+            markBody(Math.ceil((end - first) / 3));   // 中文按每字 3 字节估算
             return;
           }
         }
@@ -356,14 +380,14 @@ export class TxtParser implements ReaderPlugin {
         if (!lineText) return;
         if (!HEADING_START_RE.test(lineText)) {
           // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
-          if (!(SEPARATOR_START_RE.test(lineText) && SEPARATOR_LINE_RE.test(compact(lineText)))) sawBody = true;
+          if (!(SEPARATOR_START_RE.test(lineText) && SEPARATOR_LINE_RE.test(compact(lineText)))) markBody(lineText.length);
           return;
         }
         // 判断是不是标题时不看末尾的求票附言（附言里的逗号、感叹号会让标题像正文句子）
         const headingText = stripTitlePromo(lineText);
         const key = headingText.length < 60 ? headingKey(headingText) : '';
         if (VOLUME_END_RE.test(compact(key))) {
-          sawBody = true;
+          markBody(lineText.length);
           const current = chapters[chapters.length - 1];
           if (current) current.endsVolume = true;
           return;
@@ -379,8 +403,9 @@ export class TxtParser implements ReaderPlugin {
         }
         if (isHeading) {
           const prev = chapters[chapters.length - 1];
-          if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
-            // 上一个标题之后没有正文，又是同一编号的标题，并为一章。网页抓取的书常把每章标题写两遍：
+          const onlyJunkSince = !sawBody || (bodyLines <= MAX_JUNK_LINES && bodyChars <= MAX_JUNK_CHARS);
+          if (prev && onlyJunkSince && chapterUnitNumber(prev.title) === chapterUnitNumber(lineText)) {
+            // 上一个标题之后没有正文（或只夹着一两行网站杂行），又是同一编号的标题，并为一章。网页抓取的书常把每章标题写两遍：
             // 「第二回史大郎…」+「第二回」「史大郎…」；「第5章 怎么像找对象？」+「第0005章怎么像找对象？？」。
             // 保留第一个标题；后一个是在它的章名后面接着多出文字时（「第二回」→「第二回 史大郎…」、
             // 「太极」→「太极图」）换成后一个。多出的部分以标点开头（「斗兽，到网址」这类水印）不算。
@@ -403,6 +428,8 @@ export class TxtParser implements ReaderPlugin {
             prev.hasBody = sawBody;
           }
           sawBody = false;
+          bodyLines = 0;
+          bodyChars = 0;
           chapters.push({
             index: chapters.length,
             title: lineText,
@@ -417,7 +444,7 @@ export class TxtParser implements ReaderPlugin {
           currentPart = partNumber(key);
         } else if (!SEPARATOR_LINE_RE.test(compact(lineText))) {
           // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
-          sawBody = true;
+          markBody(lineText.length);
         }
       };
 
