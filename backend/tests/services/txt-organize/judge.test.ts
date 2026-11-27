@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { aiManager } from '../../../src/ai/ai-manager';
 import { Candidate } from '../../../src/services/txt-organize/candidates';
-import { judgeCandidates, JUDGE_BATCH_SIZE, JUDGE_OVERLAP } from '../../../src/services/txt-organize/judge';
+import { judgeCandidates, judgeRetry, JUDGE_BATCH_SIZE, JUDGE_OVERLAP } from '../../../src/services/txt-organize/judge';
 
 const db = new Database(':memory:');
 const book = { title: '测试书', author: '某作者' };
@@ -19,7 +19,10 @@ const chapterJson = (ids: number[], type = 'chapter') => JSON.stringify({
 /** 区分是哪一次调用返回的标签：按调用次数轮换 type */
 const callType = (call: number) => ['chapter', 'volume', 'part'][(call - 1) % 3];
 
-afterEach(() => jest.restoreAllMocks());
+// 临时错误的重试间隔改成 0，测试不真等
+const realDelays = judgeRetry.delaysMs;
+beforeEach(() => { judgeRetry.delaysMs = [0, 0, 0]; jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+afterEach(() => { judgeRetry.delaysMs = realDelays; jest.restoreAllMocks(); });
 
 describe('judgeCandidates', () => {
   it('分批：700 个候选分 3 批，相邻批重叠 20 行，重叠部分以后一批为准', async () => {
@@ -193,9 +196,45 @@ describe('judgeCandidates', () => {
     await expect(judgeCandidates(makeCands(10), book, db)).rejects.toThrow('AI 判定失败：第 1 批（无法解析 JSON）');
   });
 
-  it('AI 调用本身出错不重试', async () => {
-    const spy = jest.spyOn(aiManager, 'chat').mockRejectedValue(new Error('网络错误'));
-    await expect(judgeCandidates(makeCands(200), book, db)).rejects.toThrow('网络错误');
+  it('AI 调用临时出错：同批重试，前 2 次 fetch failed、第 3 次正常 → 成功，不计入无效重试也不拆分', async () => {
+    const spy = jest.spyOn(aiManager, 'chat')
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockImplementation(async (prompt: string) => chapterJson(idsIn(prompt)));
+    const res = await judgeCandidates(makeCands(200), book, db);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(res.labels).toHaveLength(200);
+    // 每次提示词都是整批（没有拆分）
+    for (const call of spy.mock.calls) expect(idsIn(call[0] as string)).toHaveLength(200);
+  });
+
+  it('网络错误与无效输出混合：网络重试不占用两次无效尝试', async () => {
+    const spy = jest.spyOn(aiManager, 'chat')
+      .mockResolvedValueOnce('抱歉')
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockImplementation(async (prompt: string) => chapterJson(idsIn(prompt)));
+    const res = await judgeCandidates(makeCands(10), book, db);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(res.labels).toHaveLength(10);
+  });
+
+  it('AI 调用一直出错 → 重试 3 次后失败，错误信息带批号和原始错误', async () => {
+    const spy = jest.spyOn(aiManager, 'chat').mockRejectedValue(new TypeError('fetch failed'));
+    await expect(judgeCandidates(makeCands(200), book, db)).rejects.toThrow('AI 调用失败：第 1 批（重试 3 次后仍失败：fetch failed）');
+    expect(spy).toHaveBeenCalledTimes(4);
+  });
+
+  it('按间隔递增等待后重试', async () => {
+    judgeRetry.delaysMs = [5, 15, 30];
+    const timeout = jest.spyOn(global, 'setTimeout');
+    jest.spyOn(aiManager, 'chat').mockRejectedValue(new TypeError('fetch failed'));
+    await expect(judgeCandidates(makeCands(10), book, db)).rejects.toThrow('fetch failed');
+    expect(timeout.mock.calls.map(c => c[1])).toEqual([5, 15, 30]);
+  });
+
+  it('未配置 AI 插件不重试', async () => {
+    const spy = jest.spyOn(aiManager, 'chat').mockRejectedValue(new Error('未配置 AI 插件'));
+    await expect(judgeCandidates(makeCands(200), book, db)).rejects.toThrow('未配置 AI 插件');
     expect(spy).toHaveBeenCalledTimes(1);
   });
 

@@ -50,6 +50,35 @@ const MAX_LISTED_IDS = 5;
 /** 本批无效时抛出，由调用方重试；message 是给人看的原因 */
 class InvalidBatch extends Error {}
 
+/** AI 调用本身失败（网络、超时、5xx 等）且同批重试用尽时抛出；message 是原始错误 */
+class AiCallFailed extends Error {}
+
+/** AI 调用临时出错时同一批的重试间隔（毫秒），最多重试这么多次；测试里可改成 0 */
+export const judgeRetry = { delaysMs: [5000, 15000, 30000] };
+
+/** 配置类错误（未配置 AI 插件），重试没有意义 */
+const NO_RETRY_MESSAGES = ['未配置 AI 插件'];
+
+/**
+ * 调一次 AI；网络错误等临时失败按 judgeRetry.delaysMs 的间隔在同一批内重试，不计入 InvalidBatch 的两次尝试。
+ * 重试用尽抛 AiCallFailed；配置类错误直接抛出。
+ */
+async function chatWithRetry(prompt: string, db: Database.Database): Promise<string> {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await aiManager.chat(prompt, db);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (NO_RETRY_MESSAGES.includes(message)) throw e;
+      if (retry >= judgeRetry.delaysMs.length) {
+        throw new AiCallFailed(retry > 0 ? `重试 ${retry} 次后仍失败：${message}` : message);
+      }
+      console.warn(`[txt-organize] AI 调用失败，${judgeRetry.delaysMs[retry]}ms 后重试（第 ${retry + 1} 次）:`, message);
+      await new Promise(r => setTimeout(r, judgeRetry.delaysMs[retry]));
+    }
+  }
+}
+
 function candidateLine(c: Candidate): string {
   return `#${c.id}\t${c.text}\tbodyChars=${c.bodyChars}\tbodyLines=${c.bodyLines}\tprev=${c.prevSnippet}\tnext=${c.nextSnippet}\thint=${c.ruleHint}`;
 }
@@ -131,7 +160,8 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
 
 /**
  * 判定一批（或拆出的半批）：最多两次；两次都无效则对半拆分，两半各自沿用同样的上文和结构摘要递归判定，
- * 新候选行少于 2 × JUDGE_MIN_SPLIT 时不再拆分，抛出最后一次的 InvalidBatch。网络等 AI 调用错误直接抛出。
+ * 新候选行少于 2 × JUDGE_MIN_SPLIT 时不再拆分，抛出最后一次的 InvalidBatch。
+ * 网络等 AI 调用错误在 chatWithRetry 里同批重试，用尽后抛 AiCallFailed（不触发拆分）。
  */
 async function judgeBatch(
   book: { title: string; author?: string | null },
@@ -144,7 +174,7 @@ async function judgeBatch(
   let lastError: InvalidBatch | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return parseBatch(await aiManager.chat(prompt, db), [...context, ...batch]);
+      return parseBatch(await chatWithRetry(prompt, db), [...context, ...batch]);
     } catch (e) {
       if (!(e instanceof InvalidBatch)) throw e;
       lastError = e;
@@ -184,6 +214,7 @@ export async function judgeCandidates(
       parsed = await judgeBatch(book, structureSummary(candidates, labels.slice(0, start)), context, batch, db);
     } catch (e) {
       if (e instanceof InvalidBatch) throw new Error(`AI 判定失败：第 ${b + 1} 批（${e.message}）`);
+      if (e instanceof AiCallFailed) throw new Error(`AI 调用失败：第 ${b + 1} 批（${e.message}）`);
       throw e;
     }
 
