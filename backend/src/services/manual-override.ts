@@ -1,7 +1,7 @@
 import { randomUUID as uuidv4 } from 'crypto';
 import Database from 'better-sqlite3';
 import { getDb } from '../db';
-import { ManualOverride, ManualOverrideType } from '../types';
+import { ManualOverride, ManualOverrideType, ManualOverrideWithNames } from '../types';
 
 let dbOverride: Database.Database | null = null;
 export function _setDbForTesting(database: Database.Database | null): void {
@@ -33,6 +33,19 @@ export function listOverrides(type?: ManualOverrideType): ManualOverride[] {
     return db().prepare('SELECT * FROM manual_overrides WHERE type = ? ORDER BY created_at DESC').all(type) as ManualOverride[];
   }
   return db().prepare('SELECT * FROM manual_overrides ORDER BY created_at DESC').all() as ManualOverride[];
+}
+
+/** 人工修正记录页用：带上两本书的书名、系列名（书或系列已删除时为 null） */
+export function listOverridesWithNames(type?: ManualOverrideType): ManualOverrideWithNames[] {
+  return db().prepare(
+    `SELECT o.*, a.title AS title_a, b.title AS title_b, s.name AS series_name
+     FROM manual_overrides o
+     LEFT JOIN books a ON a.id = o.book_id_a
+     LEFT JOIN books b ON b.id = o.book_id_b
+     LEFT JOIN series s ON s.id = o.series_id
+     ${type ? 'WHERE o.type = ?' : ''}
+     ORDER BY o.created_at DESC`
+  ).all(...(type ? [type] : [])) as ManualOverrideWithNames[];
 }
 
 export function deleteOverride(id: string): boolean {

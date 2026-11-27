@@ -141,6 +141,8 @@ export interface ReaderPlugin {
   dispose?(): void;
   /** Optional: 文件内置的书目信息（EPUB OPF / PDF 文档属性 / UMD 头部），供 AI 填充作依据 */
   getMetadata?(): Promise<BookFileMetadata>;
+  /** Optional: 文件内置的封面图片（目前只有 EPUB），没有时返回 null */
+  getCoverImage?(): Promise<{ buffer: Buffer; mimeType: string } | null>;
 }
 
 export interface BookFileMetadata {
@@ -288,6 +290,12 @@ export interface ManualOverride {
   series_id: string | null;
   created_by: string;
   created_at: string;
+}
+
+export interface ManualOverrideWithNames extends ManualOverride {
+  title_a: string | null;
+  title_b: string | null;
+  series_name: string | null;
 }
 
 declare global {

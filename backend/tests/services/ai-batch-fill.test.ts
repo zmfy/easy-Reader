@@ -43,6 +43,12 @@ jest.mock('../../src/services/default-cover-file', () => ({
   createDefaultCover: jest.fn(() => '/covers/b1-default.svg'),
 }));
 
+// 文件内封面落盘：测试里不写盘，返回固定地址
+jest.mock('../../src/services/embedded-cover', () => ({
+  ...jest.requireActual('../../src/services/embedded-cover'),
+  saveEmbeddedCover: jest.fn(() => '/covers/b1-embedded.jpg'),
+}));
+
 // No-op scan-task progress – avoids needing scan_tasks table.
 // isCancelled defaults to false (not cancelled) so existing tests run fully.
 jest.mock('../../src/services/scan-task', () => ({
@@ -61,7 +67,7 @@ jest.mock('../../src/services/audit-log', () => ({
 function db(): Database.Database {
   const d = new Database(':memory:');
   d.exec(`CREATE TABLE books (
-    id TEXT PRIMARY KEY, title TEXT, author TEXT, summary TEXT,
+    id TEXT PRIMARY KEY, title TEXT, author TEXT, summary TEXT, cover_url TEXT, cover_refill INTEGER,
     file_path TEXT, file_format TEXT, status TEXT, duplicate_of TEXT,
     ai_fill_version INTEGER, ai_fill_status TEXT, ai_reviewed_at DATETIME
   );`);
@@ -79,6 +85,7 @@ function makeIntegrationDb(): Database.Database {
       summary TEXT,
       category TEXT,
       cover_url TEXT,
+      cover_refill INTEGER,
       rating REAL,
       file_path TEXT NOT NULL,
       file_format TEXT NOT NULL,
@@ -471,6 +478,20 @@ describe('resetAllFills', () => {
     expect(a.s).toBeNull();
     expect(n).toBeGreaterThanOrEqual(1);
   });
+
+  it('marks system covers (/covers/…) for re-selection, leaves external cover urls alone', () => {
+    const d = db();
+    ins(d, { id: 'a', title: 'A', file_path: '/a' });
+    ins(d, { id: 'b', title: 'B', file_path: '/b' });
+    ins(d, { id: 'c', title: 'C', file_path: '/c' });
+    d.prepare("UPDATE books SET cover_url = '/covers/a-x.svg' WHERE id = 'a'").run();
+    d.prepare("UPDATE books SET cover_url = 'https://example.com/b.jpg' WHERE id = 'b'").run();
+    resetAllFills(d);
+    const flag = (id: string) => (d.prepare('SELECT cover_refill f FROM books WHERE id = ?').get(id) as { f: number | null }).f;
+    expect(flag('a')).toBe(1);
+    expect(flag('b')).toBeNull();
+    expect(flag('c')).toBeNull();
+  });
 });
 
 describe('batchFill suggestions and content mismatch', () => {
@@ -577,6 +598,48 @@ describe('batchFill suggestions and content mismatch', () => {
     it('豆瓣封面下载失败也用默认封面', async () => {
       book();
       (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({ coverCandidates: [{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' }] }));
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      expect(coverUrl()).toBe('/covers/b1-default.svg');
+    });
+
+    it('文件自带封面时直接用，不下豆瓣封面也不生成默认封面', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const evidenceMod = require('../../src/services/book-evidence');
+      const spy = jest.spyOn(evidenceMod, 'buildBookEvidence').mockResolvedValueOnce({
+        metadata: {}, excerpt: '', text: '【文件名】x.epub', cover: { buffer: Buffer.alloc(2048), mimeType: 'image/jpeg' },
+      });
+      book();
+      (lookupBook as jest.Mock).mockResolvedValueOnce(emptyOutcome({ coverCandidates: [{ title: '西游记', pic: 'https://img9.doubanio.com/view/subject/s/public/s1.jpg' }] }));
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      spy.mockRestore();
+      expect(coverUrl()).toBe('/covers/b1-embedded.jpg');
+      expect(cover.downloadCoverFromPic).not.toHaveBeenCalled();
+      expect(createDefaultCover).not.toHaveBeenCalled();
+      expect(writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'ai_fetch_cover', details: expect.objectContaining({ source: 'embedded' }),
+      }));
+    });
+
+    it('重置后（cover_refill）已有的系统封面重新选：有文件内封面就换成它，并清掉标记', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const evidenceMod = require('../../src/services/book-evidence');
+      const spy = jest.spyOn(evidenceMod, 'buildBookEvidence').mockResolvedValueOnce({
+        metadata: {}, excerpt: '', text: '【文件名】x.epub', cover: { buffer: Buffer.alloc(2048), mimeType: 'image/jpeg' },
+      });
+      book({ cover_url: '/covers/b1-old.svg' });
+      _testDb!.prepare("UPDATE books SET cover_refill = 1 WHERE id = 'b1'").run();
+      fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
+      await run();
+      spy.mockRestore();
+      expect(coverUrl()).toBe('/covers/b1-embedded.jpg');
+      expect((_testDb!.prepare('SELECT cover_refill f FROM books WHERE id = ?').get('b1') as { f: number | null }).f).toBeNull();
+    });
+
+    it('重置后没有文件内封面也没有豆瓣封面时，重新生成默认封面', async () => {
+      book({ cover_url: '/covers/b1-old.jpg' });
+      _testDb!.prepare("UPDATE books SET cover_refill = 1 WHERE id = 'b1'").run();
       fillSpy.mockResolvedValueOnce({ author: '吴承恩', confidence: { author: 'high' } });
       await run();
       expect(coverUrl()).toBe('/covers/b1-default.svg');

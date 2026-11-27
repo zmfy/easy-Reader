@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { Book } from '../types';
 import { createDefaultCover } from './default-cover-file';
+import { readEmbeddedCover, saveEmbeddedCover } from './embedded-cover';
 import {
   downloadCoverFromPic, fetchRating, isAllowedCoverImageUrl, isAllowedDoubanSubjectUrl,
 } from '../utils/cover';
@@ -18,7 +19,7 @@ import { BookNotFoundError, LockableField, SimilarWork } from './ai-fill-preview
  * 先处理封面（校验 / 下载 / 生成），失败则抛错且不写任何字段；成功后在一个事务内写入。
  */
 
-export type CoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' };
+export type CoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'embedded' } | { type: 'default' };
 
 export interface AiFillApplyInput {
   title?: string;
@@ -66,6 +67,7 @@ const aiFillApplySchema = z.object({
   cover: z.discriminatedUnion('type', [
     z.object({ type: z.literal('keep') }),
     z.object({ type: z.literal('douban'), pic: z.string().max(500) }),
+    z.object({ type: z.literal('embedded') }),
     z.object({ type: z.literal('default') }),
   ]),
   ratingSubjectUrl: z.string().max(500).optional(),
@@ -108,6 +110,11 @@ async function resolveCover(book: Book, input: AiFillApplyInput): Promise<string
     if (!url) throw new AiFillApplyError('封面下载失败，请重试或选择其他封面', 502);
     return url;
   }
+  if (cover.type === 'embedded') {
+    const embedded = await readEmbeddedCover(book);
+    if (!embedded) throw new AiFillApplyError('文件内没有可用的封面', 422);
+    return saveEmbeddedCover(book.id, embedded);
+  }
   return createDefaultCover(book, { title: input.coverTitle, author: input.author ?? book.author, category: input.category ?? book.category });
 }
 
@@ -118,7 +125,7 @@ export async function applyAiFill(bookId: string, input: AiFillApplyInput, gener
 
   const coverUrl = await resolveCover(book, input);
 
-  // 评分跟着封面走：换成豆瓣封面就取那本书目的评分（取不到清空），换成默认封面就清空；保持当前封面不动评分
+  // 评分跟着封面走：换成豆瓣封面就取那本书目的评分（取不到清空），换成默认封面就清空；保持当前封面、用文件内封面不动评分
   let rating: number | null | undefined;
   if (input.cover.type === 'douban') {
     rating = input.ratingSubjectUrl && isAllowedDoubanSubjectUrl(input.ratingSubjectUrl)

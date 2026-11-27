@@ -12,8 +12,8 @@ export interface AiFillForm {
   tags: string[]
   similar: SimilarWork[]
   adaptations: BookAdaptation[]
-  /** 'current' = 保留当前封面，'default' = 系统默认封面，数字 = 豆瓣候选的下标 */
-  cover: 'current' | 'default' | number
+  /** 'current' = 保留当前封面，'embedded' = 文件内封面，'default' = 系统默认封面，数字 = 豆瓣候选的下标 */
+  cover: 'current' | 'embedded' | 'default' | number
 }
 
 /** 豆瓣不提供单集片长，「短剧」是按集数、年份和片名推断的 */
@@ -38,7 +38,7 @@ export function isLowConfidence(p: AiFillPreview, f: AiFillLockableField): boole
  * - 锁定字段默认保留当前值，当前值为空时用 AI 建议；
  * - 低置信建议一律不预填（保留当前值，可能为空），弹窗里单独提示可采用；
  * - 标签、类似作品、改编作品用 AI 结果，AI 为空时保留当前内容（避免直接应用就清空）；
- * - 封面优先当前封面，其次第一个豆瓣候选，最后默认封面。
+ * - 封面优先当前封面，其次文件内封面，再次第一个豆瓣候选，最后默认封面。
  */
 export function initialForm(p: AiFillPreview): AiFillForm {
   const locked = new Set(p.lockedFields)
@@ -66,7 +66,7 @@ export function initialForm(p: AiFillPreview): AiFillForm {
     tags: [...tags],
     similar: similar.map(s => ({ ...s })),
     adaptations: adaptations.map(a => ({ ...a })),
-    cover: p.current.cover_url ? 'current' : p.coverCandidates.length > 0 ? 0 : 'default',
+    cover: p.current.cover_url ? 'current' : p.embeddedCover ? 'embedded' : p.coverCandidates.length > 0 ? 0 : 'default',
   }
 }
 
@@ -95,7 +95,9 @@ export function buildApplyPayload(form: AiFillForm, p: AiFillPreview): AiFillApp
     recommended_tags: [...form.tags],
     similar_works: form.similar.map(s => ({ ...s })),
     adaptations: form.adaptations.map(a => ({ ...a })),
-    cover: chosen ? { type: 'douban', pic: chosen.pic } : form.cover === 'default' ? { type: 'default' } : { type: 'keep' },
+    cover: chosen ? { type: 'douban', pic: chosen.pic }
+      : form.cover === 'embedded' ? { type: 'embedded' }
+      : form.cover === 'default' ? { type: 'default' } : { type: 'keep' },
     ...(ratingSubjectUrl ? { ratingSubjectUrl } : {}),
     // 默认封面印的是书名：书名改了（采用建议或手改）就跟着改
     coverTitle: effectiveCoverTitle(form, p),
