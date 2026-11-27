@@ -69,7 +69,7 @@ router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Respon
   if (book.status === 'damaged') { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(book.damage_reason)); return; }
 
   // PDF 默认在阅读器内逐页显示；仅当管理员明确关闭（'false'）时用浏览器原生打开，
-  // 原生模式由浏览器直接渲染原文件，无需 pdf-parse 全量解析
+  // 原生模式由浏览器直接渲染原文件，无需后端解析全书
   const isPdf = book.file_format.toLowerCase() === 'pdf';
   if (isPdf) {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'pdf_use_plugin'").get() as { value: string } | undefined;

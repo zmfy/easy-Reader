@@ -635,7 +635,7 @@
 
 # 其他格式兼容性（EPUB 收尾后，按顺序各自出计划再做）
 
-- [ ] PDF：Calibre 中文样本 + 边界（无 ToUnicode/CMap、加密、扫描版、截断）；文字提取失败要明确提示
+- [x] PDF：7 个样本（reportlab CID/TTF/扫描版、Chromium、Calibre、qpdf 两种加密）+ 截断；后端改用 pdfjs-dist 6.4.299（v1.10 取不出不嵌入字体的中文）；前情 / 问书无文字时明确报错。遗留：打开密码 / 截断的 PDF 仍作为正常书入库（归「健康检查扩展」）
 - [ ] TXT：工具导出样本（Calibre / so-novel / 阅读 App 格式）+ 编码与换行边界
 - [ ] 健康检查扩展到 TXT / PDF / UMD
 - [ ] UMD：规范生成器 + 尽量收集真实样本

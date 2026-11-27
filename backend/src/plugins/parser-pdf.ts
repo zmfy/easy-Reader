@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { pathToFileURL } from 'url';
 import { BookFileMetadata, ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
 
@@ -94,20 +96,37 @@ export function buildPageText(items: PdfTextItem[]): string {
 
 interface PdfDocument {
   numPages: number;
-  getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: PdfTextItem[] }> }>;
+  getPage(pageNumber: number): Promise<{ getTextContent(): Promise<{ items: Array<PdfTextItem | { type: string }> }> }>;
   getMetadata(): Promise<{ info?: Record<string, unknown> }>;
-  destroy(): void;
 }
 
-let pdfjs: { disableWorker: boolean; getDocument(data: Buffer): Promise<PdfDocument> } | null = null;
+interface PdfLoadingTask {
+  promise: Promise<PdfDocument>;
+  destroy(): Promise<void>;
+}
 
-/** pdf-parse 自带的 pdf.js（与 pdf-parse 默认版本一致），只用来打开文档、按需取单页文字 */
-function getPdfjs() {
+interface Pdfjs {
+  getDocument(params: Record<string, unknown>): PdfLoadingTask;
+}
+
+/** pdfjs-dist 包目录（编码表 cmaps / 标准字体 standard_fonts 都在里面） */
+const PDFJS_DIR = path.dirname(require.resolve('pdfjs-dist/package.json'));
+
+// pdfjs-dist 只提供 ES 模块；后端编译成 CommonJS 时 import() 会被改写成 require，
+// 用 Function 保留真正的动态 import（jest 里需要 --experimental-vm-modules，见 package.json）
+const importEsm = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<unknown>;
+let pdfjs: Promise<Pdfjs> | null = null;
+
+/**
+ * 与前端同版本的 pdfjs-dist（legacy 构建，适用于 Node），只用来打开文档、按需取单页文字。
+ * 原来用 pdf-parse 自带的 pdf.js v1.10（2017），不嵌入字体的中文 PDF（预定义 CMap 编码）一个字都取不出。
+ */
+function getPdfjs(): Promise<Pdfjs> {
   if (!pdfjs) {
-    pdfjs = require('pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js');
-    pdfjs!.disableWorker = true;
+    pdfjs = importEsm(pathToFileURL(path.join(PDFJS_DIR, 'legacy/build/pdf.mjs')).href) as Promise<Pdfjs>;
+    pdfjs.catch(() => { pdfjs = null; });
   }
-  return pdfjs!;
+  return pdfjs;
 }
 
 /**
@@ -117,12 +136,31 @@ function getPdfjs() {
 export class PdfParser implements ReaderPlugin {
   format = 'pdf';
   private doc: PdfDocument | null = null;
+  private task: PdfLoadingTask | null = null;
   private numPages = 0;
   private pageTexts = new Map<number, Promise<string>>();
 
   async load(filePath: string): Promise<void> {
-    const buffer = fs.readFileSync(filePath);
-    this.doc = await getPdfjs().getDocument(buffer);
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    const task = (await getPdfjs()).getDocument({
+      data,
+      // 中文 PDF 常用预定义 CMap（如 UniGB-UCS2-H），没有编码表就解不出字
+      cMapUrl: path.join(PDFJS_DIR, 'cmaps') + path.sep,
+      cMapPacked: true,
+      standardFontDataUrl: path.join(PDFJS_DIR, 'standard_fonts') + path.sep,
+      // 只取文字：不编译字体代码、不加载字体到页面
+      isEvalSupported: false,
+      disableFontFace: true,
+      verbosity: 0,
+    });
+    this.task = task;
+    try {
+      this.doc = await task.promise;
+    } catch (err) {
+      this.task = null;
+      task.destroy().catch(() => { /* 已经失败，忽略释放错误 */ });
+      throw err;
+    }
     this.numPages = this.doc.numPages;
   }
 
@@ -132,7 +170,7 @@ export class PdfParser implements ReaderPlugin {
       const doc = this.doc!;
       text = doc.getPage(index + 1)
         .then(page => page.getTextContent())
-        .then(content => buildPageText(content.items));
+        .then(content => buildPageText(content.items.filter((it): it is PdfTextItem => 'str' in it)));
       // 失败不缓存，下次重试
       text.catch(() => this.pageTexts.delete(index));
       this.pageTexts.set(index, text);
@@ -173,7 +211,8 @@ export class PdfParser implements ReaderPlugin {
 
   /** 插件缓存淘汰时释放文档（含整本文件的内存） */
   dispose(): void {
-    this.doc?.destroy();
+    this.task?.destroy().catch(() => { /* 释放失败不影响 */ });
+    this.task = null;
     this.doc = null;
     this.pageTexts.clear();
   }
