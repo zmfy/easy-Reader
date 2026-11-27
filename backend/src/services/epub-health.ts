@@ -1,8 +1,11 @@
 import fs from 'fs';
 import { EpubParser } from '../plugins/parser-epub';
 
-/** 健康检查规则版本；规则变化时加一，已入库的书会按新规则重查 */
-export const HEALTH_CHECK_VERSION = 1;
+/**
+ * 健康检查规则版本；规则变化时加一，已入库的书会按新规则重查
+ * 2：content.opf 元素带 opf: 前缀（epub4j / so-novel）的书不再误判为「没有可读的章节」
+ */
+export const HEALTH_CHECK_VERSION = 2;
 /** 单本检查超时（超时后后台解析继续，不再等） */
 export const EPUB_CHECK_TIMEOUT_MS = 15000;
 

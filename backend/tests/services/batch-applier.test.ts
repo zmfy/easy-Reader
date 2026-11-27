@@ -5,6 +5,7 @@ import { randomUUID as uuidv4 } from 'crypto';
 import os from 'os';
 import { applyBatch } from '../../src/services/batch-applier';
 import { computeFingerprint } from '../../src/utils/fingerprint';
+import { HEALTH_CHECK_VERSION } from '../../src/services/epub-health';
 import { _setDbForTesting } from '../../src/services/manual-override';
 
 let db: Database.Database;
@@ -286,7 +287,7 @@ describe('applyBatch 损坏 EPUB', () => {
     expect(row).toMatchObject({
       status: 'damaged', damage_reason: '文件不完整（可能下载或复制中断）', file_size: 1234,
       file_mtime: 1700000000123.25, file_format: 'epub', title: '坏书 作者：张三', author: '张三',
-      fingerprint_version: 2, health_check_version: 1,
+      fingerprint_version: 2, health_check_version: HEALTH_CHECK_VERSION,
     });
     expect(row.fingerprint).toBe((await computeFingerprint(file, 'epub')).fingerprint);
     expect(skipRow(file)).toBeUndefined();
@@ -303,7 +304,7 @@ describe('applyBatch 损坏 EPUB', () => {
     db.prepare("INSERT INTO books (id, title, file_path, file_format, file_size, status) VALUES ('b1', '原书', '/x.epub', 'epub', 1, 'normal')").run();
     applyBatch(makeBatch([damagedItem('/x.epub', 'accept')]), 'admin1', db);
     expect(db.prepare('SELECT COUNT(*) AS c FROM books').get()).toEqual({ c: 1 });
-    expect(bookByPath('/x.epub')).toMatchObject({ id: 'b1', status: 'damaged', file_size: 1234, health_check_version: 1 });
+    expect(bookByPath('/x.epub')).toMatchObject({ id: 'b1', status: 'damaged', file_size: 1234, health_check_version: HEALTH_CHECK_VERSION });
   });
 
   it('accept 且同路径的书是主书 → 指向它的重复书提升为 normal', () => {
