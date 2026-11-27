@@ -19,6 +19,10 @@ interface ChapterMeta {
   mergedHeadings?: string[];
   /** 本章正文里有卷末说明（「第二卷《山水郎》结束。」）：之后的章节不再归入这一卷 */
   endsVolume?: boolean;
+  /** 夹在本章正文里的另一套编号（「第二章 青牛镇」正文中的「第2章」），读正文时去掉 */
+  strayHeadings?: string[];
+  /** 只有编号、且编号不大于前一个带名章节：可能是夹在正文里的另一套编号，扫完全书再决定是否并入上一章 */
+  strayCandidate?: boolean;
 }
 
 export function detectEncoding(filePath: string): string {
@@ -234,6 +238,22 @@ const chapterUnitNumber = (title: string) => {
   return Number.isNaN(n) ? last : `第${n}${last.slice(-1)}`;
 };
 
+/** 章 / 节 / 回 / 集编号的数值（取最后一个）；没有时为 NaN */
+const chapterUnitValue = (title: string) => {
+  const units = headingKey(title).match(/第[零〇一二两三四五六七八九十百千万\d]+[章节回集]/g);
+  return units ? chapterNumberValue(units[units.length - 1].slice(1, -1)) : NaN;
+};
+
+/** 只有编号、没有章名的标题（「第2章」「第149章」） */
+const isBareNumberHeading = (title: string) =>
+  /^(第[零〇一二两三四五六七八九十百千万\d]+[章节回集])+$/.test(compact(headingKey(stripTitlePromo(title))));
+
+/**
+ * 「另一套编号」候选占全部章节的比例达到这个值（且至少 2 处）才并入上一章：成套出现的才是另一套编号
+ * （《凡人修仙传》约一半），零星几处多半是打错的章号（《校花的贴身高手》「第817章」应为第8217章），照常算一章
+ */
+const STRAY_SERIES_MIN_RATIO = 0.1;
+
 /** 两个同编号标题之间只夹着这么少的文字时，视为网站插入的杂行（「请到」「凡人修仙传」），仍合并为一章 */
 const MAX_JUNK_LINES = 2;
 const MAX_JUNK_CHARS = 40;
@@ -264,6 +284,30 @@ export function dropRepeatedTitle(paragraphs: string[], title: string): string[]
   }
   if (consumed <= 1 && compact(paragraphs[0] ?? '') === t) return paragraphs;
   return consumed > 0 ? [title, ...paragraphs.slice(consumed)] : paragraphs;
+}
+
+/** 「另一套编号」成套出现时（见 STRAY_SERIES_MIN_RATIO），把这些候选章节并入上一章并重新编号 */
+function mergeStraySeries(chapters: ChapterMeta[]): ChapterMeta[] {
+  const strays = chapters.filter(c => c.strayCandidate).length;
+  if (strays < 2 || strays < chapters.length * STRAY_SERIES_MIN_RATIO) {
+    chapters.forEach(c => { delete c.strayCandidate; });
+    return chapters;
+  }
+  const merged: ChapterMeta[] = [];
+  for (const c of chapters) {
+    const prev = merged[merged.length - 1];
+    if (c.strayCandidate && prev) {
+      prev.endByte = c.endByte;
+      prev.hasBody = prev.hasBody || c.hasBody;
+      prev.endsVolume = prev.endsVolume || c.endsVolume;
+      (prev.strayHeadings ??= []).push(c.title, ...(c.mergedHeadings ?? []), ...(c.strayHeadings ?? []));
+      continue;
+    }
+    delete c.strayCandidate;
+    c.index = merged.length;
+    merged.push(c);
+  }
+  return merged;
 }
 
 /** 去掉章节开头并入本章的同编号标题行（每个只去一次，只看开头几段） */
@@ -357,6 +401,9 @@ export class TxtParser implements ReaderPlugin {
       let pendingPart: string | null = null;
       // 当前所在的「第 X 部」编号：「第一部第一卷」「第一部第二卷」同一部只开一个分组
       let currentPart = NaN;
+      // 最近一个带章名的章节编号（遇到分卷 / 分部时清空）：之后只有编号、且编号不大于它的标题
+      // 是夹在正文里的另一套编号（《凡人修仙传》「第二章 青牛镇」正文中的「第2章」），不算新章节
+      let lastNamedValue = NaN;
 
       // data[start, end) 是一行（不含换行符），absoluteStart 是它在文件里的字节位置。
       // 大文件加载主要花在逐行处理上：不为每行切 Buffer，长行不解码，非标题行首直接算正文
@@ -401,7 +448,11 @@ export class TxtParser implements ReaderPlugin {
           pendingPart = partPrefix[1];
           currentPart = partNumber(partPrefix[1]);
         }
+        const strayCandidate = isHeading && isBareNumberHeading(lineText) && chapterUnitValue(lineText) <= lastNamedValue;
         if (isHeading) {
+          const unitValue = chapterUnitValue(lineText);
+          if (Number.isNaN(unitValue) || partPrefix) lastNamedValue = NaN;   // 分卷 / 分部：章节可能重新编号
+          else if (!strayCandidate && !isBareNumberHeading(lineText)) lastNamedValue = unitValue;
           const prev = chapters[chapters.length - 1];
           const onlyJunkSince = !sawBody || (bodyLines <= MAX_JUNK_LINES && bodyChars <= MAX_JUNK_CHARS);
           if (prev && onlyJunkSince && chapterUnitNumber(prev.title) === chapterUnitNumber(lineText)) {
@@ -436,12 +487,14 @@ export class TxtParser implements ReaderPlugin {
             startByte: absoluteStart,
             endByte: this.fileSize,
             ...(pendingPart ? { partTitle: pendingPart } : {}),
+            ...(strayCandidate && !pendingPart ? { strayCandidate: true } : {}),
           });
           pendingPart = null;
         } else if ((partPattern.test(key) || BARE_PART_RE.test(compact(key))) && lineText.length < 30 && !looksLikeSentence(lineText)) {
           // 「第一部 小丑」「第二部」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
           pendingPart = lineText;
           currentPart = partNumber(key);
+          lastNamedValue = NaN;
         } else if (!SEPARATOR_LINE_RE.test(compact(lineText))) {
           // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
           markBody(lineText.length);
@@ -462,7 +515,7 @@ export class TxtParser implements ReaderPlugin {
         }
 
         if (chapters.length > 0) chapters[chapters.length - 1].hasBody = sawBody;
-        this.chapters = chapters;
+        this.chapters = mergeStraySeries(chapters);
         const firstStart = chapters[0]?.startByte ?? 0;
         this.leadingTextEnd = firstStart > 0 && this.hasVisiblePreamble(firstStart) ? firstStart : 0;
         resolve();
@@ -605,8 +658,10 @@ export class TxtParser implements ReaderPlugin {
     if (this.chapters.length === 0) return '';
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
+    const stray = new Set((chapter.strayHeadings ?? []).map(compact));
     const paragraphs = dropMergedHeadings(
-      dropRepeatedTitle(this.paragraphs(chapter.startByte, chapter.endByte), chapter.title), chapter.mergedHeadings);
+      dropRepeatedTitle(this.paragraphs(chapter.startByte, chapter.endByte), chapter.title), chapter.mergedHeadings)
+      .filter(p => !stray.has(compact(p)));
     // 目录标题去掉了求票附言 / 卷名：正文开头的标题行换成同样的写法，阅读器才能认出它是标题（与标题相同的首段会被隐藏）
     const shown = (await this.getChapters())[index]?.title;
     if (shown && shown !== chapter.title && paragraphs.length > 0 && compact(paragraphs[0]) === compact(chapter.title)) {

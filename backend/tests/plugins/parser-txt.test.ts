@@ -200,6 +200,29 @@ describe('TxtParser 网文抓取的大文件（《校花的贴身高手》《剑
     expect(await text(p, 1)).toEqual(['第九百九十二章 下一章', '请到', '正文二。']);
   });
 
+  it('正文里夹着另一套只有编号的「第2章」（编号不大于前一个带名章节）：不算新章节，正文里也不显示（《凡人修仙传》）', async () => {
+    const body = (s: string) => `${s}二愣子睁大着双眼，直直望着茅草和烂泥糊成的黑屋顶，身上盖着的旧棉被已呈深黄色，看不出原来的本来面目。`;
+    const p = await load(`第一章山边小村\n${body('一')}\n第二章青牛镇\n${body('二上')}\n第2章\n${body('二下')}\n第三章七玄门\n${body('三')}\n第四章炼骨崖\n${body('四上')}\n第3章\n${body('四下')}\n第五章墨大夫\n${body('五')}\n`);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第一章山边小村', '第二章青牛镇', '第三章七玄门', '第四章炼骨崖', '第五章墨大夫']);
+    expect(await text(p, 1)).toEqual(['第二章青牛镇', body('二上'), body('二下')]);
+  });
+
+  it('零星一处打错的章号（「第8217章」写成「第817章」）照常算一章（《校花的贴身高手》）', async () => {
+    const chapters = Array.from({ length: 30 }, (_, i) => `第${8200 + i}章 标题${i}\n正文${i}。\n`);
+    chapters.splice(17, 1, '第817章\n正文17。\n');
+    const p = await load(chapters.join(''));
+    const titles = (await p.getChapters()).map(c => c.title);
+    expect(titles).toHaveLength(30);
+    expect(titles[17]).toBe('第817章');
+  });
+
+  it('只有编号、没有章名的书照常切章；新分卷后章节从第一章重新编号也照常切章', async () => {
+    const bare = await load('第1章\n正文一。\n第2章\n正文二。\n第3章\n正文三。\n');
+    expect((await bare.getChapters()).map(c => c.title)).toEqual(['第1章', '第2章', '第3章']);
+    const vols = await load('第一卷 开端\n第一章 起\n正文。\n第二章 承\n正文。\n第二卷 发展\n第1章\n正文。\n第2章\n正文。\n');
+    expect((await vols.getChapters()).map(c => c.title)).toEqual(['第一卷 开端', '第一章 起', '第二章 承', '第二卷 发展', '第1章', '第2章']);
+  });
+
   it('同一标题一字不差写两遍：正文里保留一份', async () => {
     const p = await load('第53章 请神\n第53章 请神\n正文。\n第54章 下一章\n正文。\n');
     expect(await text(p, 0)).toEqual(['第53章 请神', '正文。']);
