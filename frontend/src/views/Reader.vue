@@ -466,6 +466,23 @@
               </ul>
             </template>
           </div>
+          <!-- TXT 目录不准：请 AI 重新整理（管理员审核后生效） -->
+          <div v-if="tocTab === 'toc' && organize?.available" class="toc-organize">
+            <template v-if="organizeJob && (organizeJob.status === 'pending' || organizeJob.status === 'running')">
+              <span class="toc-organize-status">
+                <el-icon class="is-loading"><IconLoader2 /></el-icon>
+                正在整理…<template v-if="organizeJob.batches_total > 0">（第 {{ Math.min(organizeJob.batches_done + 1, organizeJob.batches_total) }} / {{ organizeJob.batches_total }} 批）</template>
+              </span>
+            </template>
+            <span v-else-if="organizeJob?.status === 'review'" class="toc-organize-status">已提交，等待管理员审核</span>
+            <template v-else>
+              <span v-if="organizeJob?.status === 'failed'" class="toc-organize-status error">整理失败：{{ organizeJob.error || '未知原因' }}</span>
+              <span v-else-if="organize.lastRejectedAt" class="toc-organize-status">上次的整理结果未被采用</span>
+              <button class="toc-action" :disabled="organizeRequesting" @click="handleRequestOrganize">
+                <IconSparkles :size="15" :stroke-width="1.75" />{{ organizeJob?.status === 'failed' ? '重试' : '目录不对？让 AI 整理' }}
+              </button>
+            </template>
+          </div>
         </aside>
       </div>
     </Transition>
@@ -483,9 +500,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useReader, errorMessage } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
-import type { ReaderTheme, ReadingAnchor } from '@/types'
+import type { ReaderTheme, ReadingAnchor, OrganizeStatus } from '@/types'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance, contentTapAction } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, isEinkTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
 import { libraryApi } from '@/api/library'
@@ -1068,6 +1086,56 @@ function expandTocToCurrent() {
 const tocStatus = computed(() =>
   [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
 
+// ── TXT 目录 AI 整理：目录抽屉底部的入口与任务状态 ──
+const ORGANIZE_POLL_MS = 5000
+const organize = ref<OrganizeStatus | null>(null)
+const organizeJob = computed(() => organize.value?.job ?? null)
+const organizeRequesting = ref(false)
+let organizePollTimer: ReturnType<typeof setTimeout> | undefined
+let organizeUnmounted = false
+
+function isOrganizeRunning() {
+  const s = organizeJob.value?.status
+  return s === 'pending' || s === 'running'
+}
+
+// 进行中每 5 秒查一次，直到离开进行中状态；读取失败不打扰阅读，下一轮再试
+function scheduleOrganizePoll() {
+  clearTimeout(organizePollTimer)
+  if (organizeUnmounted || !isOrganizeRunning()) return
+  organizePollTimer = setTimeout(loadOrganize, ORGANIZE_POLL_MS)
+}
+
+async function loadOrganize() {
+  try {
+    organize.value = (await readerApi.getOrganize(bookId)).data.data ?? null
+  } catch { /* 忽略 */ }
+  scheduleOrganizePoll()
+}
+
+async function handleRequestOrganize() {
+  try {
+    await ElMessageBox.confirm('AI 会重新整理这本书的目录，管理员审核后对所有读者生效。', 'AI 整理目录', {
+      type: 'info', confirmButtonText: '开始整理', cancelButtonText: '取消',
+    })
+  } catch { return }
+  organizeRequesting.value = true
+  try {
+    const job = (await readerApi.requestOrganize(bookId)).data.data?.job ?? null
+    if (organize.value) organize.value = { ...organize.value, job }
+    scheduleOrganizePoll()
+  } catch (err) {
+    ElMessage.warning(errorMessage(err, '发起整理失败'))
+  } finally {
+    organizeRequesting.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  organizeUnmounted = true
+  clearTimeout(organizePollTimer)
+})
+
 // 点「目录 / 书签」：同一个 Tab 再点一次关闭，否则打开并切到该 Tab
 function openToc(tab: 'toc' | 'bookmark') {
   if (tocVisible.value && tocTab.value === tab) {
@@ -1442,6 +1510,7 @@ onMounted(async () => {
   }).catch(() => {})
   await readerStore.loadPrefs()
   if (!await reader.loadChapters()) return
+  if (reader.bookFormat.value === 'txt') loadOrganize()
 
   if (isPdf.value) {
     await loadPdfBlob()
@@ -1956,6 +2025,27 @@ onUnmounted(() => {
 .toc-link:hover .toc-del,
 .toc-del:focus-visible { opacity: 1; }
 .toc-del:hover { color: var(--danger); background: var(--reader-active-bg); }
+/* 目录底部：AI 整理目录入口与状态 */
+.toc-organize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 16px 14px 20px;
+  border-top: 1px solid var(--reader-divider);
+}
+.toc-organize-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--reader-text-secondary);
+}
+.toc-organize-status.error { color: var(--danger); }
+.toc-organize .toc-action { margin-left: auto; }
+.toc-organize .toc-action:disabled { opacity: 0.5; cursor: default; }
+
 .toc-empty {
   padding: 64px 16px;
   text-align: center;

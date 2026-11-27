@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, ScanBatch, ScanBatchItem } from '@/types'
+import type { ApiResponse, ScanBatch, ScanBatchItem, OrganizeApplySummary } from '@/types'
 
 export const scanBatchesApi = {
   list: (status?: 'pending' | 'applied' | 'discarded') =>
@@ -11,8 +11,9 @@ export const scanBatchesApi = {
   updateItem: (batchId: string, itemId: string, decision: 'accept' | 'reject' | 'modified', payload?: unknown) =>
     http.patch<ApiResponse<null>>(`/library/scan-batches/${batchId}/items/${itemId}`, { decision, payload }),
 
+  // 整理审核批次（kind='organize'）返回 OrganizeApplySummary，其余返回扫描的应用结果
   apply: (id: string) =>
-    http.post<ApiResponse<{
+    http.post<ApiResponse<OrganizeApplySummary | {
       inserted: number
       updated: number
       duplicates_linked: number

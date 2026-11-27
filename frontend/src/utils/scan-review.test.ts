@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { undecidedDamagedCount } from './scan-review'
+import { undecidedDamagedCount, organizeDecisionOf } from './scan-review'
 import type { ScanBatchItem } from '@/types'
 
 function item(type: ScanBatchItem['type'], decision: ScanBatchItem['admin_decision'] = null): ScanBatchItem {
@@ -22,5 +22,15 @@ describe('undecidedDamagedCount', () => {
 
   it('returns 0 for an empty list', () => {
     expect(undecidedDamagedCount([])).toBe(0)
+  })
+})
+
+describe('organizeDecisionOf', () => {
+  it('未选择默认保留整理版、隐藏原书；拒绝 = 保留原书；有 admin_payload 以它为准', () => {
+    expect(organizeDecisionOf({ admin_decision: null, admin_payload: null })).toBe('keep_new_hide_old')
+    expect(organizeDecisionOf({ admin_decision: 'reject', admin_payload: null })).toBe('keep_old')
+    expect(organizeDecisionOf({ admin_decision: 'accept', admin_payload: '{"decision":"keep_new_delete_file"}' })).toBe('keep_new_delete_file')
+    expect(organizeDecisionOf({ admin_decision: 'accept', admin_payload: '{"decision":"bogus"}' })).toBe('keep_new_hide_old')
+    expect(organizeDecisionOf({ admin_decision: 'accept', admin_payload: '{bad' })).toBe('keep_new_hide_old')
   })
 })

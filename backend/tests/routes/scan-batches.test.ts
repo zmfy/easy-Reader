@@ -69,3 +69,17 @@ describe('应用含损坏 EPUB 的批次', () => {
     expect(getDb().prepare('SELECT file_path FROM scan_skipped_files').all()).toEqual([{ file_path: '/books/坏书.epub' }]);
   });
 });
+
+describe('批次列表', () => {
+  it('整理审核批次带上原书名 organize_title，扫描批次为 null', async () => {
+    const db = getDb();
+    db.prepare("INSERT INTO scan_batches (id, task_id, status, kind) VALUES ('B2', 'job1', 'pending', 'organize')").run();
+    db.prepare("INSERT INTO scan_batch_items (id, batch_id, type, payload) VALUES ('I2', 'B2', 'organized_duplicate', ?)")
+      .run(JSON.stringify({ original: { title: '某本书' }, organized: { title: '某本书（整理版）' } }));
+    const r = await call('GET', '/');
+    expect(r.status).toBe(200);
+    const rows = (await r.json()).data as Array<{ id: string; kind: string; organize_title: string | null }>;
+    expect(rows.find(b => b.id === 'B2')).toMatchObject({ kind: 'organize', organize_title: '某本书' });
+    expect(rows.find(b => b.id === 'B1')).toMatchObject({ organize_title: null });
+  });
+});

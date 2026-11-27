@@ -1,5 +1,5 @@
 import http from './http'
-import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, AiRecap, AiAnswer } from '@/types'
+import type { ApiResponse, Chapter, ReadingProgress, ReadingAnchor, Bookmark, AiRecap, AiAnswer, OrganizeStatus, OrganizeJob } from '@/types'
 
 export const readerApi = {
   // 最近读的书（PWA 启动进入）；没有 → data 为 null
@@ -48,6 +48,14 @@ export const readerApi = {
   // 听书：合成一段文字的语音（mp3），后端按文本缓存
   tts: (bookId: string, text: string) =>
     http.post<Blob>(`/reader/${bookId}/tts`, { text }, { responseType: 'blob', timeout: 60000 }),
+
+  // TXT 目录 AI 整理：能否发起、最近的任务、上次被拒绝的时间
+  getOrganize: (bookId: string) =>
+    http.get<ApiResponse<OrganizeStatus>>(`/reader/${bookId}/organize`),
+
+  // 发起整理；已有进行中 / 待审核的任务时返回它
+  requestOrganize: (bookId: string) =>
+    http.post<ApiResponse<{ job: OrganizeJob }>>(`/reader/${bookId}/organize`),
 
   deleteBookmark: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/bookmarks/${id}`),

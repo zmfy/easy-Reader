@@ -36,9 +36,12 @@ function collectPayloadPaths(value: unknown, out: Set<string>): void {
 router.get('/', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const status = (req.query.status as string) || undefined;
   const db = getDb();
+  // 整理审核批次在列表里显示原书名
+  const select = `SELECT b.*, (SELECT json_extract(i.payload, '$.original.title') FROM scan_batch_items i
+    WHERE i.batch_id = b.id AND i.type = 'organized_duplicate' LIMIT 1) AS organize_title FROM scan_batches b`;
   const rows = status
-    ? db.prepare('SELECT * FROM scan_batches WHERE status = ? ORDER BY created_at DESC').all(status) as ScanBatch[]
-    : db.prepare('SELECT * FROM scan_batches ORDER BY created_at DESC').all() as ScanBatch[];
+    ? db.prepare(`${select} WHERE b.status = ? ORDER BY b.created_at DESC`).all(status) as ScanBatch[]
+    : db.prepare(`${select} ORDER BY b.created_at DESC`).all() as ScanBatch[];
   successResponse(res, rows);
 });
 

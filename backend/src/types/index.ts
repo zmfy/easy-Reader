@@ -200,6 +200,8 @@ export interface ScanBatch {
   apply_summary?: string | null;  // JSON of ApplyResult (audit trail)
   part_index?: number | null;     // 同一次扫描拆成多批时：第几批 / 共几批
   part_count?: number | null;
+  kind?: 'scan' | 'organize';
+  organize_title?: string | null;  // 列表接口：整理审核批次的原书名
 }
 
 export type ScanBatchItemType =

@@ -172,7 +172,7 @@ export interface ScanTask {
 }
 
 export type ScanBatchStatus = 'pending' | 'applied' | 'discarded'
-export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed' | 'damaged'
+export type ScanBatchItemType = 'new' | 'duplicate_group' | 'series' | 'garbled' | 'encoding_fixed' | 'ai_fill_failed' | 'damaged' | 'organized_duplicate'
 
 export interface ScanBatch {
   id: string
@@ -186,6 +186,61 @@ export interface ScanBatch {
   /** 同一次扫描拆成多批（每批最多 500 本）时：第几批 / 共几批 */
   part_index?: number | null
   part_count?: number | null
+  /** scan 扫描生成；organize 是 TXT 目录 AI 整理的审核（只有一条 organized_duplicate） */
+  kind?: 'scan' | 'organize'
+  /** 仅列表接口：整理审核批次的原书名 */
+  organize_title?: string | null
+}
+
+/** TXT 目录 AI 整理任务（notes 只有管理员能看到） */
+export interface OrganizeJob {
+  id: string
+  book_id: string
+  requested_by: string
+  status: 'pending' | 'running' | 'review' | 'failed' | 'done'
+  phase: 'candidates' | 'judging' | 'writing' | null
+  batches_done: number
+  batches_total: number
+  candidate_count: number
+  notes?: string[]
+  result_book_id: string | null
+  error: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface OrganizeStatus {
+  available: boolean
+  job: OrganizeJob | null
+  lastRejectedAt: string | null
+}
+
+export type OrganizeDecision = 'keep_new_hide_old' | 'keep_new_delete_record' | 'keep_new_delete_file' | 'keep_old'
+
+interface OrganizeSide {
+  book_id: string
+  title: string
+  file_path: string
+  chapter_count: number
+  toc: Array<{ title: string; level: number }>
+}
+
+/** 审核项 organized_duplicate 的 payload */
+export interface OrganizedDuplicatePayload {
+  job_id: string
+  original: OrganizeSide
+  organized: OrganizeSide
+  notes: string[]
+  batches: number
+  candidate_count: number
+  requested_by: { user_id: string; username: string }
+}
+
+/** 应用整理审核批次的结果（存在 scan_batches.apply_summary） */
+export interface OrganizeApplySummary {
+  decision: OrganizeDecision
+  migrated: { progress: number; bookmarks: number; shelf: number; history: number }
+  warnings?: string[]
 }
 
 export interface ScanBatchItem {

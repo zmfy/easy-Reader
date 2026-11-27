@@ -56,6 +56,7 @@ declare module 'vue' {
     LibraryManageCard: typeof import('./components/LibraryManageCard.vue')['default']
     NotificationBell: typeof import('./components/NotificationBell.vue')['default']
     OfflineNotice: typeof import('./components/OfflineNotice.vue')['default']
+    OrganizedDuplicateCard: typeof import('./components/OrganizedDuplicateCard.vue')['default']
     PageHeader: typeof import('./components/PageHeader.vue')['default']
     PdfPage: typeof import('./components/PdfPage.vue')['default']
     PwaUpdatePrompt: typeof import('./components/PwaUpdatePrompt.vue')['default']
