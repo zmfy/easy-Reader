@@ -92,31 +92,36 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
-/** 数字字符：中文小写 / 大写、廿卅卌、半角 / 全角阿拉伯数字（O 作零、千分位逗号另见 NUMERAL_RUN） */
-const NUMERAL = '零〇一二两三四五六七八九十百千万亿萬壹贰叁肆伍陆柒捌玖拾佰仟廿卅卌0-9０-９';
-/** 一段完整的数字：数字字符开头，后面可接数字字符、当零用的 O / Ｏ、夹在阿拉伯数字之间的逗号（「一O一」「1,001」） */
-const NUMERAL_RUN = `[${NUMERAL}](?:[${NUMERAL}OoＯ]|[,，](?=[0-9０-９]))*`;
+/** 数字字符：中文小写 / 大写（含繁体）、廿卅卌、半角 / 全角阿拉伯数字（O 作零、千分位逗号、小数点另见 NUMERAL_RUN） */
+const NUMERAL = '零〇一二两兩三四五六七八九十百千万亿萬億壹贰貳叁參肆伍陆陸柒捌玖拾佰仟廿卅卌0-9０-９';
+/** 一段完整的数字：数字字符开头，后面可接数字字符、当零用的 O / Ｏ、夹在阿拉伯数字之间的逗号 / 小数点（「一O一」「1,001」「1.5」） */
+const NUMERAL_RUN = `[${NUMERAL}](?:[${NUMERAL}OoＯ]|[,，.．](?=[0-9０-９]))*`;
 /**
- * 编号整体「第N单位 / N单位」（在去掉空白的文本上匹配）：
- * 带「第」时 N 是「第」与单位之间不含「第」的任意 1～12 个字；不带「第」时 N 是一段完整的数字
+ * 编号整体（在去掉空白的文本上匹配）：
+ * 「第N单位」（N 是「第」与单位之间不含「第」的任意 1～12 个字）、「第N」（后面没有单位，N 是一段完整的数字）、「N单位」（N 是一段完整的数字）
  */
-const HEADING_NUMBER_RE = new RegExp(`第([^第]{1,12}?)([章节回集卷部])|(${NUMERAL_RUN})([章节回集卷部])`, 'g');
+const HEADING_NUMBER_RE = new RegExp(
+  `第([^第]{1,12}?)([章节回集卷部])|第(${NUMERAL_RUN})|(${NUMERAL_RUN})([章节回集卷部])`, 'g');
 const NUMERAL_RUN_RE = new RegExp(NUMERAL_RUN, 'g');
 
-/** 取出编号整体（N + 单位，不含「第」）和编号之外的完整数字段 */
-function splitNumbers(s: string): { headings: string[]; runs: string[] } {
-  const headings: string[] = [];
-  const rest = s.replace(HEADING_NUMBER_RE, (_m, n1, u1, n2, u2) => {
-    headings.push(n1 !== undefined ? n1 + u1 : n2 + u2);
+/** 取出带「第」的编号（N + 单位，不含「第」）、不带「第」的编号，以及编号之外的完整数字段 */
+function splitNumbers(s: string): { withDi: string[]; plain: string[]; runs: string[] } {
+  const withDi: string[] = [];
+  const plain: string[] = [];
+  const rest = s.replace(HEADING_NUMBER_RE, (_m, n1, u1, n3, n2, u2) => {
+    if (n1 !== undefined) withDi.push(n1 + u1);
+    else if (n3 !== undefined) withDi.push(n3);
+    else plain.push(n2 + u2);
     return '\n';
   });
-  return { headings, runs: rest.match(NUMERAL_RUN_RE) ?? [] };
+  return { withDi, plain, runs: rest.match(NUMERAL_RUN_RE) ?? [] };
 }
 
 /**
  * title 能否由原文只删字得到：去掉空白后 title 是 text 的子序列，
- * 且原文的每个章卷编号（「第N章 / 卷…」「N章…」）当作整体：在 title 里要么原样完整出现（N 和单位都不变，「第」可删），要么整个不出现——
- * title 里的每个编号都须是原文的某个编号，编号之外的每段数字都须是原文编号之外的某段完整数字（如「三对三」）。
+ * 且原文的每个章卷编号（「第N章 / 卷…」「第N」「N章…」）当作整体：在 title 里要么原样完整出现（N 和单位都不变，「第」可删），要么整个不出现——
+ * title 里带「第」的编号须是原文中带「第」的编号（否则「第五章 十二回合」能删成「第十二回合」），不带「第」的编号须是原文的某个编号，
+ * 编号之外的每段数字须是原文编号之外的某段完整数字（如「三对三」）；原文有带「第」的编号时，title 至少保留其中一个（不能把章号整个删掉）。
  * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」「第五章」「五章」，「第一O一章」「第廿二章」删字成「第一章」「第二章」也会被放过
  */
 function isDeletionOf(title: string, text: string): boolean {
@@ -126,10 +131,14 @@ function isDeletionOf(title: string, text: string): boolean {
   for (const c of s) if (i < t.length && c === t[i]) i++;
   if (i < t.length) return false;
   const orig = splitNumbers(s);
-  const headings = new Set(orig.headings);
+  const withDi = new Set(orig.withDi);
+  const all = new Set([...orig.withDi, ...orig.plain]);
   const runs = new Set(orig.runs);
   const own = splitNumbers(t.join(''));
-  return own.headings.every(h => headings.has(h)) && own.runs.every(n => runs.has(n));
+  if (!own.withDi.every(h => withDi.has(h))) return false;
+  if (!own.plain.every(h => all.has(h))) return false;
+  if (!own.runs.every(n => runs.has(n))) return false;
+  return withDi.size === 0 || [...own.withDi, ...own.plain].some(h => withDi.has(h));
 }
 
 interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number; rewritten: number }
