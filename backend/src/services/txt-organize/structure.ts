@@ -1,3 +1,4 @@
+import { chapterNumberValue, stripTitlePromo } from '../../plugins/parser-txt';
 import { Candidate } from './candidates';
 import { Label } from './judge';
 import { readTxtLines } from './lines';
@@ -18,6 +19,8 @@ export interface OrgStructure {
   dropLines: Set<number>;
   /** 第一个标题之前的内容 */
   preface: { srcStart: number; srcEnd: number } | null;
+  /** 需要提醒审核人的问题（如被判为 duplicate 但与上一标题不一致、已保留为正文的行） */
+  notes: string[];
 }
 
 const STRAY_NUMBER_RE = /^第[零〇一二两三四五六七八九十百千万\d]+[章节回集]$/;
@@ -29,18 +32,56 @@ export function isStrictStrayNumber(text: string): boolean {
 
 const isStructural = (l: Label) => l.type === 'part' || l.type === 'volume' || l.type === 'chapter';
 
-/** 该候选行是否从正文去掉（标题行、duplicate、合格的 stray_number） */
-function isDropped(c: Candidate, l: Label): boolean {
-  if (isStructural(l) || l.type === 'duplicate') return true;
-  return l.type === 'noise' && l.noiseKind === 'stray_number' && isStrictStrayNumber(c.text);
+const NUM_RE = /第([零〇一二两三四五六七八九十百千万\d]+)([章节回集卷部])/g;
+
+/** 标题行的编号（最后一个「第N章/节/回/集」，没有时取最后一个「第N卷/部」）和去掉编号后的名称 */
+function headingParts(text: string): { unit: 'chapter' | 'volume' | null; num: number; name: string } {
+  const s = stripTitlePromo(text.trim())
+    .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/\s+/g, '');
+  const matches = [...s.matchAll(NUM_RE)];
+  const chapterMatches = matches.filter(m => '章节回集'.includes(m[2]));
+  const picked = chapterMatches.length ? chapterMatches[chapterMatches.length - 1] : matches[matches.length - 1];
+  // 名称：最后一个编号之后的部分，去掉标点和符号
+  const tail = matches.length ? s.slice(matches[matches.length - 1].index! + matches[matches.length - 1][0].length) : s;
+  const name = tail.replace(/[\p{P}\p{S}]/gu, '');
+  if (!picked) return { unit: null, num: NaN, name };
+  return { unit: chapterMatches.length ? 'chapter' : 'volume', num: chapterNumberValue(picked[1]), name };
+}
+
+const namesMatch = (a: string, b: string) => !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+
+/** duplicate 行是否确实是上一标题的重复：编号同类时数值必须相等（且名称为空或一致）；否则名称必须一致 */
+export function isDuplicateOf(dupText: string, headingText: string): boolean {
+  const d = headingParts(dupText);
+  const h = headingParts(headingText);
+  if (d.unit && d.unit === h.unit) {
+    if (Number.isNaN(d.num) || d.num !== h.num) return false;
+    return d.name === '' || namesMatch(d.name, h.name);
+  }
+  return namesMatch(d.name, h.name);
 }
 
 /** 由判定结果生成章节结构。labels 与 candidates 下标对齐 */
 export function buildStructure(candidates: Candidate[], labels: Label[], fileSize: number): OrgStructure {
   const dropLines = new Set<number>();
-  candidates.forEach((c, i) => {
-    if (isDropped(c, labels[i])) dropLines.add(c.lineNo);
-  });
+  const notes: string[] = [];
+  // 最近的部 / 卷 / 章标题行
+  let prevHeading: Candidate | null = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const l = labels[i];
+    if (isStructural(l)) {
+      dropLines.add(c.lineNo);
+      prevHeading = c;
+    } else if (l.type === 'duplicate') {
+      // AI 误判时不能悄悄删掉正文：只有与上一标题一致才去掉
+      if (prevHeading && isDuplicateOf(c.text, prevHeading.text)) dropLines.add(c.lineNo);
+      else notes.push(`第 ${c.lineNo + 1} 行被判为重复标题，但与上一标题不一致，已保留为正文：${c.text}`);
+    } else if (l.type === 'noise' && l.noiseKind === 'stray_number' && isStrictStrayNumber(c.text)) {
+      dropLines.add(c.lineNo);
+    }
+  }
 
   const headIdx = candidates.map((_, i) => i).filter(i => isStructural(labels[i]));
   const hasPart = headIdx.some(i => labels[i].type === 'part');
@@ -88,7 +129,7 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
 
   const firstStart = sections.length > 0 ? sections[0].srcStart : fileSize;
   const preface = firstStart > 0 ? { srcStart: 0, srcEnd: firstStart } : null;
-  return { sections, dropLines, preface };
+  return { sections, dropLines, preface, notes };
 }
 
 /** 去掉首尾空白（含全角空格、\r）后的非空行 */

@@ -187,6 +187,54 @@ describe('buildStructure', () => {
   });
 });
 
+describe('duplicate 兜底', () => {
+  it('「第5章 怎么像找对象？」后的「第0005章怎么像找对象？？」→ 去掉', async () => {
+    const text = '第5章 怎么像找对象？\n第0005章怎么像找对象？？\n正文。\n';
+    const { f, structure } = await prepare(text, { 0: chap('第5章 怎么像找对象？'), 1: { type: 'duplicate' } });
+    expect(structure.dropLines.has(1)).toBe(true);
+    expect(structure.notes).toEqual([]);
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('「第六卷通天灵宝第九百九十一章紫雾」后的「第九百九十一章紫雾」→ 去掉', async () => {
+    const text = '第六卷通天灵宝第九百九十一章紫雾\n第九百九十一章紫雾\n正文。\n';
+    const { structure } = await prepare(text, { 0: chap('第九百九十一章 紫雾'), 1: { type: 'duplicate' } });
+    expect(structure.dropLines.has(1)).toBe(true);
+    expect(structure.notes).toEqual([]);
+  });
+
+  it('全角数字、编号不同但同名：「第５章」与「第五章」相同；编号不同则保留', async () => {
+    const a = await prepare('第五章 夜\n第５章 夜\n正文\n', { 0: chap('第五章 夜'), 1: { type: 'duplicate' } });
+    expect(a.structure.dropLines.has(1)).toBe(true);
+    const b = await prepare('第五章 夜\n第六章 夜\n正文\n', { 0: chap('第五章 夜'), 1: { type: 'duplicate' } });
+    expect(b.structure.dropLines.has(1)).toBe(false);
+    expect(b.structure.notes).toHaveLength(1);
+  });
+
+  it('AI 把正文句子判成 duplicate → 不删，当正文，记一条 note，逐字校验仍通过', async () => {
+    const text = '第二章 青牛镇\n第二章的时候他走进了镇子，看见很多人。\n镇上很安静。\n';
+    const { f, structure } = await prepare(text, { 0: chap('第二章 青牛镇'), 1: { type: 'duplicate' } });
+    expect(structure.dropLines.has(1)).toBe(false);
+    expect(structure.notes).toEqual(['第 2 行被判为重复标题，但与上一标题不一致，已保留为正文：第二章的时候他走进了镇子，看见很多人。']);
+    const chapters = await render(f, structure);
+    expect(chapters[0]).toBe('第二章的时候他走进了镇子，看见很多人。\n镇上很安静。');
+    expect(await verifyVerbatim(f, structure, iter(chapters))).toEqual({ ok: true });
+  });
+
+  it('前面没有标题的 duplicate → 不删，记 note', async () => {
+    const { structure } = await prepare('第一章 开端\n第一章 开端\n正文\n', { 1: { type: 'duplicate' } });
+    expect(structure.dropLines.has(1)).toBe(false);
+    expect(structure.notes).toHaveLength(1);
+  });
+
+  it('被保留的 duplicate 让卷不再是 groupOnly', async () => {
+    const { structure } = await prepare('第一卷 起\n第一卷开始的那天下雨了\n第一章 甲\n正文\n', {
+      0: { type: 'volume', title: '第一卷 起' }, 1: { type: 'duplicate' }, 2: chap('第一章 甲'),
+    });
+    expect(structure.sections[0].groupOnly).toBe(false);
+  });
+});
+
 describe('verifyVerbatim', () => {
   it('verifyVerbatim：正文少一个字 → ok=false 并给出位置；完全一致 → ok=true', async () => {
     const text = '第一章 开端\r\n　　他走进了青牛镇。  \r\n\r\n天色已晚。\r\n第二章 镇上\r\n很安静。\r\n';
