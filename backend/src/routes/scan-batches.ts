@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { getDb } from '../db';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { successResponse, errorResponse } from '../utils/response';
-import { applyBatch, hasUndecidedDamaged, DAMAGED_UNDECIDED_MESSAGE } from '../services/batch-applier';
+import { applyBatchAsync, getOrganizeItem, hasUndecidedDamaged, DAMAGED_UNDECIDED_MESSAGE } from '../services/batch-applier';
+import { applyOrganizeDecision, ORGANIZE_DECISIONS } from '../services/txt-organize/apply';
+import type { OrganizedDuplicatePayload } from '../services/txt-organize/job';
 import { ScanBatch, ScanBatchItem } from '../types';
 import { isPathInsideRoot } from '../utils/path-safe';
 
@@ -55,13 +57,21 @@ const itemPatchSchema = z.object({
   payload: z.unknown().optional(),
 });
 
+// 整理审核项的修正只能是选哪种保留方式
+const organizePayloadSchema = z.object({ decision: z.enum(ORGANIZE_DECISIONS) }).strict();
+
 router.patch('/:batchId/items/:itemId', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
   const parsed = itemPatchSchema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
-  const item = db.prepare('SELECT id, payload FROM scan_batch_items WHERE id = ? AND batch_id = ?')
-    .get(req.params.itemId, req.params.batchId) as { id: string; payload: string } | undefined;
+  const item = db.prepare('SELECT id, type, payload FROM scan_batch_items WHERE id = ? AND batch_id = ?')
+    .get(req.params.itemId, req.params.batchId) as { id: string; type: string; payload: string } | undefined;
   if (!item) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '审核项不存在'); return; }
+  if (item.type === 'organized_duplicate' && parsed.data.payload !== undefined
+    && !organizePayloadSchema.safeParse(parsed.data.payload).success) {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败');
+    return;
+  }
 
   // 管理员只能在扫描结果的范围内调整（换正本、剔除、改名、排序），不能引入新的文件路径：
   // 否则可把书库外的任意文件登记为书籍
@@ -87,7 +97,7 @@ router.patch('/:batchId/items/:itemId', authMiddleware, adminMiddleware, (req: R
   successResponse(res, null, '已记录修正');
 });
 
-router.post('/:id/apply', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+router.post('/:id/apply', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
   const batch = db.prepare('SELECT id, status FROM scan_batches WHERE id = ?').get(req.params.id) as
     | { id: string; status: string }
@@ -96,15 +106,29 @@ router.post('/:id/apply', authMiddleware, adminMiddleware, (req: Request, res: R
   if (batch.status !== 'pending') { errorResponse(res, 409, 'BATCH_ALREADY_APPLIED', '批次状态非 pending'); return; }
   if (hasUndecidedDamaged(db, batch.id)) { errorResponse(res, 422, 'VALIDATION_ERROR', DAMAGED_UNDECIDED_MESSAGE); return; }
   try {
-    const result = applyBatch(req.params.id, req.user!.userId);
+    const result = await applyBatchAsync(req.params.id, req.user!.userId);
     successResponse(res, result, '已应用');
   } catch (err) {
     errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
   }
 });
 
-router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
+  // 丢弃整理审核批次 = 保留原书：删除整理版
+  const organizeItem = getOrganizeItem(db, req.params.id);
+  if (organizeItem) {
+    const batch = db.prepare("SELECT id FROM scan_batches WHERE id = ? AND status = 'pending'").get(req.params.id);
+    if (!batch) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '批次不存在或已处理'); return; }
+    try {
+      const payload = JSON.parse(organizeItem.payload) as OrganizedDuplicatePayload;
+      await applyOrganizeDecision({ payload }, 'keep_old', req.user!.userId, db, { batchStatus: 'discarded' });
+      successResponse(res, null, '已废弃');
+    } catch (err) {
+      errorResponse(res, 500, 'INTERNAL_ERROR', (err as Error).message);
+    }
+    return;
+  }
   const r = db.prepare("UPDATE scan_batches SET status = 'discarded' WHERE id = ? AND status = 'pending'")
     .run(req.params.id);
   if (r.changes === 0) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '批次不存在或已处理'); return; }

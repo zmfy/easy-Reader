@@ -32,7 +32,8 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
  * 原文行在整理版里被去掉（标题、duplicate、stray_number）时，取整理版里它前面最近的一段，没有则取第 0 段。
  *
  * 一本书的所有读者一起换算：各章索引第一次用到时才建（只读该章的原文区间），之后缓存。
- * 原文件不存在 / 解析失败时退化为按章节序号比例换算，不抛错。
+ * 原文件不存在 / 解析失败时退化为按章节序号比例换算，不抛错；原文件在整理后被改过时由调用方传 forceProportional，
+ * 同样按比例换算（对照表的字节区间已对不上）。原书章节数未知时章节序号一一对应、夹到整理版范围内。
  */
 export class PositionMapper {
   private txt: TxtParser | null = null;
@@ -49,7 +50,12 @@ export class PositionMapper {
     private originalCount: number,
   ) {}
 
-  static async create(originalPath: string, organizedBookId: string, db: Database.Database): Promise<PositionMapper> {
+  static async create(
+    originalPath: string,
+    organizedBookId: string,
+    db: Database.Database,
+    opts: { forceProportional?: boolean } = {},
+  ): Promise<PositionMapper> {
     const rows = db.prepare(
       'SELECT chapter_index, src_start, src_end FROM txt_organize_chapter_map WHERE book_id = ? ORDER BY chapter_index'
     ).all(organizedBookId) as MapRow[];
@@ -58,7 +64,7 @@ export class PositionMapper {
        FROM books b LEFT JOIN books o ON o.id = b.organized_from WHERE b.id = ?`
     ).get(organizedBookId) as { file_path: string; original_count: number | null } | undefined;
     const mapper = new PositionMapper(originalPath, rows, book?.original_count ?? 0);
-    if (!book || rows.length === 0) return mapper;
+    if (!book || rows.length === 0 || opts.forceProportional) return mapper;
     try {
       const txt = new TxtParser();
       await txt.load(originalPath);

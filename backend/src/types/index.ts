@@ -320,7 +320,8 @@ export type AuditAction =
   | 'ai_suggestion_apply'
   | 'opds_enable'
   | 'opds_reset'
-  | 'opds_disable';
+  | 'opds_disable'
+  | 'organize_apply';
 
 export interface AuditLog {
   id: string;

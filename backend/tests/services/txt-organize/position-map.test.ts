@@ -121,6 +121,14 @@ describe('PositionMapper', () => {
     expect(m.mapChapter(99)).toBe(3);
   });
 
+  it('forceProportional：原文件还在也按章节比例换算', async () => {
+    const { f, id, db } = await setup(TEXT, LABELS);
+    const m = await PositionMapper.create(f, id, db, { forceProportional: true });
+    expect(await m.mapProgress({ chapterIndex: 3, paragraphIndex: 5, paragraphOffset: 0.4 }))
+      .toEqual({ chapterIndex: 3, paragraphIndex: 0, paragraphOffset: 0 });
+    expect([0, 1, 2, 3].map(c => m.mapChapter(c))).toEqual([0, 1, 2, 3]);
+  });
+
   it('同一章多次换算只解析一次（按章缓存）', async () => {
     const { f, id, db } = await setup(TEXT, LABELS);
     const m = await PositionMapper.create(f, id, db);

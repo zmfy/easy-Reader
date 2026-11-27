@@ -15,6 +15,8 @@ import { FINGERPRINT_VERSION } from './scan-versions';
 import { HEALTH_CHECK_VERSION } from './book-health';
 import { computeGenericFingerprintSync } from '../utils/fingerprint';
 import { extractAuthorFromName } from '../utils/title-normalizer';
+import type { OrganizedDuplicatePayload } from './txt-organize/job';
+import { applyOrganizeDecision, organizeDecisionOf, ApplySummary } from './txt-organize/apply';
 
 export const DAMAGED_UNDECIDED_MESSAGE = '请先为每本损坏的书选择导入或跳过';
 
@@ -23,6 +25,39 @@ export function hasUndecidedDamaged(db: Database.Database, batchId: string): boo
   return !!db.prepare(
     "SELECT 1 FROM scan_batch_items WHERE batch_id = ? AND type = 'damaged' AND admin_decision IS NULL LIMIT 1"
   ).get(batchId);
+}
+
+type BatchItemRow = {
+  id: string;
+  type: string;
+  payload: string;
+  admin_decision: string | null;
+  admin_payload: string | null;
+};
+
+/** 整理审核批次（kind='organize'）里的那一条 organized_duplicate 审核项 */
+export function getOrganizeItem(db: Database.Database, batchId: string): BatchItemRow | undefined {
+  return db.prepare(
+    "SELECT id, type, payload, admin_decision, admin_payload FROM scan_batch_items WHERE batch_id = ? AND type = 'organized_duplicate' LIMIT 1"
+  ).get(batchId) as BatchItemRow | undefined;
+}
+
+/**
+ * 应用批次（路由用）：整理审核批次要先异步换算阅读位置，交给 txt-organize/apply.ts；
+ * 其他批次照旧走同步的 applyBatch。
+ */
+export async function applyBatchAsync(
+  batchId: string,
+  appliedBy: string,
+  customDb?: Database.Database,
+): Promise<ApplyResult | ApplySummary> {
+  const db = customDb ?? getDb();
+  const organizeItem = getOrganizeItem(db, batchId);
+  if (!organizeItem) return applyBatch(batchId, appliedBy, db);
+  const batch = db.prepare("SELECT id FROM scan_batches WHERE id = ? AND status = 'pending'").get(batchId);
+  if (!batch) throw new Error(`Batch ${batchId} not found or not pending`);
+  const payload = JSON.parse(organizeItem.payload) as OrganizedDuplicatePayload;
+  return applyOrganizeDecision({ payload }, organizeDecisionOf(organizeItem), appliedBy, db);
 }
 
 export interface ApplyResult {
@@ -50,6 +85,7 @@ export interface ApplyResult {
  *  - 'encoding_fixed': UPDATE matching book.status = 'encoding_fixed'
  *  - 'damaged': accept → 以 status='damaged' 入库（或按路径更新）；reject → 记跳过记录。
  *      必须逐本决定，有未决定的项时抛错
+ *  - 'organized_duplicate'（整理审核）不在这里处理，见 applyBatchAsync
  *
  * Returns aggregated counts. All work in a transaction.
  */
@@ -67,13 +103,9 @@ export function applyBatch(
 
   const items = db.prepare(
     'SELECT id, type, payload, admin_decision, admin_payload FROM scan_batch_items WHERE batch_id = ? ORDER BY type'
-  ).all(batchId) as Array<{
-    id: string;
-    type: string;
-    payload: string;
-    admin_decision: string | null;
-    admin_payload: string | null;
-  }>;
+  ).all(batchId) as BatchItemRow[];
+  // 整理审核项需要异步换算阅读位置，只能走 applyBatchAsync
+  if (items.some(it => it.type === 'organized_duplicate')) throw new Error('整理审核批次请用 applyBatchAsync 应用');
 
   const result: ApplyResult = {
     inserted: 0,
