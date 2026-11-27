@@ -5,8 +5,8 @@ import { CATEGORY_SEPARATOR, CategoryNode, categoryFilterSql, countByCategoryPat
 
 // OPDS 各目录的查询。只列「可见的书」，与书库列表的默认条件一致（重复、乱码、损坏的不列）
 export const OPDS_PAGE_SIZE = 50;
-export const VISIBLE_BOOK_SQL = "(status IS NULL OR status NOT IN ('duplicate','garbled','damaged'))";
-const VISIBLE_B = "(b.status IS NULL OR b.status NOT IN ('duplicate','garbled','damaged'))";
+export const VISIBLE_BOOK_SQL = "(status IS NULL OR status NOT IN ('duplicate','garbled','damaged','pending_review'))";
+const VISIBLE_B = "(b.status IS NULL OR b.status NOT IN ('duplicate','garbled','damaged','pending_review'))";
 
 export interface Page<T> { items: T[]; total: number; page: number }
 export type CatalogBook = Book & { display_title?: string };

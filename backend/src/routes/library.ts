@@ -91,7 +91,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     // no status filter
   } else {
     // default: normal-only library view — hide duplicate + garbled
-    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged'))";
+    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged','pending_review'))";
   }
 
   // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)

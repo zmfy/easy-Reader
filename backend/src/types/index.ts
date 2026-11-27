@@ -25,7 +25,9 @@ export interface Book {
   file_size?: number;
   imported_at: string;
   // 扫描增强字段（Plan 1）
-  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged';
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged' | 'pending_review';
+  organized_from?: string | null;
+  organized_job_id?: string | null;
   damage_reason?: string | null;
   health_check_version?: number | null;
   ai_fill_status?: 'filled' | 'failed' | null;
