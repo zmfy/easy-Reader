@@ -129,6 +129,13 @@ const MAX_HEADING_BYTES = 400;
  */
 const HEADING_START_RE = /^(?:正文|第|[【［\[〔（(]|chapter|楔子|序|引子|前言|尾声|后记|终章|番外)/i;
 const SEPARATOR_START_RE = /^[=＝\-－_*＊~～#＃─━·]/;
+/** 「第一部第一卷《精绝古城》」开头的分部名（后面紧跟第 X 卷 / 章） */
+const PART_PREFIX_RE = /^(第[零〇一二两三四五六七八九十百千万\d]+部)\s*(?=第[零〇一二两三四五六七八九十百千万\d]+[卷章节集回])/;
+/** 整行只有「第二部」 */
+const BARE_PART_RE = /^第[零〇一二两三四五六七八九十百千万\d]+部$/;
+/** 「第 X 部」的编号值（判断是否换了一部） */
+const partNumber = (s: string) => chapterNumberValue(s.match(/^第([零〇一二两三四五六七八九十百千万\d]+)部/)?.[1] ?? '');
+
 /** 卷末说明：「第二卷《山水郎》结束。」「第一卷 完」——是正文，不是分卷标题 */
 const VOLUME_END_RE = /^第[零〇一二两三四五六七八九十百千万\d]+卷[^章节回集]*(结束|完结|终了|完)[。！!.]*$/;
 
@@ -324,6 +331,8 @@ export class TxtParser implements ReaderPlugin {
       // 「第 X 部 名称」（编号后有空格，排除「第一部总结」「第二部分是…」这类正文）
       const partPattern = /^第[零〇一二两三四五六七八九十百千万\d]+部\s+\S/;
       let pendingPart: string | null = null;
+      // 当前所在的「第 X 部」编号：「第一部第一卷」「第一部第二卷」同一部只开一个分组
+      let currentPart = NaN;
 
       // data[start, end) 是一行（不含换行符），absoluteStart 是它在文件里的字节位置。
       // 大文件加载主要花在逐行处理上：不为每行切 Buffer，长行不解码，非标题行首直接算正文
@@ -359,8 +368,15 @@ export class TxtParser implements ReaderPlugin {
           if (current) current.endsVolume = true;
           return;
         }
-        const isHeading = key !== '' && (chapterPattern.test(key) || ENGLISH_CHAPTER_RE.test(key) || SPECIAL_CHAPTER_RE.test(key))
+        // 「第一部第一卷《精绝古城》」：去掉分部名再判断，分部名记为分组
+        const partPrefix = key.match(PART_PREFIX_RE);
+        const unitKey = partPrefix ? key.slice(partPrefix[0].length) : key;
+        const isHeading = unitKey !== '' && (chapterPattern.test(unitKey) || ENGLISH_CHAPTER_RE.test(unitKey) || SPECIAL_CHAPTER_RE.test(unitKey))
           && !looksLikeSentence(headingText);
+        if (isHeading && partPrefix && partNumber(partPrefix[1]) !== currentPart) {
+          pendingPart = partPrefix[1];
+          currentPart = partNumber(partPrefix[1]);
+        }
         if (isHeading) {
           const prev = chapters[chapters.length - 1];
           if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
@@ -395,9 +411,10 @@ export class TxtParser implements ReaderPlugin {
             ...(pendingPart ? { partTitle: pendingPart } : {}),
           });
           pendingPart = null;
-        } else if (partPattern.test(key) && lineText.length < 30 && !looksLikeSentence(lineText)) {
-          // 「第一部 小丑」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
+        } else if ((partPattern.test(key) || BARE_PART_RE.test(compact(key))) && lineText.length < 30 && !looksLikeSentence(lineText)) {
+          // 「第一部 小丑」「第二部」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
           pendingPart = lineText;
+          currentPart = partNumber(key);
         } else if (!SEPARATOR_LINE_RE.test(compact(lineText))) {
           // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
           sawBody = true;
@@ -479,39 +496,75 @@ export class TxtParser implements ReaderPlugin {
   }
 
   private buildToc(): TocEntry[] {
-    // 分卷标题：「第 X 卷」开头、不含章 / 回编号、且只有标题没有正文
-    const isVolume = (c: ChapterMeta) =>
-      /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(headingKey(c.title)) && !/[章节回集]/.test(headingNumber(c.title)) && !c.hasBody;
+    const chapters = this.chapters;
+    // 「第 X 卷」（可带「第 X 部」前缀）、不含章 / 回编号
+    const isVolumeHeading = (c: ChapterMeta) =>
+      /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(headingKey(c.title).replace(PART_PREFIX_RE, ''))
+      && !/[章节回集]/.test(headingNumber(c.title));
+    // 卷是否嵌在「第 X 部」下面：分部是「第一部第一卷」这样连写出来的，或分部之后的第一个卷从第一卷重新编号
+    // （《鬼吹灯》第二部下又是「第一卷 黄皮子坟」）。否则部和卷是同一层（《诡秘之主》「第二部 无面人」之后是「第七卷 倒吊人」）
+    const volumeNumber = (c: ChapterMeta) => chapterNumberValue(
+      headingKey(c.title).replace(PART_PREFIX_RE, '').match(/^第([零〇一二两三四五六七八九十百千万\d]+)卷/)?.[1] ?? '');
+    const nestsVolumes = (start: number) => {
+      if (PART_PREFIX_RE.test(headingKey(chapters[start].title))) return true;
+      for (let j = start; j < chapters.length && (j === start || !chapters[j].partTitle); j++) {
+        if (isVolumeHeading(chapters[j])) return volumeNumber(chapters[j]) === 1;
+      }
+      return false;
+    };
+    // 每章所在的分部是否嵌卷
+    const inNestingPart: boolean[] = [];
+    let nesting = false;
+    chapters.forEach((c, i) => {
+      if (c.partTitle) nesting = nestsVolumes(i);
+      inNestingPart.push(nesting);
+    });
+    // 分卷：卷名下面没有正文。卷嵌在部里的书（已由分部证明了层级），卷名下面带一段引言也算
+    // （《鬼吹灯》「第一卷 黄皮子坟」下先有引言再是第一章）；其他书不放宽——标题乱写的书
+    // （「第十卷魔界之战一千九百零六章」漏了「第」）会把普通章节误认成分卷
+    const volumes = chapters.map((c, i) => isVolumeHeading(c) && (!c.hasBody || inNestingPart[i]));
     // 目录显示的标题：去掉末尾的求票附言
     const display = (c: ChapterMeta) => stripTitlePromo(c.title);
-    if (!this.chapters.some(c => c.partTitle || isVolume(c))) {
-      return this.chapters.map(c => ({ index: c.index, title: display(c) }));
+    if (!chapters.some(c => c.partTitle) && !volumes.some(Boolean)) {
+      return chapters.map(c => ({ index: c.index, title: display(c) }));
     }
-    // 目录分两层：分卷标题 / 「第 X 部」分组在 0 层，其下章节在 1 层（第一个分组之前的章节仍为 0 层）。
-    // groupTitle：从这一章开始的「第 X 部」分组标题，由前端显示为不可跳转的分组行
-    let inGroup = false;
+    // 目录最多三层：「第 X 部」分组 → 分卷 → 章节（卷嵌在部下面时）。没有分部的书分卷在 0 层；第一个分部 / 分卷之前的章节在 0 层。
+    // groupTitle：从这一章开始的「第 X 部」分组标题，由前端显示为不可跳转的分组行（比这一章高一层）
+    let inPart = false;
+    let partNests = false;
+    let inVolume = false;
     let volumeTitle = '';
-    return this.chapters.map(c => {
-      if (isVolume(c)) {
-        inGroup = true;
-        volumeTitle = display(c);
-        return { index: c.index, title: volumeTitle, level: 0 };
-      }
-      // 分卷下的章节标题带着卷名（「第一卷 笼中雀 第一章 惊蛰」）：卷名已在上一层显示，这里去掉
-      let title = display(c);
-      if (volumeTitle && title.startsWith(volumeTitle) && title.slice(volumeTitle.length).trim()) {
-        title = title.slice(volumeTitle.length).trim();
-      }
-      let entry: TocEntry;
+    return chapters.map((c, i) => {
       if (c.partTitle) {
-        inGroup = true;
-        entry = { index: c.index, title, level: 1, groupTitle: c.partTitle };
-      } else {
-        entry = { index: c.index, title, level: inGroup ? 1 : 0 };
+        inPart = true;
+        partNests = inNestingPart[i];
+        inVolume = false;
+        volumeTitle = '';
+      } else if (volumes[i] && inPart && !partNests) {
+        // 部和卷同一层：遇到卷就离开上一部
+        inPart = false;
       }
-      // 卷末说明之后、下一个分卷之前的章节（原文没写卷名）放回第一层，不挂在已结束的卷下面
-      if (c.endsVolume && volumeTitle) {
-        inGroup = false;
+      let title = display(c);
+      // 带着分部名（「第一部第一卷《精绝古城》」）：分部已在上一层显示，去掉
+      const withoutPart = title.replace(PART_PREFIX_RE, '');
+      if (inPart && withoutPart.trim()) title = withoutPart;
+      const base = inPart ? 1 : 0;
+      let entry: TocEntry;
+      if (volumes[i]) {
+        inVolume = true;
+        volumeTitle = title;
+        entry = { index: c.index, title, level: base };
+      } else {
+        // 分卷下的章节标题带着卷名（「第一卷 笼中雀 第一章 惊蛰」）：卷名已在上一层显示，这里去掉
+        if (inVolume && title.startsWith(volumeTitle) && title.slice(volumeTitle.length).trim()) {
+          title = title.slice(volumeTitle.length).trim();
+        }
+        entry = { index: c.index, title, level: base + (inVolume ? 1 : 0) };
+      }
+      if (c.partTitle) entry.groupTitle = c.partTitle;
+      // 卷末说明之后、下一个分卷之前的章节（原文没写卷名）不再挂在已结束的卷下面
+      if (c.endsVolume && inVolume) {
+        inVolume = false;
         volumeTitle = '';
       }
       return entry;

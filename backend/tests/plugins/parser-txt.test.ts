@@ -141,6 +141,19 @@ describe('TxtParser volume levels', () => {
     ]);
   });
 
+  it('「第一部第一卷《名》」连写、单独一行的「第二部」、卷名下带引言：部 → 卷 → 章三层（《鬼吹灯》）', async () => {
+    const text = '鬼吹灯\n引子\n引子正文。\n第一部第一卷《精绝古城》\n第一章 白纸人\n正文。\n第一部第二卷《龙岭迷窟》\n第二章 鼠友\n正文。\n第二部\n第一卷 黄皮子坟\n《鬼吹灯Ⅱ黄皮子坟》 引言一段。\n第一章 赶冬荒\n正文。\n第二卷 南海归墟\n引言\n引言正文。\n第二章 出海\n正文。\n';
+    expect(await chaptersWithLevel(text)).toEqual([
+      ['引子', 0],
+      ['第一卷《精绝古城》', 1, '第一部'], ['第一章 白纸人', 2], ['第二卷《龙岭迷窟》', 1], ['第二章 鼠友', 2],
+      ['第一卷 黄皮子坟', 1, '第二部'], ['第一章 赶冬荒', 2], ['第二卷 南海归墟', 1], ['第二章 出海', 2],
+    ]);
+  });
+
+  it('拿「卷」当章用的书（每卷都有正文、下面没有章）：卷不算分卷', async () => {
+    expect(await chaptersWithLevel('第一卷 开端\n正文。\n第二卷 发展\n正文。\n')).toEqual([['第一卷 开端', undefined], ['第二卷 发展', undefined]]);
+  });
+
   it('adds no level when the book has no volume headings', async () => {
     expect(await chaptersWithLevel('第一章 开端\n正文。\n第二章 发展\n正文。\n')).toEqual([['第一章 开端', undefined], ['第二章 发展', undefined]]);
   });
