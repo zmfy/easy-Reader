@@ -109,8 +109,30 @@ const compact = (s: string) => s.replace(/\s+/g, '');
  * 标题里全部的「第 X 卷 / 章 / 回」编号，如「第二回史大郎…」→「第二回」、
  * 「第十卷魔界之战第两千一百三十章斗兽」→「第十卷第两千一百三十章」
  */
-const headingNumber = (title: string) =>
-  (title.match(/第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回]/g) ?? []).join('');
+/**
+ * 判断标题用的规范化文字：全角数字转半角，去掉开头的「正文」和包住编号的括号
+ * （「正文 第一章 …」「【第一章】…」「第１２章」与「第一章 …」「第12章」同样处理）。标题本身显示原文
+ */
+export function headingKey(line: string): string {
+  return line
+    .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+    .replace(/^正文[\s　:：]*/, '')
+    .replace(/^[【［\[〔（(]\s*(第[^】］\]〕）)]{1,12}?[章节卷集回])\s*[】］\]〕）)]/, '$1 ');
+}
+
+/** 英文「Chapter 1」「CHAPTER IV」「Chapter One」 */
+const ENGLISH_CHAPTER_RE = /^chapter\s+(\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i;
+/** 没有编号的特殊章节：楔子、序章、番外、后记等（整行就是它，或后面跟分隔符和标题） */
+const SPECIAL_CHAPTER_RE = /^(楔子|序章|序言|序幕|引子|前言|尾声|后记|终章|番外[篇\d一二三四五六七八九十]*)(?=$|[\s　:：·．.、\-—])/;
+
+/** 标题的编号部分（用于合并重复标题）：第X章 / Chapter N / 楔子等关键字 */
+const headingNumber = (title: string) => {
+  const key = headingKey(title);
+  return (key.match(/第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回]/g) ?? []).join('')
+    || key.match(ENGLISH_CHAPTER_RE)?.[0].toLowerCase().replace(/\s+/g, ' ')
+    || key.match(SPECIAL_CHAPTER_RE)?.[1]
+    || '';
+};
 
 /**
  * 章节开头重复的标题只留一份：完整的标题行，或拆成「第二回」「史大郎…」几行、
@@ -208,7 +230,10 @@ export class TxtParser implements ReaderPlugin {
           segmentStarts.push(absoluteStart);
         }
         const lineText = iconv.decode(lineBuffer, encoding).trim();
-        if (chapterPattern.test(lineText) && lineText.length < 60 && !looksLikeSentence(lineText)) {
+        const key = headingKey(lineText);
+        const isHeading = (chapterPattern.test(key) || ENGLISH_CHAPTER_RE.test(key) || SPECIAL_CHAPTER_RE.test(key))
+          && lineText.length < 60 && !looksLikeSentence(lineText);
+        if (isHeading) {
           const prev = chapters[chapters.length - 1];
           if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
             // 上一个标题之后没有正文，又是同一编号的标题（网页抓取的书常把每回标题写两遍：
@@ -230,7 +255,7 @@ export class TxtParser implements ReaderPlugin {
             ...(pendingPart ? { partTitle: pendingPart } : {}),
           });
           pendingPart = null;
-        } else if (partPattern.test(lineText) && lineText.length < 30 && !looksLikeSentence(lineText)) {
+        } else if (partPattern.test(key) && lineText.length < 30 && !looksLikeSentence(lineText)) {
           // 「第一部 小丑」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
           pendingPart = lineText;
         } else if (lineText) {
@@ -308,7 +333,7 @@ export class TxtParser implements ReaderPlugin {
   async getChapters(): Promise<Array<{ index: number; title: string; level?: number; groupTitle?: string }>> {
     // 分卷标题：「第 X 卷」开头、不含章 / 回编号、且只有标题没有正文
     const isVolume = (c: ChapterMeta) =>
-      /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(c.title) && !/[章节回集]/.test(headingNumber(c.title)) && !c.hasBody;
+      /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(headingKey(c.title)) && !/[章节回集]/.test(headingNumber(c.title)) && !c.hasBody;
     if (!this.chapters.some(c => c.partTitle || isVolume(c))) {
       return this.chapters.map(c => ({ index: c.index, title: c.title }));
     }
