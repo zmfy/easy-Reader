@@ -1,17 +1,7 @@
 // 阅读器 AI 功能（前情提要 / 问书）的纯函数：正文整理、本地关键词检索、提示词构建。
 // 设计见 docs/superpowers/specs/2026-11-04-ai-recap-ask-design.md
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-
-function decodeEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, code: string) => {
-    if (code[0] === '#') {
-      const n = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-      return Number.isFinite(n) ? String.fromCodePoint(n) : m;
-    }
-    return ENTITIES[code.toLowerCase()] ?? m;
-  });
-}
+import { decodeHtmlEntities as decodeEntities } from '../utils/html';
 
 /** 章节 HTML（或纯文本）→ 段落纯文本列表 */
 export function chapterParagraphs(html: string): string[] {

@@ -31,7 +31,7 @@ cd frontend && npm install && npm run dev  # http://localhost:8080
 ### 测试与类型检查
 
 ```bash
-cd backend  && npm test            # Jest
+cd backend  && npm test            # Jest（带 --experimental-vm-modules，单个文件：npm test -- <路径>；不要直接 npx jest）
 cd frontend && npm test            # Vitest
 cd frontend && npm run typecheck   # vue-tsc --noEmit
 cd frontend && npm run build       # vue-tsc + vite build

@@ -669,3 +669,32 @@ study 手机书页按钮区 124px < 封面 147px，320px 宽隐藏导图 / 笔�
 - [x] 9. 网页端页面与用户管理
 - [x] 10. 文档、更新日志与端到端实测
 - [x] 验证：后端 jest 全绿 + tsc、前端 vitest + vue-tsc、本地 curl 实测各目录与下载、浏览器查看页面；真实阅读 App 实测待用户在 iPad 上做
+
+# EPUB 兼容性测试集（issue #1 后续，计划见 ~/.claude/plans/declarative-toasting-book.md）
+
+- [x] 1. 公共源文本（3 章，自写文本 + 每章唯一标记）与 `scripts/epub-fixtures/generate.sh`
+- [x] 2. 生成真实工具样本：epub4j 4.2.3 / pandoc(EPUB3、EPUB2) / ebooklib / epub-gen-memory / Calibre → `backend/tests/fixtures/epub-tools/`
+- [x] 3. `backend/tests/plugins/epub-compat.test.ts`：样本循环 + 人工边界用例
+- [x] 4. 失败项逐个查根因修复（实际按「实体解码」「EPUB 解析容错」两个提交），没有需要大改的
+- [x] 5. 必要时 HEALTH_CHECK_VERSION 2→3、CHANGELOG [Unreleased]
+- [x] 6. 验证：jest 965 全绿（跑两遍）、tsc；源码起临时后端扫描 6 个样本→全部正常入库、阅读接口目录与正文正确（未做：全部样本重新生成后复测）
+
+# 其他格式兼容性（EPUB 收尾后，按顺序各自出计划再做）
+
+- [x] PDF：7 个样本（reportlab CID/TTF/扫描版、Chromium、Calibre、qpdf 两种加密）+ 截断；后端改用 pdfjs-dist 6.4.299（v1.10 取不出不嵌入字体的中文）；前情 / 问书无文字时明确报错。遗留：打开密码 / 截断的 PDF 仍作为正常书入库（归「健康检查扩展」）
+- [x] TXT：Calibre / pandoc 真实样本 + so-novel 格式 + 编码 / 换行 / 标题边界（28 项）；修：GB18030 生僻字被写坏、UTF-16 无 BOM、开头大段英文、CR 换行、5 种标题写法（用户选择直接加进规则）。遗留：阅读 App 导出格式没有真实样本
+- [x] 健康检查扩展到 TXT / PDF / UMD：book-health.ts（PDF 密码 / 截断 / 无页，UMD 打不开 / 无章节，TXT 空文件），HEALTH_CHECK_VERSION 4，阅读接口按原因提示。遗留：正常 UMD 的检查要等 UMD 样本
+- [x] UMD：按规范重写块读取（#/$ 块、#83 偏移分章、#0B 截断补零、#82 封面去飞库 logo、截断/漫画/解压失败给原因）；规范生成器 + umd-compat 21 项
+  - 真实样本：books/ 下 6 本 UMD（飞库网等）。修前：脂砚斋 82 章→246 段、易中天 6 章→5 章、每本末章带几千个 NUL；修后全对，其余章节与旧解析逐字一致
+  - 遗留：漫画版 UMD 无样本，只报「暂不支持」
+- [x] 测试偶发失败：pdf-compat / reader-damaged / book-health「Test environment has been torn down」
+  - 根因：parser-pdf 用 new Function 包 import()；jest 同一 worker 依次跑多个测试文件时，V8 缓存同一段 Function 源码（第 2 次编译才入缓存），第 3 个及之后加载 parser-pdf 的文件拿到的函数把 import() 交给已结束的测试文件 → PDF 一字取不出。清 jest 缓存后 worker 分配变化，3/3 复现；最小复现：3 个只含同一句 new Function 的测试文件
+  - 修复：importEsm 抽到 src/utils/import-esm.ts（生产不变），jest moduleNameMapper 换成 tests/helpers/import-esm.js（原生 import()）。修后冷缓存全量 3/3 无 PDF 失败，生产构建 node 实测读 PDF 正常
+- [x] 测试偶发：encoding-atomic「does not touch UTF-8 files」得到 garbled
+  - 根因：encoding.test.ts 就地改写仓库样本、每个用例后 writeFileSync 全部写回；encoding-atomic 并行复制样本时读到写了一半的 utf8-normal.txt（截断在多字节字符中间）
+  - 修复：encoding.test.ts 每个用例前把样本复制到临时目录，只改副本；仓库样本只读
+- [x] 测试偶发：epub-builder「事件循环不被长时间卡住」maxGap 1221〜1551ms
+  - 根因：用墙钟间隔衡量；实测失败时 1.4 秒间隔里进程 CPU 只有 5ms → 全量并行时分不到 CPU，不是代码卡住（ZipWriter 全异步）
+  - 修复：改量两次定时器间主线程自己的 CPU 时间（process.threadCpuUsage）；注入 500ms 忙等验证仍能抓到（测得 508ms）
+  - 验证：全量 6 次（3 次清缓存）全部 1053/1053
+  - [ ] 用户在本地容器里检查

@@ -12,7 +12,7 @@ import { createOverride, isNotDuplicate } from './manual-override';
 import { recordSkip, clearSkip } from './scan-skips';
 import { promoteDuplicatesOf } from './relation-cleanup';
 import { FINGERPRINT_VERSION } from './scan-versions';
-import { HEALTH_CHECK_VERSION } from './epub-health';
+import { HEALTH_CHECK_VERSION } from './book-health';
 import { computeGenericFingerprintSync } from '../utils/fingerprint';
 import { extractAuthorFromName } from '../utils/title-normalizer';
 

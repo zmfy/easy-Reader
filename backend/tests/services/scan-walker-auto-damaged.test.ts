@@ -7,9 +7,11 @@ const BOOKS = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-auto-books-'));
 process.env.DATA_DIR = DATA;
 process.env.BOOKS_DIR = BOOKS;
 
-jest.mock('../../src/services/epub-health', () => ({
+jest.mock('../../src/services/book-health', () => ({
   HEALTH_CHECK_VERSION: 1,
-  checkEpubHealth: jest.fn(async () => ({ status: 'damaged', reason: '没有可读的章节' })),
+  HEALTH_FORMATS: ['epub', 'pdf', 'umd', 'txt'],
+  // 只有 EPUB 损坏，其他格式正常
+  checkBookHealth: jest.fn(async (_f: string, fmt: string) => (fmt === 'epub' ? { status: 'damaged', reason: '没有可读的章节' } : { status: 'ok' })),
 }));
 
 /* eslint-disable @typescript-eslint/no-var-requires */
@@ -23,7 +25,7 @@ afterAll(() => {
   fs.rmSync(DATA, { recursive: true, force: true });
 });
 
-describe('自动模式下的损坏 EPUB', () => {
+describe('自动模式下的损坏书', () => {
   it('新书照常入库，损坏批次保持 pending 并有待审核提醒', async () => {
     const good = path.join(BOOKS, '好书.txt');
     const bad = path.join(BOOKS, '坏书.epub');

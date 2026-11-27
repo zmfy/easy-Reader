@@ -3,6 +3,7 @@ import { BookFileMetadata, ReaderPlugin } from '../types';
 import { createPlugin } from '../plugins/plugin-manager';
 import { readTxtPreview } from '../plugins/parser-txt';
 import { extractAuthorFromName } from '../utils/title-normalizer';
+import { decodeHtmlEntities } from '../utils/html';
 import { EmbeddedCover, readPluginCover } from './embedded-cover';
 
 /**
@@ -31,11 +32,10 @@ export interface BookEvidence {
 }
 
 function htmlToText(html: string): string {
-  return html
+  return decodeHtmlEntities(html
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<\/(p|div|h\d|li|tr|br)>|<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+    .replace(/<[^>]+>/g, ' '))
     .replace(/[ \t　]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .trim();

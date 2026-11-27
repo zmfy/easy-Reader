@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import iconv from 'iconv-lite';
 import { BookFileMetadata, ReaderPlugin } from '../types';
+import { decodeHtmlEntities } from '../utils/html';
 
 /** Extract <body> inner HTML from a full XHTML/HTML document string */
 function extractBodyContent(html: string): string {
@@ -43,35 +45,168 @@ export function imageMimeByExt(name: string): string | undefined {
   return IMAGE_EXT_MIME[(name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase()];
 }
 
+/**
+ * 章节文件按自身声明的编码解码：BOM → XML 声明 encoding → <meta charset>，都没有按 UTF-8。
+ * epub2 一律按 UTF-8 读，早期国内制作的 EPUB 有用 GBK 的，会整章乱码。
+ */
+export function decodeHtmlBuffer(buf: Buffer): string {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return buf.subarray(3).toString('utf-8');
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return iconv.decode(buf.subarray(2), 'utf-16le');
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return iconv.decode(buf.subarray(2), 'utf-16be');
+  const head = buf.subarray(0, 1024).toString('latin1');
+  const declared = head.match(/<\?xml[^>]*\bencoding\s*=\s*["']([\w.:-]+)["']/i)?.[1]
+    || head.match(/<meta[^>]+charset\s*=\s*["']?([\w.:-]+)/i)?.[1];
+  const enc = declared?.toLowerCase();
+  if (enc && !/^utf-?8$/.test(enc) && iconv.encodingExists(enc)) return iconv.decode(buf, enc);
+  return buf.toString('utf-8');
+}
+
+/**
+ * EPUB3 导航文档（nav.xhtml）里的目录：取 epub:type="toc" 的 <nav>（没有就整页），
+ * 按 <ol> 嵌套层数给出 level，href 按导航文档位置解析成 zip 内路径（保留锚点，与 NCX 解析结果一致）
+ */
+export function extractNavToc(html: string, navHref: string): Array<{ title: string; href: string; level: number }> {
+  const out: Array<{ title: string; href: string; level: number }> = [];
+  for (const { href: raw, inner, depth } of anchors(tocNavSection(html))) {
+    const title = tagText(inner);
+    if (!title || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+    const [file, anchor] = raw.split('#');
+    const href = path.posix.normalize(path.posix.join(path.posix.dirname(navHref), file));
+    out.push({ title, href: anchor ? `${href}#${anchor}` : href, level: Math.max(0, depth - 1) });
+  }
+  return out;
+}
+
+/** 逐页取标题时最多打开的页数 */
+const PAGE_HEADING_SCAN_LIMIT = 2000;
+
+/** 页面里第一个 h1–h3 的文字；没有或太长（不像标题）时返回空串 */
+export function firstHeading(html: string): string {
+  // 逐个找 h1–h3 的开闭标签，取第一个开标签到同级闭标签之间的文字（不用跨标签的惰性正则，见 anchors）
+  let open: { level: string; end: number } | null = null;
+  for (const m of html.matchAll(/<(\/?)h([1-3])\b[^<>]*>/gi)) {
+    if (!m[1]) { if (!open) open = { level: m[2], end: m.index! + m[0].length }; continue; }
+    if (open && m[2] === open.level) {
+      const text = decodeHtmlEntities(tagText(html.slice(open.end, m.index)));
+      return text.length <= 60 ? text : '';
+    }
+  }
+  return '';
+}
+
 interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
 
 /** XML 元素名去掉命名空间前缀：opf:item → item（同 xml2js 的 processors.stripPrefix） */
 const stripPrefix = (name: string): string => name.replace(/^.*:/, '');
 
 /**
- * epub4j（so-novel 等工具）写出的 content.opf 全部元素带 opf: 前缀（<opf:manifest><opf:item …/>），
- * epub2 只去掉最外层元素的前缀，manifest / spine 里的条目一个都读不到，整本书变成「没有可读的章节」。
- * 解析 XML 时统一去掉元素名前缀；没有前缀的普通 EPUB 不受影响。
+ * 按 zip 里实际存在的条目名找文件：先精确匹配，再试 URL 解码、去掉开头的 ./、不区分大小写。
+ * 有的制作工具 manifest 里写的路径和打包时的文件名大小写不一致，阅读软件大多照样能打开。
+ */
+export function resolveZipName(names: string[], name: string): string {
+  if (names.includes(name)) return name;
+  const variants = new Set<string>([name.replace(/^(\.\/)+/, '')]);
+  try { variants.add(decodeURIComponent(name).replace(/^(\.\/)+/, '')); } catch { /* 不是合法的 URL 编码 */ }
+  for (const v of variants) if (names.includes(v)) return v;
+  for (const v of variants) {
+    const lower = v.toLowerCase();
+    const hit = names.find(n => n.toLowerCase() === lower);
+    if (hit) return hit;
+  }
+  return name;
+}
+
+/**
+ * epub2 的容错子类（只覆盖少数几个方法，不改 node_modules）：
+ * - epub4j（so-novel 等工具）写出的 content.opf 全部元素带 opf: 前缀（<opf:manifest><opf:item …/>），
+ *   epub2 只去掉最外层元素的前缀，条目一个都读不到 → 解析 XML 时统一去掉元素名前缀
+ * - 读 zip 条目时按 resolveZipName 容忍大小写 / URL 编码 / ./ 前缀不一致
+ * - container.xml 的 full-path 带 ./ 前缀时 epub2 找不到 content.opf → 读出时去掉
+ * - 没有 mimetype 文件时 epub2 直接报错 → 跳过这项检查（mimetype 只是格式标记，不影响内容）
+ * - manifest 只有一个条目时 xml2js 不生成数组，epub2 一条都读不到 → 先转成数组
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let prefixTolerantEPub: any = null;
+let tolerantEPub: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getEPubClass(): any {
-  if (!prefixTolerantEPub) {
+  if (!tolerantEPub) {
     // epub2 v3: class is at require('epub2').EPub；静态 xml2jsOptions 由 _getStatic() 按实际类读取
     const { EPub } = require('epub2');
-    prefixTolerantEPub = class extends EPub {};
-    prefixTolerantEPub.xml2jsOptions = { ...EPub.xml2jsOptions, tagNameProcessors: [stripPrefix] };
+    tolerantEPub = class extends EPub {
+      // open() 建好 zip 后立即调用 checkMimeType()，在这里接管 zip 的读取
+      checkMimeType(): void {
+        const zip = this.zip;
+        const names: string[] = zip.names || [];
+        const readFile = zip.readFile.bind(zip);
+        zip.readFile = (name: string, cb: (err: Error | null, data?: Buffer) => void) => {
+          readFile(resolveZipName(names, name), (err: Error | null, data?: Buffer) => {
+            if (!err && data && /^meta-inf\/container\.xml$/i.test(name)) {
+              data = Buffer.from(data.toString('utf-8').replace(/(full-path\s*=\s*["'])(?:\.\/)+/gi, '$1'));
+            }
+            cb(err, data);
+          });
+        };
+        if (!names.some(n => n.toLowerCase() === 'mimetype')) {
+          this.getRootFiles();
+          return;
+        }
+        super.checkMimeType();
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      parseManifest(manifest: any): void {
+        if (manifest && manifest.item && !Array.isArray(manifest.item)) manifest.item = [manifest.item];
+        super.parseManifest(manifest);
+      }
+    };
+    tolerantEPub.xml2jsOptions = { ...EPub.xml2jsOptions, tagNameProcessors: [stripPrefix] };
   }
-  return prefixTolerantEPub;
+  return tolerantEPub;
+}
+
+/** 去掉标签、合并空白 */
+function tagText(html: string): string {
+  return html.replace(/<[^<>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 逐个找出 <a>、</a>、<ol>、</ol> 标签再配对，取每个链接的 href、内部 HTML 和所在 <ol> 层数。
+ * 不用 /<a…>([\s\S]*?)<\/a>/ 这类跨标签惰性正则：大量不闭合的 <a 会让它退化成平方级耗时；
+ * 标签正则用 [^<>]* 不越过下一个 <，整体是线性的。没有闭合的 <a> 丢弃。
+ */
+function anchors(html: string): Array<{ href: string; inner: string; depth: number }> {
+  const out: Array<{ href: string; inner: string; depth: number }> = [];
+  let depth = 0;
+  let pending: { href: string; start: number; depth: number } | null = null;
+  for (const m of html.matchAll(/<(\/?)(a|ol)\b([^<>]*)>/gi)) {
+    const closing = !!m[1];
+    if (m[2].toLowerCase() === 'ol') { depth += closing ? -1 : 1; continue; }
+    if (closing) {
+      if (pending) out.push({ href: pending.href, inner: html.slice(pending.start, m.index), depth: pending.depth });
+      pending = null;
+      continue;
+    }
+    const href = m[3].match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+    pending = href ? { href, start: m.index! + m[0].length, depth } : null;
+  }
+  return out;
+}
+
+/** 导航文档里 epub:type="toc" 的 <nav> 内容；没有时返回整页 */
+function tocNavSection(html: string): string {
+  const open = /<nav\b[^<>]*epub:type\s*=\s*["'][^"']*\btoc\b[^"']*["'][^<>]*>/i.exec(html);
+  if (!open) return html;
+  const start = open.index + open[0].length;
+  const end = html.toLowerCase().indexOf('</nav', start);
+  return html.slice(start, end < 0 ? undefined : end);
 }
 
 /** 目录页里指向书内页面的链接（相对路径按页面位置解析，去掉锚点；外链忽略） */
 export function extractIndexLinks(html: string, pageHref: string): Array<{ title: string; href: string }> {
   const links: Array<{ title: string; href: string }> = [];
-  for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    const href = m[1].split('#')[0];
-    const title = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  for (const { href: raw, inner } of anchors(html)) {
+    const href = raw.split('#')[0];
+    const title = tagText(inner);
     if (!href || !title || /^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
     links.push({ title, href: path.posix.normalize(path.posix.join(path.posix.dirname(pageHref), href)) });
   }
@@ -127,6 +262,8 @@ export class EpubParser implements ReaderPlugin {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private epub: any = null;
   private chapters: EpubChapter[] = [];
+  /** buildChapterList 用了逐页模式（目录覆盖不到 30% 的页面） */
+  private fullFlow = false;
   private manifestByHref = new Map<string, { id: string; mediaType: string }>();
 
   async load(filePath: string): Promise<void> {
@@ -142,16 +279,51 @@ export class EpubParser implements ReaderPlugin {
       this.repaired = true;
     }
     this.buildManifestMap();
+    await this.useNavWhenNoNcx();
     this.buildChapterList();
+    const headings = await this.collectPageHeadings();
+    if (headings.size > 0) this.buildChapterList(headings);
     await this.applyIndexPageGroups();
+  }
+
+  /**
+   * 逐页模式下目录里没有标题的页，取页内第一个 h1–h3 作标题。
+   * 目录残缺的书（如 Calibre 默认转换中文书，只生成一条「Start」）不至于整本只显示页码；
+   * 页数过多时（多为漫画）不逐页打开
+   */
+  private async collectPageHeadings(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const untitled = this.chapters.filter(c => !c.title);
+    if (!this.fullFlow || untitled.length === 0 || untitled.length > PAGE_HEADING_SCAN_LIMIT) return out;
+    for (const c of untitled) {
+      let html = '';
+      try { html = await this.readChapterHtml(c.id); } catch { continue; }
+      const heading = firstHeading(html);
+      if (heading) out.set(c.id, heading);
+    }
+    return out;
+  }
+
+  /** 没有 NCX 目录（纯 EPUB3）时，用 manifest 里 properties="nav" 的导航文档作目录；epub2 只认 NCX */
+  private async useNavWhenNoNcx(): Promise<void> {
+    if (Array.isArray(this.epub.toc) && this.epub.toc.length > 0) return;
+    const manifest: Record<string, { href?: string; properties?: string }> = this.epub.manifest || {};
+    const navId = Object.keys(manifest).find(id => /(^|\s)nav(\s|$)/.test(manifest[id].properties || ''));
+    if (!navId || !manifest[navId].href) return;
+    try {
+      const toc = extractNavToc(await this.readChapterHtml(navId), manifest[navId].href!);
+      if (toc.length) this.epub.toc = toc;
+    } catch {
+      // 导航文档读不出来就按无目录处理
+    }
   }
 
   /** 前 3 页里若有列出各册书名的「总目录」页，按它给平铺的套装目录分组（见 groupByIndexPage） */
   private async applyIndexPageGroups(): Promise<void> {
-    if (this.chapters.length < 6 || typeof this.epub.getChapterRawAsync !== 'function') return;
+    if (this.chapters.length < 6) return;
     for (const chapter of this.chapters.slice(0, 3)) {
       let html = '';
-      try { html = await this.epub.getChapterRawAsync(chapter.id); } catch { continue; }
+      try { html = await this.readChapterHtml(chapter.id); } catch { continue; }
       const grouped = groupByIndexPage(this.chapters, extractIndexLinks(html || '', chapter.href));
       if (grouped !== this.chapters) {
         this.chapters = grouped;
@@ -230,7 +402,7 @@ export class EpubParser implements ReaderPlugin {
     const first: { id?: string; href?: string } | undefined = (this.epub.flow || [])[0];
     if (first?.id && first.href && /cover|titlepage/i.test(`${first.id} ${first.href}`)) {
       try {
-        const html: string = await this.epub.getChapterRawAsync(first.id);
+        const html = await this.readChapterHtml(first.id);
         const src = html.match(/<(?:img\b[^>]*?\ssrc|image\b[^>]*?\s(?:xlink:)?href)\s*=\s*["']([^"']+)["']/i)?.[1];
         if (src && !/^[a-z][a-z0-9+.-]*:/i.test(src)) {
           add(path.posix.normalize(path.posix.join(path.posix.dirname(first.href), src.split('#')[0])));
@@ -247,7 +419,8 @@ export class EpubParser implements ReaderPlugin {
     return null;
   }
 
-  private buildChapterList(): void {
+  private buildChapterList(pageHeadings?: Map<string, string>): void {
+    this.fullFlow = false;
     const toc: Array<{ id: string; title?: string; href?: string; level?: number }> = this.epub.toc || [];
     const flow: Array<{ id: string; href?: string; title?: string }> = this.epub.flow || [];
 
@@ -302,11 +475,13 @@ export class EpubParser implements ReaderPlugin {
     // so the frontend can display page numbers instead.
     const validFlow = flow.filter(item => !!item.id && !!item.href);
     if (validFlow.length > 0) {
+      this.fullFlow = true;
       // 有标题的页沿用原书目录层级；没有标题的页挂在前面最近一个有标题的条目下面
       // （漫画：卷 → 话 → 各页），目录里默认收起，不再与章节标题平铺
       let lastTitledLevel: number | null = null;
       this.chapters = validFlow.map((item, idx) => {
-        const title = flowIdToTitle.get(item.id) || '';
+        // 目录里没有的页，用页内第一个标题（见 collectPageHeadings）；漫画页没有标题，仍为空
+        const title = flowIdToTitle.get(item.id) || pageHeadings?.get(item.id) || '';
         let level: number;
         if (title) {
           level = flowIdToLevel.get(item.id) ?? 0;
@@ -342,25 +517,28 @@ export class EpubParser implements ReaderPlugin {
     }));
   }
 
+  /**
+   * 读出章节文件的 HTML（代替 epub2 的 getChapterRaw）：按文件声明的编码解码；
+   * media-type 写成 text/html 等非标准值的章节也照常读取（epub2 会直接报错）
+   */
+  private async readChapterHtml(id: string): Promise<string> {
+    const item = this.epub?.manifest?.[id];
+    if (!item?.href) throw new Error(`章节文件不存在：${id}`);
+    const mediaType = String(item['media-type'] || '');
+    if (mediaType && !/html|xml|svg/i.test(mediaType)) throw new Error(`不是文本章节：${id} ${mediaType}`);
+    const buf = await new Promise<Buffer>((resolve, reject) => {
+      this.epub.zip.readFile(item.href, (err: Error | null, data?: Buffer) => {
+        if (err || !data) reject(err || new Error(`读取章节失败：${item.href}`)); else resolve(data);
+      });
+    });
+    return decodeHtmlBuffer(buf);
+  }
+
   async getChapterContent(index: number): Promise<string> {
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
 
-    // epub2 v3 uses promise-based getChapterRawAsync / getChapterAsync
-    let rawHtml = '';
-    if (typeof this.epub.getChapterRawAsync === 'function') {
-      rawHtml = await this.epub.getChapterRawAsync(chapter.id);
-    } else if (typeof this.epub.getChapterAsync === 'function') {
-      rawHtml = await this.epub.getChapterAsync(chapter.id);
-    } else {
-      // Legacy callback fallback (epub2 v2)
-      rawHtml = await new Promise<string>((resolve, reject) => {
-        this.epub.getChapter(chapter.id, (err: Error | null, text: string) => {
-          if (err) reject(err); else resolve(text || '');
-        });
-      });
-    }
-
+    const rawHtml = await this.readChapterHtml(chapter.id);
     return extractBodyContent(rawHtml);
   }
 

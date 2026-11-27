@@ -5,7 +5,7 @@ import { randomUUID as uuidv4 } from 'crypto';
 import os from 'os';
 import { applyBatch } from '../../src/services/batch-applier';
 import { computeFingerprint } from '../../src/utils/fingerprint';
-import { HEALTH_CHECK_VERSION } from '../../src/services/epub-health';
+import { HEALTH_CHECK_VERSION } from '../../src/services/book-health';
 import { _setDbForTesting } from '../../src/services/manual-override';
 
 let db: Database.Database;
