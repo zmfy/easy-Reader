@@ -27,6 +27,8 @@ export const DEFAULT_ORGANIZE_DECISION: OrganizeDecision = 'keep_new_hide_old';
 export interface ApplySummary {
   decision: OrganizeDecision;
   migrated: { progress: number; bookmarks: number; shelf: number; history: number };
+  /** 提交之后删文件失败等不影响结果的问题 */
+  warnings: string[];
 }
 
 /** 审核项上管理员的选择：admin_payload.decision；没选时「拒绝」= 保留原书，其余默认 keep_new_hide_old */
@@ -71,12 +73,14 @@ export async function applyOrganizeDecision(
   const srcPath = original ? resolveRealPathInsideRoot(BOOKS_DIR, original.file_path) : null;
   const srcStat = srcPath ? fs.statSync(srcPath) : null;
 
-  const summary: ApplySummary = { decision, migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 } };
+  const summary: ApplySummary = { decision, migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 }, warnings: [] };
 
   // ---- 事务外：算好进度换算、确认删除文件的路径合法 ----
   let mapper: PositionMapper | null = null;
   const mappedProgress = new Map<string, ReadingPos>();
   let deleteReq: DeleteRequest | null = null;
+  let deleteFileAfterCommit = false;
+  let batchId = '';
   if (decision !== 'keep_old' && original) {
     // 原文件不在了，或整理之后被改过：对照表的字节区间对不上，按章节比例换算
     const changed = !srcStat || srcStat.size !== jobRow.src_size || srcStat.mtimeMs !== jobRow.src_mtime;
@@ -104,6 +108,7 @@ export async function applyOrganizeDecision(
       | { id: string }
       | undefined;
     if (!batch) throw new Error('审核批次不存在或已处理');
+    batchId = batch.id;
 
     if (decision === 'keep_old') {
       deleteBookRelations(db, [orgId]);
@@ -130,11 +135,12 @@ export async function applyOrganizeDecision(
         if (decision === 'keep_new_hide_old') {
           db.prepare("UPDATE books SET status = 'duplicate', duplicate_of = ? WHERE id = ?").run(orgId, origId);
         } else if (deleteReq) {
-          // 迁移完成后再删原书（同一事务内；删文件时文件先于记录删除，同 deleteBookCascade）
+          // 迁移完成后再删原书记录；原文件等事务提交后再删（事务回滚时文件不能已经没了）
           if (decision === 'keep_new_delete_record' && srcStat) {
             recordSkip(db, { file_path: deleteReq.file_path, file_size: srcStat.size, file_mtime: srcStat.mtimeMs });
           }
-          deleteBookCascade(deleteReq, { keepFiles: decision === 'keep_new_delete_record' });
+          deleteBookCascade(deleteReq, { keepFiles: true });
+          deleteFileAfterCommit = decision === 'keep_new_delete_file';
         }
       }
     }
@@ -151,6 +157,34 @@ export async function applyOrganizeDecision(
       details: { ...summary, job_id: jobId, original_book_id: origId },
     });
   })();
+
+  // ---- 提交后删文件：失败只记警告，不撤销已提交的决定 ----
+  if (deleteFileAfterCommit && deleteReq) {
+    const real = resolveRealPathInsideRoot(BOOKS_DIR, deleteReq.file_path);
+    let deleted = false;
+    if (!real) {
+      summary.warnings.push(`原文件不存在：${deleteReq.file_path}`);
+    } else {
+      try {
+        fs.rmSync(real);
+        deleted = true;
+      } catch (err) {
+        const message = `删除原文件失败：${deleteReq.file_path}：${(err as Error).message}`;
+        console.warn(`[txt-organize ${jobId}] ${message}`);
+        summary.warnings.push(message);
+      }
+    }
+    writeAudit({
+      user_id: adminUserId,
+      action: 'delete_book_file',
+      resource_id: origId,
+      file_path: deleteReq.file_path,
+      details: { files_deleted: deleted ? 1 : 0, organize_job_id: jobId },
+    });
+    if (summary.warnings.length > 0) {
+      db.prepare('UPDATE scan_batches SET apply_summary = ? WHERE id = ?').run(JSON.stringify(summary), batchId);
+    }
+  }
 
   // ---- 提交后：保留原书时删除整理版文件（只删整理版目录里的）和封面副本 ----
   if (decision === 'keep_old') {

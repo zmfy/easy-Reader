@@ -38,6 +38,9 @@ import type { Candidate } from '../../../src/services/txt-organize/candidates';
 import type { Label } from '../../../src/services/txt-organize/judge';
 import type { OrganizedDuplicatePayload } from '../../../src/services/txt-organize/job';
 
+// 每个用例都要写 EPUB、解析原书，有一个还要跑一次扫描：全量并行时 5 秒默认超时偏紧
+jest.setTimeout(20000);
+
 const BOOKS = process.env.BOOKS_DIR!;
 const COVERS = path.join(process.env.DATA_DIR!, 'covers');
 
@@ -195,7 +198,7 @@ describe('applyOrganizeDecision', () => {
       .run(fx.origId);
 
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_hide_old', 'admin1', db);
-    expect(summary).toEqual({ decision: 'keep_new_hide_old', migrated: { progress: 2, bookmarks: 3, shelf: 2, history: 2 } });
+    expect(summary).toEqual({ decision: 'keep_new_hide_old', migrated: { progress: 2, bookmarks: 3, shelf: 2, history: 2 }, warnings: [] });
 
     expect(book(fx.orgId)).toMatchObject({ title: '青牛记', status: 'normal' });
     expect(book(fx.origId)).toMatchObject({ status: 'duplicate', duplicate_of: fx.orgId });
@@ -260,6 +263,48 @@ describe('applyOrganizeDecision', () => {
     expect(book(fx.orgId)).toMatchObject({ status: 'normal', title: '青牛记' });
     expect(rowsOf('bookmarks', fx.orgId, 'id')).toHaveLength(3);
     expect(db.prepare('SELECT COUNT(*) AS n FROM scan_skipped_files').get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT resource_id, file_path FROM audit_log WHERE action = 'delete_book_file'").all())
+      .toEqual([{ resource_id: fx.origId, file_path: fx.src }]);
+  });
+
+  it('keep_new_delete_file：事务里后续语句出错时整体回滚，原文件不动', async () => {
+    const fx = await makeOrganized();
+    addReaderData(fx.origId);
+    db.exec("CREATE TEMP TRIGGER fail_job BEFORE UPDATE ON txt_organize_jobs BEGIN SELECT RAISE(ABORT, 'boom'); END");
+    try {
+      await expect(applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db)).rejects.toThrow('boom');
+    } finally {
+      db.exec('DROP TRIGGER fail_job');
+    }
+    expect(fs.existsSync(fx.src)).toBe(true);
+    expect(book(fx.origId)).toMatchObject({ status: 'normal' });
+    expect(book(fx.orgId)).toMatchObject({ status: 'pending_review', title: '青牛记（整理版）' });
+    expect(rowsOf('reading_progress', fx.origId)).toHaveLength(2);
+    expect(rowsOf('bookmarks', fx.orgId)).toEqual([]);
+    expect(batch(fx.batchId)).toMatchObject({ status: 'pending' });
+    expect(job(fx.jobId)).toMatchObject({ status: 'review' });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM audit_log').get()).toEqual({ n: 0 });
+  });
+
+  it('keep_new_delete_file：提交后删文件失败只记警告，不回滚', async () => {
+    const fx = await makeOrganized();
+    const realRm = fs.rmSync;
+    const realSrc = fs.realpathSync(fx.src);
+    const rm = jest.spyOn(fs, 'rmSync').mockImplementation((p, o) => {
+      if (p === realSrc) throw new Error('EBUSY');
+      realRm(p, o);
+    });
+    let summary;
+    try {
+      summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db);
+    } finally {
+      rm.mockRestore();
+    }
+    expect(summary.warnings).toEqual([expect.stringContaining('EBUSY')]);
+    expect(fs.existsSync(fx.src)).toBe(true);
+    expect(book(fx.origId)).toBeUndefined();
+    expect(book(fx.orgId)).toMatchObject({ status: 'normal' });
+    expect(JSON.parse(batch(fx.batchId).apply_summary as string)).toEqual(summary);
   });
 
   it('keep_old：整理版记录和文件删除，写拒绝记录，原书数据不变', async () => {
@@ -267,7 +312,7 @@ describe('applyOrganizeDecision', () => {
     addReaderData(fx.origId);
     const before = Object.fromEntries(['reading_progress', 'bookmarks', 'shelf', 'reading_history'].map(t => [t, rowsOf(t, fx.origId)]));
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db);
-    expect(summary).toEqual({ decision: 'keep_old', migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 } });
+    expect(summary).toEqual({ decision: 'keep_old', migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 }, warnings: [] });
 
     expect(book(fx.orgId)).toBeUndefined();
     expect(fs.existsSync(fx.orgFile)).toBe(false);
