@@ -410,6 +410,8 @@ export interface AiFillPreview {
   lockedFields: AiFillLockableField[]
   coverTitle: string
   coverCandidates: AiFillCoverCandidate[]
+  /** 文件内置封面（data URI，目前只有 EPUB）；没有时省略 */
+  embeddedCover?: string
   /** AI 判定正文与文件名不是同一部作品 */
   contentMismatch?: ContentMismatch
   /** 查证过程（按顺序）；未启用查证时为空 */
@@ -418,7 +420,7 @@ export interface AiFillPreview {
   lookupUsedFallback: boolean
 }
 
-export type AiFillCoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'default' }
+export type AiFillCoverChoice = { type: 'keep' } | { type: 'douban'; pic: string } | { type: 'embedded' } | { type: 'default' }
 
 export interface AiFillApplyInput {
   title?: string
@@ -457,6 +459,10 @@ export interface ManualOverride {
   series_id: string | null
   created_by: string
   created_at: string
+  /** 书名 / 系列名；书或系列已删除时为 null */
+  title_a?: string | null
+  title_b?: string | null
+  series_name?: string | null
 }
 
 export interface ReleaseItem {

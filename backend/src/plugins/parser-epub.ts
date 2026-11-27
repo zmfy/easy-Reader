@@ -32,6 +32,17 @@ export function repairZipEndRecord(buf: Buffer): Buffer | null {
   return fixed;
 }
 
+const RASTER_MIME = /^image\/(jpeg|jpg|png|gif|webp)$/i;
+const COVER_MIN_BYTES = 1024;
+const IMAGE_EXT_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
+};
+
+/** 按扩展名判断光栅图片的 MIME；不是图片返回 undefined */
+export function imageMimeByExt(name: string): string | undefined {
+  return IMAGE_EXT_MIME[(name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase()];
+}
+
 interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
 
 /** 目录页里指向书内页面的链接（相对路径按页面位置解析，去掉锚点；外链忽略） */
@@ -141,7 +152,8 @@ export class EpubParser implements ReaderPlugin {
 
   async getAsset(path: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
     const item = this.manifestByHref.get(path);
-    if (!item) return null;
+    // 有的书正文图片没写进 manifest（只在 zip 里），按 zip 条目名直接读；只认图片扩展名
+    if (!item) return this.readZipImage(path);
     try {
       // getImageAsync returns [Buffer, mimeType]; use it for images, fall back to getFile callback for others
       if (item.mediaType.startsWith('image/') && typeof this.epub.getImageAsync === 'function') {
@@ -157,6 +169,62 @@ export class EpubParser implements ReaderPlugin {
     } catch {
       return null;
     }
+  }
+
+  /** zip 里存在、但 manifest 没声明的图片条目；不是图片扩展名或不存在时返回 null */
+  private async readZipImage(entryName: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    const mimeType = imageMimeByExt(entryName);
+    const zip = this.epub?.zip;
+    if (!mimeType || !zip || !Array.isArray(zip.names) || !zip.names.includes(entryName)) return null;
+    try {
+      const buf = await new Promise<Buffer>((resolve, reject) => {
+        zip.readFile(entryName, (err: Error | null, data: Buffer) => {
+          if (err || !data) reject(err || new Error('empty')); else resolve(data);
+        });
+      });
+      return { buffer: Buffer.from(buf), mimeType };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 文件内置封面：OPF <meta name="cover"> → EPUB3 cover-image → id / 文件名含 cover 的图片
+   * → 第一页是封面页时取页内第一张图。只要光栅图片、至少 1KB（排除占位小图），找不到返回 null。
+   */
+  async getCoverImage(): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    if (!this.epub) return null;
+    const manifest: Record<string, { href?: string; 'media-type'?: string; properties?: string }> = this.epub.manifest || {};
+    const isImage = (id: string) => !!manifest[id]?.href && RASTER_MIME.test(manifest[id]['media-type'] || imageMimeByExt(manifest[id].href!) || '');
+    const hrefs: string[] = [];
+    const add = (href: string | undefined) => { if (href && !hrefs.includes(href)) hrefs.push(href); };
+
+    const metaId = typeof this.epub.metadata?.cover === 'string' ? this.epub.metadata.cover : '';
+    if (metaId && isImage(metaId)) add(manifest[metaId].href);
+    for (const [id, item] of Object.entries(manifest)) {
+      if (isImage(id) && /(^|\s)cover-image(\s|$)/.test(item.properties || '')) add(item.href);
+    }
+    for (const [id, item] of Object.entries(manifest)) {
+      if (isImage(id) && (/cover/i.test(id) || /cover/i.test(path.posix.basename(item.href!)))) add(item.href);
+    }
+    const first: { id?: string; href?: string } | undefined = (this.epub.flow || [])[0];
+    if (first?.id && first.href && /cover|titlepage/i.test(`${first.id} ${first.href}`)) {
+      try {
+        const html: string = await this.epub.getChapterRawAsync(first.id);
+        const src = html.match(/<(?:img\b[^>]*?\ssrc|image\b[^>]*?\s(?:xlink:)?href)\s*=\s*["']([^"']+)["']/i)?.[1];
+        if (src && !/^[a-z][a-z0-9+.-]*:/i.test(src)) {
+          add(path.posix.normalize(path.posix.join(path.posix.dirname(first.href), src.split('#')[0])));
+        }
+      } catch {
+        // 封面页读不出来就算了
+      }
+    }
+
+    for (const href of hrefs) {
+      const asset = await this.getAsset(href);
+      if (asset && asset.buffer.length >= COVER_MIN_BYTES && RASTER_MIME.test(asset.mimeType)) return asset;
+    }
+    return null;
   }
 
   private buildChapterList(): void {

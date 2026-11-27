@@ -3,6 +3,7 @@ import { BookFileMetadata, ReaderPlugin } from '../types';
 import { createPlugin } from '../plugins/plugin-manager';
 import { readTxtPreview } from '../plugins/parser-txt';
 import { extractAuthorFromName } from '../utils/title-normalizer';
+import { EmbeddedCover, readPluginCover } from './embedded-cover';
 
 /**
  * AI 填充的依据：文件内置书目信息 + 正文节选。
@@ -25,6 +26,8 @@ export interface BookEvidence {
   excerpt: string;
   /** 交给 AI 的证据文本 */
   text: string;
+  /** 文件内置封面（目前只有 EPUB）；没有或读不出为 null */
+  cover: EmbeddedCover | null;
 }
 
 function htmlToText(html: string): string {
@@ -74,6 +77,7 @@ export async function buildBookEvidence(book: EvidenceBook): Promise<BookEvidenc
   const format = book.file_format.toLowerCase();
   let metadata: BookFileMetadata = {};
   let excerpt = '';
+  let cover: EmbeddedCover | null = null;
 
   if (format === 'txt') {
     excerpt = readTxtPreview(book.file_path, EXCERPT_CHARS);
@@ -85,6 +89,7 @@ export async function buildBookEvidence(book: EvidenceBook): Promise<BookEvidenc
       await plugin.load(book.file_path);
       metadata = (await plugin.getMetadata?.()) ?? {};
       excerpt = await readPluginExcerpt(plugin);
+      cover = await readPluginCover(plugin);
     } catch {
       // 读不了就只靠文件名
     } finally {
@@ -100,5 +105,5 @@ export async function buildBookEvidence(book: EvidenceBook): Promise<BookEvidenc
   if (metaText) parts.push(`【${METADATA_HEADINGS[format] ?? '文件内置信息'}】\n${metaText}`);
   parts.push(excerpt ? `【正文节选】\n${excerpt}` : '【正文节选】（无法读取正文，可能是扫描版或文件损坏）');
 
-  return { metadata, excerpt, text: parts.join('\n') };
+  return { metadata, excerpt, text: parts.join('\n'), cover };
 }

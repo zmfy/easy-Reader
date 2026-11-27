@@ -6,7 +6,7 @@
           <el-button type="danger" plain :disabled="overrides.length === 0" @click="onClearAll">清空所有人工修正</el-button>
         </template>
       </PageHeader>
-      <p class="page-subtitle">admin 在审核时记录的"不是重复"/"不在系列"等判断。下次扫描会绕过 AI 重新判断这些组合。</p>
+      <p class="page-subtitle">管理员审核时记录的「不是重复」「不属于此系列」等判断。之后的扫描（包括勾选「重建指纹」）都会沿用这些判断，不再重新判定；想让某一对重新参与重复检测，删除对应记录后再扫描。</p>
 
       <div class="section-card section-card--flush">
       <el-table v-loading="loading" :data="overrides" empty-text="暂无记录">
@@ -15,14 +15,24 @@
             <el-tag :type="tagType(row.type)">{{ typeLabel(row.type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="书 A" prop="book_id_a">
+        <el-table-column label="书 A" prop="book_id_a" min-width="200">
           <template #default="{ row }">
-            <code class="id-short">{{ row.book_id_a?.slice(0,8) ?? '-' }}</code>
+            <router-link v-if="row.book_id_a && row.title_a" :to="`/book/${row.book_id_a}`" class="book-link">{{ row.title_a }}</router-link>
+            <span v-else-if="row.book_id_a" class="gone">已删除（<code class="id-short">{{ row.book_id_a.slice(0, 8) }}</code>）</span>
+            <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="书 B / 系列">
+        <el-table-column label="书 B / 系列" min-width="200">
           <template #default="{ row }">
-            <code class="id-short">{{ (row.book_id_b ?? row.series_id)?.slice(0,8) ?? '-' }}</code>
+            <template v-if="row.book_id_b">
+              <router-link v-if="row.title_b" :to="`/book/${row.book_id_b}`" class="book-link">{{ row.title_b }}</router-link>
+              <span v-else class="gone">已删除（<code class="id-short">{{ row.book_id_b.slice(0, 8) }}</code>）</span>
+            </template>
+            <template v-else-if="row.series_id">
+              <span v-if="row.series_name">系列：{{ row.series_name }}</span>
+              <span v-else class="gone">系列已删除（<code class="id-short">{{ row.series_id.slice(0, 8) }}</code>）</span>
+            </template>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180">
@@ -77,7 +87,7 @@ function tagType(t: string): 'warning' | 'primary' {
 
 async function onDelete(id: string): Promise<void> {
   try {
-    await ElMessageBox.confirm('确认删除此修正？删除后 AI 重扫时该判定可能恢复。', '确认', { type: 'warning' })
+    await ElMessageBox.confirm('确认删除此修正？删除后下次扫描会重新判定这一组（例如重新检出为重复）。', '确认', { type: 'warning' })
   } catch { return }
   await libraryApi.manualOverrides.remove(id)
   ElMessage.success('已删除')
@@ -103,4 +113,7 @@ onMounted(fetchOverrides)
 <style scoped>
 .page-subtitle { margin: -12px 0 16px; font-size: 13px; color: var(--text-2); max-width: 600px; }
 .id-short { font-family: var(--font-mono); font-size: 12px; }
+.book-link { color: var(--accent); text-decoration: none; }
+.book-link:hover { text-decoration: underline; }
+.gone { color: var(--text-2); }
 </style>

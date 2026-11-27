@@ -305,6 +305,8 @@ function initSchema(): void {
   `);
   // AI 判定正文与文件名不是同一本书：JSON { title, author?, reason?, dismissed? }
   try { database.exec('ALTER TABLE books ADD COLUMN content_mismatch TEXT'); } catch { /* column exists */ }
+  // 「重置全部填充记录」时给系统生成的封面打标记：下次批量填充按 书内 → 豆瓣 → 默认 重新选封面
+  try { database.exec('ALTER TABLE books ADD COLUMN cover_refill INTEGER'); } catch { /* column exists */ }
   // 建议按填充批次分组（每 500 本一批，见 services/ai-batch-fill.ts）；apply_job_id：已交给后台采纳任务、处理中
   try { database.exec('ALTER TABLE ai_suggestions ADD COLUMN batch_no INTEGER'); } catch { /* column exists */ }
   try { database.exec('ALTER TABLE ai_suggestions ADD COLUMN apply_job_id TEXT'); } catch { /* column exists */ }

@@ -46,6 +46,10 @@ describe('parseAiFillApplyBody', () => {
     expect(r).toEqual({ ok: false, message: expect.stringContaining('推荐标签') });
   });
 
+  it('accepts the embedded (in-file) cover choice', () => {
+    expect(parseAiFillApplyBody({ ...base, cover: { type: 'embedded' } }).ok).toBe(true);
+  });
+
   it('rejects an unknown cover type', () => {
     const r = parseAiFillApplyBody({ ...base, cover: { type: 'url', pic: 'x' } });
     expect(r).toEqual({ ok: false, message: expect.stringContaining('封面') });
