@@ -162,6 +162,22 @@ describe('judgeCandidates', () => {
     expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
   });
 
+  it('「第N章 / 卷」须以相同编号和单位出现在原文中：卷号挪作章号不放过，同时保留卷名和章号的照收', async () => {
+    const cands = makeCands(2);
+    cands[0].text = '第五卷名震一方第六百五十九章四叔祖';
+    cands[1].text = '第五卷名震一方第六百五十九章四叔祖';
+    const titles: Record<number, string> = { 0: '第五章四叔祖', 1: '第五卷 第六百五十九章 四叔祖' };
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
+    }));
+    const res = await judgeCandidates(cands, book, db);
+    expect(res.labels.map(l => l.title)).toEqual([
+      '第五卷名震一方第六百五十九章四叔祖',
+      '第五卷 第六百五十九章 四叔祖',
+    ]);
+    expect(res.notes).toEqual(['第 1 批有 1 个标题被 AI 改动了原文，已改回原标题']);
+  });
+
   it('一批两次缺 id → 对半拆分，两半都成功则整体成功，进度仍按原批数', async () => {
     let call = 0;
     const prompts: string[] = [];
