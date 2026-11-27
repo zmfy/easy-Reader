@@ -55,6 +55,25 @@ describe('readTxtLines', () => {
       for (const s of starts) expect(lineStarts.has(s.byte)).toBe(true);
     }
   });
+
+  it('只读指定字节区间（从某行开头起）：行与整本读取时的同一批行一致', async () => {
+    const text = '前言一行\r\n第一章 开端\r\n他走进了青牛镇，天色已晚。\r\n第二章 青牛镇\r\n镇上很安静。';
+    const files = [
+      write('r8.txt', text),
+      write('rgbk.txt', iconv.encode(text, 'gbk')),
+      write('r16.txt', Buffer.concat([Buffer.from([0xff, 0xfe]), iconv.encode(text, 'utf-16le')])),
+    ];
+    for (const f of files) {
+      const all = await linesOf(f);
+      const sub = [];
+      for await (const l of readTxtLines(f, { start: all[1].byteStart, end: all[3].byteStart })) sub.push(l);
+      expect(sub.map(l => [l.byteStart, l.byteEnd, l.text])).toEqual(all.slice(1, 3).map(l => [l.byteStart, l.byteEnd, l.text]));
+      // 不给 end：读到文件末尾
+      const tail = [];
+      for await (const l of readTxtLines(f, { start: all[3].byteStart })) tail.push(l);
+      expect(tail.map(l => l.text)).toEqual(['第二章 青牛镇', '镇上很安静。']);
+    }
+  });
 });
 
 describe('collectCandidates', () => {
