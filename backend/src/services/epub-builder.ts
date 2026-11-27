@@ -107,12 +107,47 @@ export interface EpubTocEntry {
   groupTitle?: string;
   /** 解析插件给出的原始标题（标题被统一过时与 title 不同），用于去掉正文里重复的标题行 */
   sourceTitle?: string;
+  /** 目录层级（0 起）。任一条目带 level（或 groupOnly）时，nav / ncx 按 level 嵌套，groupTitle 不再使用 */
+  level?: number;
+  /** 只作目录分组（部 / 卷）：nav 里是 <span>，ncx 里指向其后第一个正文文件；不调 chapterHtml，不生成正文文件和 spine 项 */
+  groupOnly?: boolean;
+}
+
+interface TocNode { title: string; file: string | null; groupOnly: boolean; children: TocNode[] }
+
+/** 按 level 把平铺目录建成树；层级跳级时按上一条 +1 收敛。file 为 null 的 groupOnly 节点在输出时指向其后第一个正文文件 */
+function buildTocTree(toc: EpubTocEntry[], fileAt: (i: number) => string | null): TocNode[] {
+  const roots: TocNode[] = [];
+  const stack: TocNode[] = [];
+  toc.forEach((e, i) => {
+    const level = Math.max(0, Math.min(e.level ?? 0, stack.length));
+    const node: TocNode = { title: e.title, file: e.groupOnly ? null : fileAt(i), groupOnly: !!e.groupOnly, children: [] };
+    stack.length = level;
+    (level === 0 ? roots : stack[level - 1].children).push(node);
+    stack.push(node);
+  });
+  return roots;
+}
+
+/** 按文档顺序给 file 为空的节点补上其后第一个正文文件；之后没有正文时用最后一个正文文件 */
+function resolveGroupFiles(roots: TocNode[]): void {
+  const flat: TocNode[] = [];
+  const walk = (ns: TocNode[]) => ns.forEach(n => { flat.push(n); walk(n.children); });
+  walk(roots);
+  let next: string | null = null;
+  for (let i = flat.length - 1; i >= 0; i--) {
+    if (flat[i].file) next = flat[i].file;
+    else flat[i].file = next;
+  }
+  const last = [...flat].reverse().find(n => n.file)?.file ?? null;
+  flat.forEach(n => { if (!n.file) n.file = last; });
 }
 
 export interface EpubStreamInput extends Omit<EpubInput, 'chapters'> {
   /** 各章标题与分组（目录要先写，所以先给全部标题） */
   toc: EpubTocEntry[];
-  /** 按需取第 i 章正文 HTML：逐章读取、写入，整本书不会同时在内存里 */
+  /** 按需取正文 HTML：逐章读取、写入，整本书不会同时在内存里。
+   *  index 是该条目在 toc 里的位置（groupOnly 条目不会被调用，所以下标可能不连续），调用方自己按 toc 位置映射 */
   chapterHtml: (index: number) => Promise<string>;
 }
 
@@ -120,7 +155,12 @@ export interface EpubStreamInput extends Omit<EpubInput, 'chapters'> {
 export async function writeEpub(input: EpubStreamInput, outPath: string): Promise<void> {
   const lang = input.language || 'zh';
   const uid = `urn:easyreader:${input.id}`;
-  const fileOf = (i: number) => `text/c${String(i + 1).padStart(4, '0')}.xhtml`;
+  // 文件按「正文条目」顺序编号（groupOnly 不占号）；没有 groupOnly 时与 toc 位置一致
+  const bodyNo: number[] = [];
+  let bodyCount = 0;
+  input.toc.forEach((e, i) => { bodyNo[i] = e.groupOnly ? -1 : bodyCount++; });
+  const fileOf = (i: number) => `text/c${String(bodyNo[i] + 1).padStart(4, '0')}.xhtml`;
+  const layered = input.toc.some(e => e.level !== undefined || e.groupOnly);
   const zip = await ZipWriter.open(outPath);
   try {
     await zip.add('mimetype', Buffer.from('application/epub+zip'), { store: true });
@@ -139,8 +179,9 @@ export async function writeEpub(input: EpubStreamInput, outPath: string): Promis
       manifest.push(`<item id="cover-image" href="cover.${coverExt}" media-type="${input.cover.mimeType}" properties="cover-image"/>`);
     }
     const spine: string[] = [];
-    input.toc.forEach((_c, i) => {
-      const id = `c${i + 1}`;
+    input.toc.forEach((c, i) => {
+      if (c.groupOnly) return;
+      const id = `c${bodyNo[i] + 1}`;
       manifest.push(`<item id="${id}" href="${fileOf(i)}" media-type="application/xhtml+xml"/>`);
       spine.push(`<itemref idref="${id}"/>`);
     });
@@ -168,9 +209,15 @@ ${spine.join('\n')}
 </spine>
 </package>`));
 
-    const groups = groupChapters(input.toc, fileOf);
+    const tree = layered ? buildTocTree(input.toc, i => fileOf(i)) : [];
+    if (layered) resolveGroupFiles(tree);
+    const groups = layered ? [] : groupChapters(input.toc, fileOf);
 
-    const navItems = groups.map(g => {
+    const navLabel = (n: TocNode) => n.groupOnly ? `<span>${esc(n.title)}</span>` : `<a href="${n.file}">${esc(n.title)}</a>`;
+    const navTree = (nodes: TocNode[]): string => nodes.map(n => {
+      return n.children.length ? `<li>${navLabel(n)}\n<ol>\n${navTree(n.children)}\n</ol></li>` : `<li>${navLabel(n)}</li>`;
+    }).join('\n');
+    const navItems = layered ? navTree(tree) : groups.map(g => {
       const lis = g.items.map(it => `<li><a href="${it.file}">${esc(it.title)}</a></li>`).join('\n');
       return g.title === null ? lis : `<li><span>${esc(g.title)}</span>\n<ol>\n${lis}\n</ol></li>`;
     }).join('\n');
@@ -190,7 +237,12 @@ ${navItems}
     let order = 0;
     const navPoint = (title: string, file: string) =>
       `<navPoint id="np${++order}" playOrder="${order}"><navLabel><text>${esc(title)}</text></navLabel><content src="${file}"/></navPoint>`;
-    const ncxPoints = groups.map(g => {
+    const ncxTree = (nodes: TocNode[]): string => nodes.map(n => {
+      const id = ++order; // 先占 playOrder 再生成子节点，保证顺序递增
+      const children = n.children.length ? `\n${ncxTree(n.children)}\n` : '';
+      return `<navPoint id="np${id}" playOrder="${id}"><navLabel><text>${esc(n.title)}</text></navLabel><content src="${n.file}"/>${children}</navPoint>`;
+    }).join('\n');
+    const ncxPoints = layered ? ncxTree(tree) : groups.map(g => {
       if (g.title === null) return g.items.map(it => navPoint(it.title, it.file)).join('\n');
       // 分组节点指向组内第一章；先占 playOrder 再生成子节点，保证顺序递增
       const id = ++order;
@@ -210,7 +262,8 @@ ${ncxPoints}
     if (input.cover && coverExt) await zip.add(`OEBPS/cover.${coverExt}`, input.cover.data);
 
     for (let i = 0; i < input.toc.length; i++) {
-      const { title, sourceTitle } = input.toc[i];
+      const { title, sourceTitle, groupOnly } = input.toc[i];
+      if (groupOnly) continue;
       const html = await input.chapterHtml(i);
       const body = `<h2>${esc(title)}</h2>\n${toXhtmlFragment(dropTitleParagraph(html, [title, sourceTitle ?? '']))}`;
       await zip.add(`OEBPS/${fileOf(i)}`, Buffer.from(xhtmlPage(title, body, lang)));

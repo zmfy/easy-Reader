@@ -163,3 +163,116 @@ describe('writeEpub（逐章写出）', () => {
     expect(fs.existsSync(out)).toBe(false);
   });
 });
+
+describe('三层目录（level / groupOnly）', () => {
+  // 部 → 卷 → 章；部、卷只做目录分组（groupOnly），不生成正文
+  const threeLevel = () => ({
+    id: 'o1', title: '三层书',
+    toc: [
+      { title: '序', level: 0 },
+      { title: '第一部', level: 0, groupOnly: true },
+      { title: '第一卷', level: 1, groupOnly: true },
+      { title: '第一章', level: 2 },
+      { title: '第二章', level: 2 },
+      { title: '第二卷', level: 1, groupOnly: true },
+      { title: '第三章', level: 2 },
+      { title: '第二部', level: 0, groupOnly: true },
+      { title: '第四章', level: 1 },
+    ],
+    chapterHtml: async (i: number) => `<p>正文${i}</p>`,
+  });
+
+  it('三层目录：nav.xhtml 嵌套两层 ol，toc.ncx navPoint 嵌套，playOrder 连续', async () => {
+    const out = path.join(TMP, 'three.epub');
+    await writeEpub(threeLevel(), out);
+    const zip = new AdmZip(out);
+
+    const nav = parseXml(zip.readAsText('OEBPS/nav.xhtml'), 'application/xhtml+xml');
+    const kids = (el: Element) => Array.from(el.children).filter(c => c.tagName === 'ol').flatMap(ol => Array.from(ol.children));
+    const top = kids(nav.querySelector('nav')!);
+    expect(top.map(li => li.firstElementChild!.textContent)).toEqual(['序', '第一部', '第二部']);
+    const part1 = top[1];
+    expect(part1.firstElementChild!.tagName).toBe('span');
+    const volumes = kids(part1);
+    expect(volumes.map(li => li.firstElementChild!.textContent)).toEqual(['第一卷', '第二卷']);
+    expect(kids(volumes[0]).map(li => li.firstElementChild!.textContent)).toEqual(['第一章', '第二章']);
+    expect(kids(top[2])[0].firstElementChild!.textContent).toBe('第四章');
+
+    const ncx = parseXml(zip.readAsText('OEBPS/toc.ncx'));
+    const points = Array.from(ncx.getElementsByTagName('navPoint'));
+    expect(points.map(p => p.getAttribute('playOrder'))).toEqual(points.map((_p, i) => String(i + 1)));
+    expect(points.map(p => p.getElementsByTagName('text')[0].textContent))
+      .toEqual(['序', '第一部', '第一卷', '第一章', '第二章', '第二卷', '第三章', '第二部', '第四章']);
+    const depth = (p: Element) => { let d = 0; for (let e = p.parentElement; e && e.tagName === 'navPoint'; e = e.parentElement) d++; return d; };
+    expect(points.map(depth)).toEqual([0, 0, 1, 2, 2, 1, 2, 0, 1]);
+    // groupOnly 指向其后第一个正文文件
+    const src = (p: Element) => p.getElementsByTagName('content')[0].getAttribute('src');
+    expect(src(points[1])).toBe(src(points[3]));
+    expect(src(points[7])).toBe(src(points[8]));
+  });
+
+  it('groupOnly 条目不生成 xhtml 文件，但出现在目录里；chapterHtml 的下标是 toc 里的位置', async () => {
+    const out = path.join(TMP, 'grouponly.epub');
+    const called: number[] = [];
+    const input3 = threeLevel();
+    await writeEpub({ ...input3, chapterHtml: async i => { called.push(i); return `<p>正文${i}</p>`; } }, out);
+    expect(called).toEqual([0, 3, 4, 6, 8]);
+    const zip = new AdmZip(out);
+    const files = zip.getEntries().map(e => e.entryName).filter(n => n.startsWith('OEBPS/text/')).sort();
+    expect(files).toEqual([1, 2, 3, 4, 5].map(n => `OEBPS/text/c000${n}.xhtml`));
+    expect(zip.readAsText('OEBPS/content.opf').match(/<itemref /g)).toHaveLength(5);
+    expect(zip.readAsText('OEBPS/nav.xhtml')).toContain('第一部');
+    expect(zip.readAsText('OEBPS/text/c0002.xhtml')).toContain('正文3');
+  });
+
+  it('用项目自己的 EPUB 解析器读回：章节顺序对应 spine 顺序（不含 groupOnly），层级正确', async () => {
+    const out = path.join(TMP, 'three-read.epub');
+    await writeEpub(threeLevel(), out);
+    const parser = new EpubParser();
+    await parser.load(out);
+    const chapters = await parser.getChapters();
+    expect(chapters.map(c => c.title)).toEqual(['序', '第一章', '第二章', '第三章', '第四章']);
+    expect(await parser.getChapterContent(1)).toContain('正文3');
+    expect(await parser.getChapterContent(4)).toContain('正文8');
+    expect(chapters.map(c => c.level ?? 0)).toEqual([0, 2, 2, 2, 1]);
+  });
+
+  it('不带 level 时输出与修改前一致', async () => {
+    const zip = new AdmZip(await buildEpub({ id: 'b1', title: '书', chapters: [
+      { title: '序', html: '<p>a</p>' },
+      { title: '一', html: '<p>b</p>', groupTitle: '第一部' },
+      { title: '二', html: '<p>c</p>', groupTitle: '第一部' },
+    ] }));
+    expect(zip.readAsText('OEBPS/nav.xhtml')).toBe(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="zh" lang="zh">
+<head><meta charset="UTF-8"/><title>目录</title></head>
+<body>
+<nav epub:type="toc" id="toc"><h1>目录</h1>
+<ol>
+<li><a href="text/c0001.xhtml">序</a></li>
+<li><span>第一部</span>
+<ol>
+<li><a href="text/c0002.xhtml">一</a></li>
+<li><a href="text/c0003.xhtml">二</a></li>
+</ol></li>
+</ol>
+</nav>
+</body>
+</html>`);
+    expect(zip.readAsText('OEBPS/toc.ncx')).toBe(`<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="zh">
+<head><meta name="dtb:uid" content="urn:easyreader:b1"/></head>
+<docTitle><text>书</text></docTitle>
+<navMap>
+<navPoint id="np1" playOrder="1"><navLabel><text>序</text></navLabel><content src="text/c0001.xhtml"/></navPoint>
+<navPoint id="np2" playOrder="2"><navLabel><text>第一部</text></navLabel><content src="text/c0002.xhtml"/>
+<navPoint id="np3" playOrder="3"><navLabel><text>一</text></navLabel><content src="text/c0002.xhtml"/></navPoint>
+<navPoint id="np4" playOrder="4"><navLabel><text>二</text></navLabel><content src="text/c0003.xhtml"/></navPoint>
+</navPoint>
+</navMap>
+</ncx>`);
+    const opf = zip.readAsText('OEBPS/content.opf');
+    expect(opf).toContain('<spine toc="ncx">\n<itemref idref="c1"/>\n<itemref idref="c2"/>\n<itemref idref="c3"/>\n</spine>');
+  });
+});
