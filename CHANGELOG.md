@@ -18,6 +18,8 @@ Docker 镜像 `dls7788/easy-reader` 的 tag 与版本号对应（如 `1.0.0`、`
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-11-27
+
 ### 修复
 
 - **扫描导入 · EPUB**：so-novel 等用 epub4j 生成的 EPUB（content.opf 的元素都带 `opf:` 前缀）被误判为「文件损坏：没有可读的章节」，现在能正常导入和阅读（[#1](https://github.com/zmfy/easy-Reader/issues/1)）。升级后第一次扫描会把书库里的 EPUB 按新规则重新检查一遍（只在这一次稍慢）：之前被误标为损坏的书会恢复，之前选了「跳过」的书会作为新书出现在审核批次里
