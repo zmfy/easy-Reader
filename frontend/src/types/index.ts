@@ -39,6 +39,8 @@ export interface Book {
   manually_edited_fields?: string
   /** AI 判定正文与文件名不是同一本书：JSON { title, author?, reason?, dismissed? }（见 parseContentMismatch） */
   content_mismatch?: string | null
+  /** 整理版的原文件在整理之后变过（仅整理版详情返回） */
+  organized_stale?: boolean
 }
 
 /** 阅读历史一项：最近打开的在前，附阅读进度 */

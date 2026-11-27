@@ -326,3 +326,21 @@ describe('扫描与整理版', () => {
     expect(db.prepare("SELECT id FROM books WHERE id = 'b1'").get()).toBeTruthy();
   });
 });
+
+describe('原文件变化提示', () => {
+  it('原文件变化后详情接口返回 organized_stale', async () => {
+    const orgId = await makePendingOrganized('b1');
+    const detail = async (id: string) => (await (await api(`/library/${id}`)).json()).data;
+    // 刚整理完：不提示
+    expect((await detail(orgId)).organized_stale).toBe(false);
+    // 原书详情不带这个标记
+    expect((await detail('b1')).organized_stale).toBeUndefined();
+    // 原文件被改动：提示
+    const file = (db.prepare("SELECT file_path FROM books WHERE id = 'b1'").get() as { file_path: string }).file_path;
+    fs.appendFileSync(file, '\n新增的一行');
+    expect((await detail(orgId)).organized_stale).toBe(true);
+    // 原文件删除：不提示
+    fs.rmSync(file);
+    expect((await detail(orgId)).organized_stale).toBe(false);
+  });
+});

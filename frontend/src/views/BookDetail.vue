@@ -109,6 +109,10 @@
               <el-button link type="primary" size="small" @click="dismissMismatch">不是错标</el-button>
             </p>
 
+            <p v-if="book?.organized_stale" class="note note--warning mismatch-note">
+              原文件已变化，整理版可能过时，可重新整理
+            </p>
+
             <div class="info-tags">
               <router-link
                 v-if="book.category"

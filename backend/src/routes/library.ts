@@ -431,6 +431,21 @@ router.post('/ai-suggestions/dismiss', authMiddleware, adminMiddleware, (req: Re
   successResponse(res, { dismissed: dismissSuggestions(getDb(), parsed.data.book_ids) });
 });
 
+// 整理版的原文件在整理之后是否变过（大小或修改时间与整理任务记录的不同）；原书记录或文件不在了不提示
+function isOrganizedStale(db: ReturnType<typeof getDb>, organized: Book): boolean {
+  const job = db.prepare(
+    'SELECT src_size, src_mtime FROM txt_organize_jobs WHERE id = ? OR result_book_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).get(organized.organized_job_id ?? organized.id, organized.id) as { src_size: number | null; src_mtime: number | null } | undefined;
+  const original = db.prepare('SELECT file_path FROM books WHERE id = ?').get(organized.organized_from) as { file_path: string } | undefined;
+  if (!job || !original) return false;
+  try {
+    const st = fs.statSync(original.file_path);
+    return st.size !== job.src_size || st.mtimeMs !== job.src_mtime;
+  } catch {
+    return false;
+  }
+}
+
 // GET /api/library/:id
 router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
@@ -440,7 +455,9 @@ router.get('/:id', authMiddleware, (req: Request, res: Response) => {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;
   }
-  successResponse(res, withDisplayTitle(hideFilePathForNonAdmin(req, book)));
+  const result: Record<string, unknown> = { ...withDisplayTitle(hideFilePathForNonAdmin(req, book)) };
+  if (book.organized_from) result.organized_stale = isOrganizedStale(db, book);
+  successResponse(res, result);
 });
 
 const updateBookSchema = z.object({
