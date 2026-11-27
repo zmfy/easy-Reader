@@ -192,6 +192,50 @@ describe('judgeCandidates', () => {
     expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
   });
 
+  it('原文的章卷编号是一个整体：编号里含 O / 大写数字 / 廿卅 / 千分位逗号时，删掉其中一部分也不放过', async () => {
+    const pairs: [string, string][] = [
+      ['第一O一章 车祸', '第一章 车祸'],
+      ['第一Ｏ一章 x', '第一章 x'],
+      ['第壹佰章 x', '第壹章 x'],
+      ['第廿二章 x', '第二章 x'],
+      ['第卅二章 x', '第二章 x'],
+      ['第1,001章 x', '第001章 x'],
+      ['第一O一章 车祸', '一章 车祸'],
+      ['第一O一章 车祸', '第一O一 车祸'],
+    ];
+    const cands = makeCands(pairs.length);
+    pairs.forEach(([text], i) => { cands[i].text = text; });
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: pairs[id][1] })), notes: [],
+    }));
+    const res = await judgeCandidates(cands, book, db);
+    expect(res.labels.map(l => l.title)).toEqual(pairs.map(([text]) => text));
+    expect(res.notes).toEqual([`第 1 批有 ${pairs.length} 个标题被 AI 改动了原文，已改回原标题`]);
+  });
+
+  it('完整保留编号的删字照收：去前缀 / 只删「第」/ 去附言 / 名字里的数字', async () => {
+    const pairs: [string, string][] = [
+      ['第五卷名震一方第六百四十八章至木灵婴', '第六百四十八章至木灵婴'],
+      ['第一百二十章 风起', '一百二十章 风起'],
+      ['正文 第一百二十章 风起', '第一百二十章 风起'],
+      ['《鬼吹灯之龙岭迷窟》 第四十八章 香鞋', '第四十八章 香鞋'],
+      ['第一O一章 车祸【求月票】', '第一O一章 车祸'],
+      ['第一O一章 车祸', '第一O一章 车祸'],
+      ['第三章 三对三', '第三章 三对三'],
+      ['第八章 一抓,一拳,一掌', '第八章 一抓,一拳,一掌'],
+      ['第十章 十', '第十章 十'],
+      ['第1,001章 x', '第1,001章 x'],
+    ];
+    const cands = makeCands(pairs.length);
+    pairs.forEach(([text], i) => { cands[i].text = text; });
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: pairs[id][1] })), notes: [],
+    }));
+    const res = await judgeCandidates(cands, book, db);
+    expect(res.labels.map(l => l.title)).toEqual(pairs.map(([, title]) => title));
+    expect(res.notes).toEqual([]);
+  });
+
   it('一批两次缺 id → 对半拆分，两半都成功则整体成功，进度仍按原批数', async () => {
     let call = 0;
     const prompts: string[] = [];

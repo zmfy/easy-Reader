@@ -92,15 +92,32 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
-const DIGIT_RUN_RE = /[零〇一二两三四五六七八九十百千万\d０-９]+/g;
-/** 紧跟单位字的完整数字段「N章 / N卷…」（在去掉空白的文本上匹配，所以 N 与单位之间的空白已容忍；有没有「第」都一样） */
-const UNIT_NUMBER_RE = /[零〇一二两三四五六七八九十百千万\d０-９]+[章节回集卷部]/g;
+/** 数字字符：中文小写 / 大写、廿卅卌、半角 / 全角阿拉伯数字（O 作零、千分位逗号另见 NUMERAL_RUN） */
+const NUMERAL = '零〇一二两三四五六七八九十百千万亿萬壹贰叁肆伍陆柒捌玖拾佰仟廿卅卌0-9０-９';
+/** 一段完整的数字：数字字符开头，后面可接数字字符、当零用的 O / Ｏ、夹在阿拉伯数字之间的逗号（「一O一」「1,001」） */
+const NUMERAL_RUN = `[${NUMERAL}](?:[${NUMERAL}OoＯ]|[,，](?=[0-9０-９]))*`;
+/**
+ * 编号整体「第N单位 / N单位」（在去掉空白的文本上匹配）：
+ * 带「第」时 N 是「第」与单位之间不含「第」的任意 1～12 个字；不带「第」时 N 是一段完整的数字
+ */
+const HEADING_NUMBER_RE = new RegExp(`第([^第]{1,12}?)([章节回集卷部])|(${NUMERAL_RUN})([章节回集卷部])`, 'g');
+const NUMERAL_RUN_RE = new RegExp(NUMERAL_RUN, 'g');
+
+/** 取出编号整体（N + 单位，不含「第」）和编号之外的完整数字段 */
+function splitNumbers(s: string): { headings: string[]; runs: string[] } {
+  const headings: string[] = [];
+  const rest = s.replace(HEADING_NUMBER_RE, (_m, n1, u1, n2, u2) => {
+    headings.push(n1 !== undefined ? n1 + u1 : n2 + u2);
+    return '\n';
+  });
+  return { headings, runs: rest.match(NUMERAL_RUN_RE) ?? [] };
+}
 
 /**
  * title 能否由原文只删字得到：去掉空白后 title 是 text 的子序列，
- * 且 title 里每一段连续的数字（中文 / 阿拉伯 / 全角）都是原文里完整的一段数字——
- * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」（五取自卷号），「第１２章」删字成「第１章」也会被放过；
- * 并且 title 里每个紧跟单位字的数字段，在原文里也紧跟同一个单位字——否则卷号能挪作章号（「第五卷…」→「第五章…」「五章…」）
+ * 且原文的每个章卷编号（「第N章 / 卷…」「N章…」）当作整体：在 title 里要么原样完整出现（N 和单位都不变，「第」可删），要么整个不出现——
+ * title 里的每个编号都须是原文的某个编号，编号之外的每段数字都须是原文编号之外的某段完整数字（如「三对三」）。
+ * 否则「第五卷…第六百五十九章」能凑出「第五百五十九章」「第五章」「五章」，「第一O一章」「第廿二章」删字成「第一章」「第二章」也会被放过
  */
 function isDeletionOf(title: string, text: string): boolean {
   const t = Array.from(title.replace(/\s+/g, ''));
@@ -108,11 +125,11 @@ function isDeletionOf(title: string, text: string): boolean {
   let i = 0;
   for (const c of s) if (i < t.length && c === t[i]) i++;
   if (i < t.length) return false;
-  const runs = new Set(s.match(DIGIT_RUN_RE) ?? []);
-  const compactTitle = t.join('');
-  if (!(compactTitle.match(DIGIT_RUN_RE) ?? []).every(n => runs.has(n))) return false;
-  const unitNumbers = new Set(s.match(UNIT_NUMBER_RE) ?? []);
-  return (compactTitle.match(UNIT_NUMBER_RE) ?? []).every(n => unitNumbers.has(n));
+  const orig = splitNumbers(s);
+  const headings = new Set(orig.headings);
+  const runs = new Set(orig.runs);
+  const own = splitNumbers(t.join(''));
+  return own.headings.every(h => headings.has(h)) && own.runs.every(n => runs.has(n));
 }
 
 interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number; rewritten: number }
