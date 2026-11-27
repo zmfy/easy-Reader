@@ -66,14 +66,11 @@ export function decodeHtmlBuffer(buf: Buffer): string {
  * 按 <ol> 嵌套层数给出 level，href 按导航文档位置解析成 zip 内路径（保留锚点，与 NCX 解析结果一致）
  */
 export function extractNavToc(html: string, navHref: string): Array<{ title: string; href: string; level: number }> {
-  const tocNav = html.match(/<nav\b[^>]*epub:type\s*=\s*["'][^"']*\btoc\b[^"']*["'][^>]*>([\s\S]*?)<\/nav>/i)?.[1] ?? html;
   const out: Array<{ title: string; href: string; level: number }> = [];
-  let depth = 0;
-  for (const m of tocNav.matchAll(/<(\/?)ol\b[^>]*>|<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    if (m[2] === undefined) { depth += m[1] ? -1 : 1; continue; }
-    const title = m[3].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    if (!title || /^[a-z][a-z0-9+.-]*:/i.test(m[2])) continue;
-    const [file, anchor] = m[2].split('#');
+  for (const { href: raw, inner, depth } of anchors(tocNavSection(html))) {
+    const title = tagText(inner);
+    if (!title || /^[a-z][a-z0-9+.-]*:/i.test(raw)) continue;
+    const [file, anchor] = raw.split('#');
     const href = path.posix.normalize(path.posix.join(path.posix.dirname(navHref), file));
     out.push({ title, href: anchor ? `${href}#${anchor}` : href, level: Math.max(0, depth - 1) });
   }
@@ -85,10 +82,16 @@ const PAGE_HEADING_SCAN_LIMIT = 2000;
 
 /** 页面里第一个 h1–h3 的文字；没有或太长（不像标题）时返回空串 */
 export function firstHeading(html: string): string {
-  const m = html.match(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/i);
-  if (!m) return '';
-  const text = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
-  return text.length <= 60 ? text : '';
+  // 逐个找 h1–h3 的开闭标签，取第一个开标签到同级闭标签之间的文字（不用跨标签的惰性正则，见 anchors）
+  let open: { level: string; end: number } | null = null;
+  for (const m of html.matchAll(/<(\/?)h([1-3])\b[^<>]*>/gi)) {
+    if (!m[1]) { if (!open) open = { level: m[2], end: m.index! + m[0].length }; continue; }
+    if (open && m[2] === open.level) {
+      const text = decodeHtmlEntities(tagText(html.slice(open.end, m.index)));
+      return text.length <= 60 ? text : '';
+    }
+  }
+  return '';
 }
 
 interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
@@ -161,12 +164,49 @@ function getEPubClass(): any {
   return tolerantEPub;
 }
 
+/** 去掉标签、合并空白 */
+function tagText(html: string): string {
+  return html.replace(/<[^<>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 逐个找出 <a>、</a>、<ol>、</ol> 标签再配对，取每个链接的 href、内部 HTML 和所在 <ol> 层数。
+ * 不用 /<a…>([\s\S]*?)<\/a>/ 这类跨标签惰性正则：大量不闭合的 <a 会让它退化成平方级耗时；
+ * 标签正则用 [^<>]* 不越过下一个 <，整体是线性的。没有闭合的 <a> 丢弃。
+ */
+function anchors(html: string): Array<{ href: string; inner: string; depth: number }> {
+  const out: Array<{ href: string; inner: string; depth: number }> = [];
+  let depth = 0;
+  let pending: { href: string; start: number; depth: number } | null = null;
+  for (const m of html.matchAll(/<(\/?)(a|ol)\b([^<>]*)>/gi)) {
+    const closing = !!m[1];
+    if (m[2].toLowerCase() === 'ol') { depth += closing ? -1 : 1; continue; }
+    if (closing) {
+      if (pending) out.push({ href: pending.href, inner: html.slice(pending.start, m.index), depth: pending.depth });
+      pending = null;
+      continue;
+    }
+    const href = m[3].match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+    pending = href ? { href, start: m.index! + m[0].length, depth } : null;
+  }
+  return out;
+}
+
+/** 导航文档里 epub:type="toc" 的 <nav> 内容；没有时返回整页 */
+function tocNavSection(html: string): string {
+  const open = /<nav\b[^<>]*epub:type\s*=\s*["'][^"']*\btoc\b[^"']*["'][^<>]*>/i.exec(html);
+  if (!open) return html;
+  const start = open.index + open[0].length;
+  const end = html.toLowerCase().indexOf('</nav', start);
+  return html.slice(start, end < 0 ? undefined : end);
+}
+
 /** 目录页里指向书内页面的链接（相对路径按页面位置解析，去掉锚点；外链忽略） */
 export function extractIndexLinks(html: string, pageHref: string): Array<{ title: string; href: string }> {
   const links: Array<{ title: string; href: string }> = [];
-  for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    const href = m[1].split('#')[0];
-    const title = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  for (const { href: raw, inner } of anchors(html)) {
+    const href = raw.split('#')[0];
+    const title = tagText(inner);
     if (!href || !title || /^[a-z][a-z0-9+.-]*:/i.test(href)) continue;
     links.push({ title, href: path.posix.normalize(path.posix.join(path.posix.dirname(pageHref), href)) });
   }

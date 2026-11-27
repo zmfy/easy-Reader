@@ -269,3 +269,18 @@ describe('AI 填充取正文节选', () => {
     expect(ev.excerpt).not.toMatch(/&#x?[0-9a-f]+;/i);
   });
 });
+
+describe('目录 / 标题提取在异常输入下的耗时', () => {
+  // 大量不闭合的 <a、<h1：跨标签的惰性正则会退化成平方级，几 MB 的页面就能卡住事件循环
+  const n = 50000;
+  it.each([
+    ['extractNavToc', (m: typeof import('../../src/plugins/parser-epub')) => m.extractNavToc('<nav epub:type="toc">'.repeat(10) + '<a href="x.xhtml">'.repeat(n), 'nav.xhtml')],
+    ['extractIndexLinks', (m: typeof import('../../src/plugins/parser-epub')) => m.extractIndexLinks('<a href="x.xhtml">'.repeat(n), 'p.xhtml')],
+    ['firstHeading', (m: typeof import('../../src/plugins/parser-epub')) => m.firstHeading('<h1>'.repeat(n))],
+  ])('%s 线性时间返回', async (_name, run) => {
+    const mod = await import('../../src/plugins/parser-epub');
+    const t = Date.now();
+    run(mod);
+    expect(Date.now() - t).toBeLessThan(200);
+  });
+});
