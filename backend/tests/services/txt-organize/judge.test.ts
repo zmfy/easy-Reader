@@ -178,6 +178,20 @@ describe('judgeCandidates', () => {
     expect(res.notes).toEqual(['第 1 批有 1 个标题被 AI 改动了原文，已改回原标题']);
   });
 
+  it('数字后的单位须与原文一致：去掉「第」挪用卷号也不放过，只删「第」或附言的照收', async () => {
+    const orig = '第五卷名震一方第六百五十九章四叔祖';
+    const titles = ['五章四叔祖', '五 章 四叔祖', '卷五章四叔祖', '第六百五十九章四叔祖', '六百五十九章四叔祖', '第六百五十九章四叔祖'];
+    const cands = makeCands(titles.length);
+    cands.forEach(c => { c.text = orig; });
+    cands[5].text = `${orig}【求月票】`;
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', title: titles[id] })), notes: [],
+    }));
+    const res = await judgeCandidates(cands, book, db);
+    expect(res.labels.map(l => l.title)).toEqual([orig, orig, orig, '第六百五十九章四叔祖', '六百五十九章四叔祖', '第六百五十九章四叔祖']);
+    expect(res.notes).toEqual(['第 1 批有 3 个标题被 AI 改动了原文，已改回原标题']);
+  });
+
   it('一批两次缺 id → 对半拆分，两半都成功则整体成功，进度仍按原批数', async () => {
     let call = 0;
     const prompts: string[] = [];
