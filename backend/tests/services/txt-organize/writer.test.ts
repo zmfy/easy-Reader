@@ -204,6 +204,29 @@ describe('writeOrganizedEpub', () => {
     expect(bodies).toEqual([['第一章 开端', '正文']]);
   });
 
+  it('从标题前缀推断出的部 / 卷：EPUB 读回为只有标题的分组，层级嵌套，正文不变', async () => {
+    const text = [
+      '第一部第一卷《精绝古城》第一章 牛心山', '正文A',
+      '第二章 古墓', '正文B',
+      '第一部第二卷《龙岭迷窟》第三章 盗洞', '正文C', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      0: chap('第一章 牛心山'), 2: chap('第二章 古墓'), 4: chap('第三章 盗洞'),
+    });
+    const res = await writeOrganizedEpub({ newBookId: 'infer', sourcePath: f, structure, title: '书' });
+    const { chapters, bodies } = await readBack(res.filePath);
+    expect(chapters.map(c => [c.title, c.level ?? 0])).toEqual([
+      ['第一部', 0],
+      ['第一卷《精绝古城》', 1],
+      ['第一章 牛心山', 2],
+      ['第二章 古墓', 2],
+      ['第二卷《龙岭迷窟》', 1],
+      ['第三章 盗洞', 2],
+    ]);
+    expect(bodies).toEqual([[], [], ['正文A'], ['正文B'], [], ['正文C']]);
+    expect(res.chapterMap[0]).toEqual({ chapterIndex: 0, srcStart: 0, srcEnd: 0 });
+  });
+
   it('原文里的控制字符写 EPUB 时去掉，校验两边同一口径，整理成功', async () => {
     const { f, structure } = await prepare('第一章 开端\n正文\u0001甲\n\u0002\n乙\n', { 0: chap('第一章 开端') });
     const res = await writeOrganizedEpub({ newBookId: 'ctl', sourcePath: f, structure, title: '书' });

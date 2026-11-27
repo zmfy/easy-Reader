@@ -200,7 +200,8 @@ describe('duplicate 兜底', () => {
     const text = '第六卷通天灵宝第九百九十一章紫雾\n第九百九十一章紫雾\n正文。\n';
     const { structure } = await prepare(text, { 0: chap('第九百九十一章 紫雾'), 1: { type: 'duplicate' } });
     expect(structure.dropLines.has(1)).toBe(true);
-    expect(structure.notes).toEqual([]);
+    // 没有「保留为正文」的提醒；卷名前缀推断出一个分卷
+    expect(structure.notes).toEqual(['从章节标题前缀推断出 1 个分卷']);
   });
 
   it('全角数字、编号不同但同名：「第５章」与「第五章」相同；编号不同则保留', async () => {
@@ -260,5 +261,118 @@ describe('verifyVerbatim', () => {
     const strip = (t: string) => t.replace(/[\u0000-\u001F]/g, '');
     expect(await verifyVerbatim(f, structure, iter(['正文甲']))).toMatchObject({ ok: false });
     expect(await verifyVerbatim(f, structure, iter(['正文甲']), strip)).toEqual({ ok: true });
+  });
+});
+
+describe('按标题前缀推断分部 / 分卷', () => {
+  it('《凡人修仙传》写法：部分章节带「第五卷名震一方」等前缀 → 推断出分卷，无前缀的章留在当前卷', async () => {
+    const text = [
+      '第六百四十七章 旧章', '正文0',
+      '第五卷名震一方第六百四十八章至木灵婴', '正文1',
+      '第六百四十九章 无前缀', '正文2',
+      '第五卷名震一方第六百五十章 又带前缀', '正文3',
+      '第六卷通天灵宝第六百五十一章 新卷', '正文4',
+      '第六百五十二章 无前缀二', '正文5',
+      // 乱入的旧前缀：编号不比当前大，不建卷
+      '第五卷名震一方第六百五十三章 乱入', '正文6',
+      '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      0: chap('第六百四十七章 旧章'),
+      2: chap('第六百四十八章 至木灵婴'),
+      4: chap('第六百四十九章 无前缀'),
+      6: chap('第六百五十章 又带前缀'),
+      8: chap('第六百五十一章 新卷'),
+      10: chap('第六百五十二章 无前缀二'),
+      12: chap('第六百五十三章 乱入'),
+    });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第六百四十七章 旧章', false],
+      [0, '第五卷名震一方', true],
+      [1, '第六百四十八章 至木灵婴', false],
+      [1, '第六百四十九章 无前缀', false],
+      [1, '第六百五十章 又带前缀', false],
+      [0, '第六卷通天灵宝', true],
+      [1, '第六百五十一章 新卷', false],
+      [1, '第六百五十二章 无前缀二', false],
+      [1, '第六百五十三章 乱入', false],
+    ]);
+    // 推断出的卷：区间为空，落在触发它的章的开头
+    const vol5 = structure.sections[1];
+    expect(vol5.srcStart).toBe(structure.sections[2].srcStart);
+    expect(vol5.srcEnd).toBe(vol5.srcStart);
+    expect([...structure.dropLines].sort((a, b) => a - b)).toEqual([0, 2, 4, 6, 8, 10, 12]);
+    expect(structure.notes).toEqual(['从章节标题前缀推断出 2 个分卷']);
+    const chapters = await render(f, structure);
+    expect(chapters[1]).toBe('');
+    expect(chapters[2]).toBe('正文1');
+    expect(await verifyVerbatim(f, structure, iter(chapters))).toEqual({ ok: true });
+  });
+
+  it('单独的「第十卷魔界之战」出现两次 → 只有一个卷，第二行去掉（不当正文），记 note', async () => {
+    const text = [
+      '第十卷魔界之战', '第一千章 甲', '正文1',
+      '第十卷魔界之战', '第一千零一章 乙', '正文2',
+      '第十一卷真仙降世第一千零二章 丙', '正文3', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      0: { type: 'volume', title: '第十卷魔界之战' },
+      1: chap('第一千章 甲'),
+      3: { type: 'volume', title: '第十卷魔界之战' },
+      4: chap('第一千零一章 乙'),
+      6: chap('第一千零二章 丙'),
+    });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第十卷魔界之战', true],
+      [1, '第一千章 甲', false],
+      [1, '第一千零一章 乙', false],
+      [0, '第十一卷真仙降世', true],
+      [1, '第一千零二章 丙', false],
+    ]);
+    expect(structure.dropLines.has(3)).toBe(true);
+    expect(structure.notes).toEqual([
+      '第 4 行是重复的分卷标题，已去掉：第十卷魔界之战',
+      '从章节标题前缀推断出 1 个分卷',
+    ]);
+    const chapters = await render(f, structure);
+    expect(chapters[1]).toBe('正文1');
+    expect(await verifyVerbatim(f, structure, iter(chapters))).toEqual({ ok: true });
+  });
+
+  it('《鬼吹灯》写法：「第一部第一卷《精绝古城》」推断出第一部，卷名不重复部名', async () => {
+    const text = [
+      '第一部第一卷《精绝古城》', '第一章 牛心山', '正文A',
+      '第一部第二卷《龙岭迷窟》', '第二章 盗洞', '正文B',
+      '第二部', '第一卷 黄皮子坟', '第三章 林场', '正文C', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      0: { type: 'volume', title: '第一卷《精绝古城》' },
+      1: chap('第一章 牛心山'),
+      3: { type: 'volume', title: '第一部第二卷《龙岭迷窟》' },
+      4: chap('第二章 盗洞'),
+      6: { type: 'part', title: '第二部' },
+      7: { type: 'volume', title: '第一卷 黄皮子坟' },
+      8: chap('第三章 林场'),
+    });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第一部', true],
+      [1, '第一卷《精绝古城》', true],
+      [2, '第一章 牛心山', false],
+      [1, '第二卷《龙岭迷窟》', true],
+      [2, '第二章 盗洞', false],
+      [0, '第二部', true],
+      [1, '第一卷 黄皮子坟', true],
+      [2, '第三章 林场', false],
+    ]);
+    expect(structure.sections[0]).toMatchObject({ srcStart: 0, srcEnd: 0 });
+    expect(structure.notes).toEqual(['从章节标题前缀推断出 1 个分部']);
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('前缀允许空白和全角数字', async () => {
+    const { structure } = await prepare('第 ２ 部 第３卷 风起 第１章 甲\n正文\n', { 0: chap('第１章 甲') });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第 ２ 部'], [1, '第３卷 风起'], [2, '第１章 甲'],
+    ]);
   });
 });

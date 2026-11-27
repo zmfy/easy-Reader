@@ -62,6 +62,90 @@ export function isDuplicateOf(dupText: string, headingText: string): boolean {
   return namesMatch(d.name, h.name);
 }
 
+const NUM_CHARS = '[零〇一二两三四五六七八九十百千万\\d０-９]+';
+/** 行首「第X部」 */
+const PART_PREFIX_RE = new RegExp(`^第\\s*(${NUM_CHARS})\\s*部`);
+/** 行首（可带「第X部」）「第Y卷<卷名>」，后面紧跟「第Z章/节/回/集」 */
+const VOLUME_PREFIX_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部\\s*)?(第\\s*(${NUM_CHARS})\\s*卷.*?)\\s*第\\s*${NUM_CHARS}\\s*[章节回集]`);
+/** 行首（可带「第X部」）「第Y卷」 */
+const VOLUME_START_RE = new RegExp(`^(?:第\\s*${NUM_CHARS}\\s*部\\s*)?第\\s*(${NUM_CHARS})\\s*卷`);
+
+const numValue = (s: string) =>
+  chapterNumberValue(s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)));
+
+interface GroupEntry {
+  type: 'part' | 'volume' | 'chapter';
+  title: string;
+  /** 对应（推断出的部 / 卷：触发它的）候选行下标 */
+  idx: number;
+  synthetic: boolean;
+}
+
+/**
+ * 按原文标题行的「第X部」「第Y卷<卷名>」前缀补出 AI 没标出的部 / 卷（编号只增不减），
+ * 并去掉与当前卷编号相同的单独分卷标题行（重复的卷标题，加入 dropLines）。
+ * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷）
+ */
+function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<number>, notes: string[]): GroupEntry[] {
+  const entries: GroupEntry[] = [];
+  let curPart: number | null = null;
+  let curVolume: number | null = null;
+  let partCount = 0;
+  let volumeCount = 0;
+  const greater = (n: number, cur: number | null) => !Number.isNaN(n) && (cur === null || n > cur);
+  candidates.forEach((c, i) => {
+    const l = labels[i];
+    if (!isStructural(l)) return;
+    const text = c.text.trim();
+    const title = l.title || c.text;
+    if (l.type === 'part') {
+      const m = text.match(PART_PREFIX_RE);
+      const n = m ? numValue(m[1]) : NaN;
+      if (!Number.isNaN(n)) curPart = n;
+      curVolume = null;
+      entries.push({ type: 'part', title, idx: i, synthetic: false });
+      return;
+    }
+    const pm = text.match(PART_PREFIX_RE);
+    if (pm && greater(numValue(pm[1]), curPart)) {
+      curPart = numValue(pm[1]);
+      curVolume = null;
+      partCount++;
+      entries.push({ type: 'part', title: pm[0], idx: i, synthetic: true });
+    }
+    // 章标题前的卷名前缀（AI 标成卷但后面还带章号的行，也按章处理）
+    const vm = text.match(VOLUME_PREFIX_RE);
+    if (vm) {
+      const n = numValue(vm[2]);
+      if (greater(n, curVolume)) {
+        curVolume = n;
+        volumeCount++;
+        entries.push({ type: 'volume', title: vm[1].trim(), idx: i, synthetic: true });
+      }
+      entries.push({ type: 'chapter', title, idx: i, synthetic: false });
+      return;
+    }
+    if (l.type === 'volume') {
+      const m = text.match(VOLUME_START_RE);
+      const n = m ? numValue(m[1]) : NaN;
+      if (!Number.isNaN(n) && n === curVolume) {
+        // 与当前卷编号相同：重复的卷标题，不另建卷（标题行已在 dropLines 里）
+        notes.push(`第 ${c.lineNo + 1} 行是重复的分卷标题，已去掉：${c.text}`);
+        return;
+      }
+      if (!Number.isNaN(n)) curVolume = n;
+      // 卷名不重复部名
+      const stripped = title.replace(PART_PREFIX_RE, '').trim();
+      entries.push({ type: 'volume', title: stripped || title, idx: i, synthetic: false });
+      return;
+    }
+    entries.push({ type: 'chapter', title, idx: i, synthetic: false });
+  });
+  if (partCount > 0) notes.push(`从章节标题前缀推断出 ${partCount} 个分部`);
+  if (volumeCount > 0) notes.push(`从章节标题前缀推断出 ${volumeCount} 个分卷`);
+  return entries;
+}
+
 /** 由判定结果生成章节结构。labels 与 candidates 下标对齐 */
 export function buildStructure(candidates: Candidate[], labels: Label[], fileSize: number): OrgStructure {
   const dropLines = new Set<number>();
@@ -83,49 +167,55 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
     }
   }
 
-  const headIdx = candidates.map((_, i) => i).filter(i => isStructural(labels[i]));
-  const hasPart = headIdx.some(i => labels[i].type === 'part');
+  const entries = inferGroups(candidates, labels, dropLines, notes);
+  const headIdx = entries.filter(e => !e.synthetic).map(e => e.idx);
+  const hasPart = entries.some(e => e.type === 'part');
 
   const sections: OrgSection[] = [];
   // 当前所在的部 / 卷（卷不在部里、章不在卷里时取上一层可用的层级）
   let inPart = false;
   let volumeLevel: number | null = null;
-  headIdx.forEach((i, k) => {
-    const c = candidates[i];
-    const l = labels[i];
+  for (const e of entries) {
+    const c = candidates[e.idx];
+    const k = headIdx.indexOf(e.idx);
     const next = headIdx[k + 1];
     const srcEnd = next === undefined ? fileSize : candidates[next].byteStart;
 
     let level: number;
     let groupOnly = false;
-    if (l.type === 'part') {
+    if (e.type === 'part') {
       level = 0;
       inPart = true;
       volumeLevel = null;
-    } else if (l.type === 'volume') {
+    } else if (e.type === 'volume') {
       level = hasPart && inPart ? 1 : 0;
       volumeLevel = level;
     } else {
       level = volumeLevel !== null ? volumeLevel + 1 : inPart ? 1 : 0;
     }
-    if (l.type !== 'chapter') {
+    if (e.synthetic) {
+      // 从前缀推断出的部 / 卷：只有标题，区间为空，落在触发它的标题行开头
+      sections.push({ level: level as 0 | 1 | 2, title: e.title, groupOnly: true, srcStart: c.byteStart, srcEnd: c.byteStart });
+      continue;
+    }
+    if (e.type !== 'chapter') {
       // 标题行到下一个标题之间：非候选正文行（计在 bodyChars 里）或未被去掉的候选行都算正文
       const end = next === undefined ? candidates.length : next;
       let hasBody = false;
-      for (let j = i; j < end && !hasBody; j++) {
+      for (let j = e.idx; j < end && !hasBody; j++) {
         if (candidates[j].bodyChars > 0) hasBody = true;
-        else if (j > i && !dropLines.has(candidates[j].lineNo)) hasBody = true;
+        else if (j > e.idx && !dropLines.has(candidates[j].lineNo)) hasBody = true;
       }
       groupOnly = !hasBody;
     }
     sections.push({
       level: level as 0 | 1 | 2,
-      title: l.title || c.text,
+      title: e.title,
       groupOnly,
       srcStart: c.byteStart,
       srcEnd,
     });
-  });
+  }
 
   const firstStart = sections.length > 0 ? sections[0].srcStart : fileSize;
   const preface = firstStart > 0 ? { srcStart: 0, srcEnd: firstStart } : null;
