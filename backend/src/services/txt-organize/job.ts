@@ -156,7 +156,9 @@ export function kickOrganizeWorker(): void {
   if (workerRunning) return;
   workerRunning = true;
   setImmediate(() => {
-    void runWorker().finally(() => { workerRunning = false; });
+    runWorker()
+      .catch(err => { console.error('[txt-organize] worker 异常退出:', err); })
+      .finally(() => { workerRunning = false; });
   });
 }
 
@@ -173,17 +175,34 @@ async function runWorker(): Promise<void> {
     try {
       batchId = await runJob(job, db);
     } catch (err) {
-      // 整理版文件和封面副本都以任务 id 命名：失败时删掉（写出阶段之后失败也不会留下）
-      fs.rmSync(organizedFilePath(job.id), { force: true });
-      removeCoverFiles(job.id);
-      const message = (err as Error).message || String(err);
+      // 先把任务标成 failed，后面的清理 / 通知出错也不会让任务一直停在 running
+      const message = (err instanceof Error && err.message) || String(err);
       db.prepare("UPDATE txt_organize_jobs SET status = 'failed', error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(message, job.id);
-      notifyOrganizeResult({ book_title: title, error: message }, 'failed', db);
+      // 整理版文件和封面副本都以任务 id 命名：失败时删掉（写出阶段之后失败也不会留下）
+      try {
+        fs.rmSync(organizedFilePath(job.id), { force: true });
+      } catch (e) {
+        console.warn(`[txt-organize ${job.id}] 删除整理版文件失败:`, e instanceof Error ? e.message : e);
+      }
+      try {
+        removeCoverFiles(job.id);
+      } catch (e) {
+        console.warn(`[txt-organize ${job.id}] 删除封面副本失败:`, e instanceof Error ? e.message : e);
+      }
+      try {
+        notifyOrganizeResult({ book_title: title, error: message }, 'failed', db);
+      } catch (e) {
+        console.warn(`[txt-organize ${job.id}] 发送失败通知出错:`, e instanceof Error ? e.message : e);
+      }
       continue;
     }
     // 放在 try 外：入库已提交后发通知出错，不能把任务改成失败、删掉文件
-    notifyOrganizeResult({ book_title: title, batch_id: batchId }, 'review', db);
+    try {
+      notifyOrganizeResult({ book_title: title, batch_id: batchId }, 'review', db);
+    } catch (e) {
+      console.warn(`[txt-organize ${job.id}] 发送审核通知出错:`, e instanceof Error ? e.message : e);
+    }
   }
 }
 

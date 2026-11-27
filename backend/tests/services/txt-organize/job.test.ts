@@ -36,8 +36,34 @@ jest.mock('../../../src/services/txt-organize/writer', () => {
   const actual = jest.requireActual('../../../src/services/txt-organize/writer');
   return {
     ...actual,
-    writeOrganizedEpub: (...args: unknown[]) =>
-      mockWriteFail ? Promise.reject(new Error('整理结果与原文不一致')) : actual.writeOrganizedEpub(...args),
+    writeOrganizedEpub: (...args: unknown[]) => {
+      if (mockWriteFail) return Promise.reject(new Error('整理结果与原文不一致'));
+      return actual.writeOrganizedEpub(...args);
+    },
+  };
+});
+
+// 清理 / 通知抛错
+let mockCleanupThrow = false;
+let mockNotifyThrow = false;
+jest.mock('../../../src/utils/cover', () => {
+  const actual = jest.requireActual('../../../src/utils/cover');
+  return {
+    ...actual,
+    removeCoverFiles: (...args: unknown[]) => {
+      if (mockCleanupThrow) throw new Error('删除封面出错');
+      return actual.removeCoverFiles(...args);
+    },
+  };
+});
+jest.mock('../../../src/services/notices', () => {
+  const actual = jest.requireActual('../../../src/services/notices');
+  return {
+    ...actual,
+    notifyOrganizeResult: (...args: unknown[]) => {
+      if (mockNotifyThrow) throw new Error('通知出错');
+      return actual.notifyOrganizeResult(...args);
+    },
   };
 });
 
@@ -76,14 +102,17 @@ function addBook(id: string, opts: { format?: string; cover?: boolean } = {}): s
 
 const getJob = (id: string) => db.prepare('SELECT * FROM txt_organize_jobs WHERE id = ?').get(id) as Record<string, unknown> | undefined;
 
-async function waitFor(cond: () => boolean): Promise<void> {
+async function waitFor(cond: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 500 && !cond(); i++) await new Promise(r => setTimeout(r, 10));
-  expect(cond()).toBe(true);
+  if (!cond()) throw new Error(`等待超时：${what}`);
 }
 
 /** 等所有任务跑完（不留后台任务影响下一个用例） */
 const settle = () => waitFor(() =>
-  (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status IN ('pending', 'running')").get() as { n: number }).n === 0);
+  (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status IN ('pending', 'running')").get() as { n: number }).n === 0,
+'所有任务离开 pending / running');
+/** 等任务进入某状态 */
+const waitStatus = (id: string, status: string) => waitFor(() => getJob(id)?.status === status, `任务 ${id} 进入 ${status}`);
 
 beforeAll(() => {
   db.prepare("INSERT INTO users (id, username, password_hash, role) VALUES ('u-admin', 'boss', 'x', 'admin')").run();
@@ -95,6 +124,8 @@ beforeEach(() => {
   mockFail = false;
   mockChatCalls = 0;
   mockWriteFail = false;
+  mockCleanupThrow = false;
+  mockNotifyThrow = false;
   db.exec(`
     DELETE FROM txt_organize_jobs; DELETE FROM txt_organize_chapter_map; DELETE FROM scan_batch_items;
     DELETE FROM scan_batches; DELETE FROM notices; DELETE FROM books;
@@ -110,7 +141,7 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
   const created = job.requestOrganize('b1', READER);
   expect(created).toMatchObject({ book_id: 'b1', requested_by: 'u-reader', status: 'pending', notes: [] });
 
-  await waitFor(() => getJob(created.id)?.status === 'review');
+  await waitStatus(created.id, 'review');
   const done = job.getActiveOrganizeJob('b1')!;
   expect(done).toMatchObject({
     id: created.id, status: 'review', batches_done: 1, batches_total: 1, candidate_count: 4, error: null,
@@ -174,7 +205,7 @@ it('同一本书重复发起返回同一个任务', async () => {
   const first = job.requestOrganize('b2', READER);
   const again = job.requestOrganize('b2', ADMIN);
   expect(again.id).toBe(first.id);
-  await waitFor(() => getJob(first.id)?.status === 'review');
+  await waitStatus(first.id, 'review');
   // 待审核时也不新建
   expect(job.requestOrganize('b2', READER).id).toBe(first.id);
   expect(db.prepare('SELECT COUNT(*) AS n FROM txt_organize_jobs').get()).toEqual({ n: 1 });
@@ -224,7 +255,7 @@ it('AI 两次都失败 → 任务 failed，无新书、无批次、无文件', a
   addBook('b7');
   mockFail = true;
   const created = job.requestOrganize('b7', READER);
-  await waitFor(() => getJob(created.id)?.status === 'failed');
+  await waitStatus(created.id, 'failed');
   expect(mockChatCalls).toBe(2);
   const failed = job.getActiveOrganizeJob('b7')!;
   expect(failed.status).toBe('failed');
@@ -247,7 +278,7 @@ it('封面复制之后失败 → 删除复制的封面和文件', async () => {
   addBook('b11', { cover: true });
   mockWriteFail = true;
   const created = job.requestOrganize('b11', ADMIN);
-  await waitFor(() => getJob(created.id)?.status === 'failed');
+  await waitStatus(created.id, 'failed');
   expect(getJob(created.id)!.error).toBe('整理结果与原文不一致');
   expect(fs.readdirSync(COVERS).filter(f => f.startsWith(created.id))).toEqual([]);
   expect(fs.existsSync(path.join(COVERS, 'b11-x.png'))).toBe(true);
@@ -261,7 +292,8 @@ it('远程封面地址原样沿用；本地封面文件缺失时不带封面', a
   db.prepare("UPDATE books SET cover_url = '/covers/b13-missing.png' WHERE id = 'b13'").run();
   const j12 = job.requestOrganize('b12', ADMIN);
   const j13 = job.requestOrganize('b13', ADMIN);
-  await waitFor(() => getJob(j12.id)?.status === 'review' && getJob(j13.id)?.status === 'review');
+  await waitStatus(j12.id, 'review');
+  await waitStatus(j13.id, 'review');
   const coverOf = (id: string) => (db.prepare('SELECT cover_url FROM books WHERE organized_from = ?').get(id) as { cover_url: string | null }).cover_url;
   expect(coverOf('b12')).toBe('https://img1.doubanio.com/view/subject/l/public/s1.jpg');
   expect(coverOf('b13')).toBeNull();
@@ -271,7 +303,7 @@ it('原书在任务开始前被删除 → 任务 failed', async () => {
   addBook('b8');
   const created = job.requestOrganize('b8', ADMIN);
   db.prepare("DELETE FROM books WHERE id = 'b8'").run();
-  await waitFor(() => getJob(created.id)?.status === 'failed');
+  await waitStatus(created.id, 'failed');
   expect(getJob(created.id)!.error).toBe('原书已被删除');
   expect(db.prepare('SELECT COUNT(*) AS n FROM scan_batches').get()).toEqual({ n: 0 });
 });
@@ -302,7 +334,7 @@ it('服务重启：running 任务回到 pending 后重跑只生成一份整理�
   /* eslint-enable @typescript-eslint/no-var-requires */
   expect(getJob('j-restart')!.status).toBe('pending');
   job.kickOrganizeWorker();
-  await waitFor(() => getJob('j-restart')?.status === 'review');
+  await waitStatus('j-restart', 'review');
 
   expect(db.prepare("SELECT COUNT(*) AS n FROM books WHERE organized_from = 'b10'").get()).toEqual({ n: 1 });
   expect(db.prepare("SELECT COUNT(*) AS n FROM scan_batches WHERE task_id = 'j-restart'").get()).toEqual({ n: 1 });
@@ -310,3 +342,39 @@ it('服务重启：running 任务回到 pending 后重跑只生成一份整理�
   expect(fs.readdirSync(ORGANIZED)).toEqual(['j-restart.epub']);
   expect(fs.statSync(path.join(ORGANIZED, 'j-restart.epub')).size).toBeGreaterThan(100);
 });
+
+it('失败分支里清理和通知都抛错 → 任务仍为 failed，worker 继续处理下一个任务，可再次发起', async () => {
+  addBook('b14', { cover: true });
+  addBook('b15');
+  mockWriteFail = true;
+  mockCleanupThrow = true;
+  mockNotifyThrow = true;
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const j14 = job.requestOrganize('b14', ADMIN);
+  const j15 = job.requestOrganize('b15', ADMIN);
+  await waitStatus(j14.id, 'failed');
+  expect(getJob(j14.id)).toMatchObject({ error: '整理结果与原文不一致' });
+  expect(getJob(j14.id)!.finished_at).toBeTruthy();
+  await waitStatus(j15.id, 'failed');
+  expect(warn).toHaveBeenCalled();
+  warn.mockRestore();
+  // 不再是进行中的任务：再次发起会新建
+  mockWriteFail = false;
+  mockCleanupThrow = false;
+  mockNotifyThrow = false;
+  expect(job.requestOrganize('b14', ADMIN).id).not.toBe(j14.id);
+});
+
+it('成功后发通知抛错 → 任务仍为 review，后面排队的任务照常跑', async () => {
+  addBook('b16');
+  addBook('b17');
+  mockNotifyThrow = true;
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const j16 = job.requestOrganize('b16', ADMIN);
+  const j17 = job.requestOrganize('b17', ADMIN);
+  await waitStatus(j16.id, 'review');
+  await waitStatus(j17.id, 'review');
+  expect(db.prepare("SELECT COUNT(*) AS n FROM books WHERE organized_from IN ('b16', 'b17')").get()).toEqual({ n: 2 });
+  warn.mockRestore();
+});
+
