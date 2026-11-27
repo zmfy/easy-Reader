@@ -45,6 +45,27 @@ export function imageMimeByExt(name: string): string | undefined {
 
 interface EpubChapter { index: number; title: string; id: string; href: string; level?: number; groupTitle?: string }
 
+/** XML 元素名去掉命名空间前缀：opf:item → item（同 xml2js 的 processors.stripPrefix） */
+const stripPrefix = (name: string): string => name.replace(/^.*:/, '');
+
+/**
+ * epub4j（so-novel 等工具）写出的 content.opf 全部元素带 opf: 前缀（<opf:manifest><opf:item …/>），
+ * epub2 只去掉最外层元素的前缀，manifest / spine 里的条目一个都读不到，整本书变成「没有可读的章节」。
+ * 解析 XML 时统一去掉元素名前缀；没有前缀的普通 EPUB 不受影响。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let prefixTolerantEPub: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getEPubClass(): any {
+  if (!prefixTolerantEPub) {
+    // epub2 v3: class is at require('epub2').EPub；静态 xml2jsOptions 由 _getStatic() 按实际类读取
+    const { EPub } = require('epub2');
+    prefixTolerantEPub = class extends EPub {};
+    prefixTolerantEPub.xml2jsOptions = { ...EPub.xml2jsOptions, tagNameProcessors: [stripPrefix] };
+  }
+  return prefixTolerantEPub;
+}
+
 /** 目录页里指向书内页面的链接（相对路径按页面位置解析，去掉锚点；外链忽略） */
 export function extractIndexLinks(html: string, pageHref: string): Array<{ title: string; href: string }> {
   const links: Array<{ title: string; href: string }> = [];
@@ -109,8 +130,7 @@ export class EpubParser implements ReaderPlugin {
   private manifestByHref = new Map<string, { id: string; mediaType: string }>();
 
   async load(filePath: string): Promise<void> {
-    // epub2 v3: class is at require('epub2').EPub
-    const { EPub } = require('epub2');
+    const EPub = getEPubClass();
     this.repaired = false;
     try {
       this.epub = await EPub.createAsync(filePath);
