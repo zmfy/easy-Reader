@@ -35,7 +35,7 @@
         <div class="nav-inner">
           <button class="nav-btn" title="返回" @click="goBack"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
           <span class="nav-title">{{ bookTitle }}</span>
-          <span class="nav-progress">
+          <span v-if="!reader.chaptersLoading.value" class="nav-progress">
             {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
           </span>
         </div>
@@ -93,6 +93,13 @@
         <div v-if="reader.loadError.value" class="reader-load-error">
           <IconAlertTriangle :size="28" :stroke-width="1.75" />
           <p>{{ reader.loadError.value }}</p>
+        </div>
+
+        <!-- ── 打开时读取目录：大文件第一次打开要整本扫一遍，显示正在读取，免得以为没反应 ── -->
+        <div v-else-if="reader.chaptersLoading.value" class="reader-opening" role="status">
+          <el-icon class="is-loading"><IconLoader2 /></el-icon>
+          <p>正在读取文件…</p>
+          <p v-if="openingSlow" class="reader-opening-hint">文件较大，第一次打开需要多等一会儿</p>
         </div>
 
         <!-- ── 章节模式 ── -->
@@ -506,6 +513,15 @@ function goBack() {
 
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
+// 读取目录超过 3 秒：补一句说明，告诉读者是文件大、不是卡住了
+const openingSlow = ref(false)
+let openingSlowTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => reader.chaptersLoading.value, on => {
+  clearTimeout(openingSlowTimer)
+  openingSlow.value = false
+  if (on) openingSlowTimer = setTimeout(() => { openingSlow.value = true }, 3000)
+}, { immediate: true })
+onUnmounted(() => clearTimeout(openingSlowTimer))
 const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 // 墨水屏：纯黑白、关闭动画，点屏幕两侧瞬间翻页。设置 / 目录抽屉 teleport 到 body，所以也给 <html> 加 class
@@ -2295,6 +2311,19 @@ onUnmounted(() => {
 .progress-info { font-size: 13px; color: var(--text-2); }
 
 .content-loading { padding: 20px 0; }
+.reader-opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 120px 24px;
+  color: var(--reader-text-secondary);
+  font-size: 15px;
+  text-align: center;
+}
+.reader-opening .el-icon { font-size: 28px; color: var(--accent); }
+.reader-opening p { margin: 0; }
+.reader-opening-hint { font-size: 13px; opacity: 0.8; }
 .reader-load-error {
   display: flex;
   flex-direction: column;

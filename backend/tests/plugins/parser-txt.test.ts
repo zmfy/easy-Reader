@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TxtParser, looksLikeSentence } from '../../src/plugins/parser-txt';
+import { TxtParser, looksLikeSentence, chapterNumberValue, stripTitlePromo } from '../../src/plugins/parser-txt';
 
 async function chaptersOf(text: string) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
@@ -143,5 +143,69 @@ describe('TxtParser volume levels', () => {
 
   it('adds no level when the book has no volume headings', async () => {
     expect(await chaptersWithLevel('第一章 开端\n正文。\n第二章 发展\n正文。\n')).toEqual([['第一章 开端', undefined], ['第二章 发展', undefined]]);
+  });
+});
+
+describe('TxtParser 网文抓取的大文件（《校花的贴身高手》《剑来》的写法）', () => {
+  async function load(text: string, encoding: BufferEncoding = 'utf-8') {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
+    fs.writeFileSync(file, Buffer.from(text, encoding));
+    const p = new TxtParser();
+    await p.load(file);
+    return p;
+  }
+  const text = async (p: TxtParser, i: number) => (await p.getChapterContent(i)).replace(/<\/?p>/g, '').split('\n');
+
+  it('chapterNumberValue：阿拉伯数字（含补零）和中文数字按数值比较', () => {
+    expect(chapterNumberValue('0005')).toBe(5);
+    expect(chapterNumberValue('五')).toBe(5);
+    expect(chapterNumberValue('十二')).toBe(12);
+    expect(chapterNumberValue('一千零五')).toBe(1005);
+    expect(chapterNumberValue('两千一百三十')).toBe(2130);
+    expect(chapterNumberValue('一万二千')).toBe(12000);
+  });
+
+  it('「第5章 …」后紧跟「第0005章…」：并为一章，保留第一个标题，正文里不再多一行标题', async () => {
+    const p = await load('第5章 怎么像找对象？\r\n\r\n第0005章怎么像找对象？？\r\n    正文五。\r\n第6章 这土包子是谁？\r\n\r\n第0006章挡箭牌【有推荐票的，请不吝投几张，谢谢！】\r\n    正文六。\r\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第5章 怎么像找对象？', '第6章 这土包子是谁？']);
+    expect(await text(p, 0)).toEqual(['第5章 怎么像找对象？', '正文五。']);
+    expect(await text(p, 1)).toEqual(['第6章 这土包子是谁？', '正文六。']);
+  });
+
+  it('同一标题一字不差写两遍：正文里保留一份', async () => {
+    const p = await load('第53章 请神\n第53章 请神\n正文。\n第54章 下一章\n正文。\n');
+    expect(await text(p, 0)).toEqual(['第53章 请神', '正文。']);
+  });
+
+  it('标题末尾的求票附言：照样识别为标题，目录和正文首行都去掉附言', async () => {
+    const p = await load('第0118章 医术高人【求月票！！！月票啊！读者们，你们的月票可以给我么？？】\n正文一。\n第0119章挡箭牌【有推荐票的，请不吝投几张，谢谢！】\n正文二。\n第120章 山洞奇遇（上）\n正文三。\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第0118章 医术高人', '第0119章挡箭牌', '第120章 山洞奇遇（上）']);
+    expect(await text(p, 1)).toEqual(['第0119章挡箭牌', '正文二。']);
+  });
+
+  it('stripTitlePromo 只去求票类附言，「（上）」这类正常括号保留', () => {
+    expect(stripTitlePromo('第1768章 迷蜃幻境（第一更）')).toBe('第1768章 迷蜃幻境');
+    expect(stripTitlePromo('第12章 山洞奇遇（上）')).toBe('第12章 山洞奇遇（上）');
+    expect(stripTitlePromo('第3章 【序】')).toBe('第3章 【序】');
+  });
+
+  it('卷名后跟一行分隔线：仍识别为分卷', async () => {
+    const p = await load('------------\n\n第一卷 神奇的任务\n\n------------\n\n第1章 神奇的任务\n正文。\n第2章 骗局\n正文。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([['第一卷 神奇的任务', 0], ['第1章 神奇的任务', 1], ['第2章 骗局', 1]]);
+  });
+
+  it('章节标题带着卷名（「第一卷 笼中雀 第一章 惊蛰」）：目录和正文首行去掉卷名', async () => {
+    const p = await load('第一卷 笼中雀\n\n第一卷 笼中雀 第一章 惊蛰\n正文一。\n第一卷 笼中雀 第二章 开门\n正文二。\n第二卷 山水郎\n第二卷 山水郎 第一章 走\n正文三。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([
+      ['第一卷 笼中雀', 0], ['第一章 惊蛰', 1], ['第二章 开门', 1], ['第二卷 山水郎', 0], ['第一章 走', 1],
+    ]);
+    expect(await text(p, 1)).toEqual(['第一章 惊蛰', '正文一。']);
+  });
+
+  it('全角空格 / 不换行空格缩进的标题照样识别；超长的「第…」行算正文', async () => {
+    const long = '第一天' + '很长的正文'.repeat(100);
+    const p = await load(`\u3000\u3000第一章 开端\n${long}\n\u00a0第二章 发展\n正文。\n`);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第一章 开端', '第二章 发展']);
+    expect((await text(p, 0))[1]).toBe(long);
   });
 });

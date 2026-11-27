@@ -15,6 +15,8 @@ export function useReader(bookId: string) {
   const bookmarks = ref<Bookmark[]>([])
   const progress = ref<ReadingProgress>({ chapterIndex: 0, scrollTop: 0 })
   const loading = ref(false)
+  /** 正在读取目录（打开书时）：大文件第一次打开要整本扫一遍，可能要几秒 */
+  const chaptersLoading = ref(true)
   const bookFormat = ref('')
   const pdfUsePlugin = ref(false)
   /** 目录或章节读取失败的原因（优先用后端返回的 message，如「文件不完整或已损坏：…」） */
@@ -24,6 +26,7 @@ export function useReader(bookId: string) {
 
   /** 返回 false 表示目录读取失败，原因见 loadError */
   async function loadChapters(): Promise<boolean> {
+    chaptersLoading.value = true
     try {
       const resp = await readerApi.getChapters(bookId)
       const data = resp.data.data
@@ -34,6 +37,8 @@ export function useReader(bookId: string) {
     } catch (err) {
       loadError.value = errorMessage(err, '无法读取章节')
       return false
+    } finally {
+      chaptersLoading.value = false
     }
   }
 
@@ -114,7 +119,7 @@ export function useReader(bookId: string) {
 
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
-    loading, currentChapter, bookFormat, pdfUsePlugin, loadError,
+    loading, chaptersLoading, currentChapter, bookFormat, pdfUsePlugin, loadError,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
   }

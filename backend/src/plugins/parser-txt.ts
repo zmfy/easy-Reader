@@ -4,6 +4,8 @@ import iconv from 'iconv-lite';
 import { ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
 
+type TocEntry = { index: number; title: string; level?: number; groupTitle?: string };
+
 interface ChapterMeta {
   index: number;
   title: string;
@@ -13,6 +15,8 @@ interface ChapterMeta {
   hasBody?: boolean;
   /** 从本章开始的「第 X 部 名称」分组（这类行不算章节，只用于目录分组） */
   partTitle?: string;
+  /** 并入本章的同编号标题行（如「第5章 …」后面的「第0005章…」），读正文时去掉 */
+  mergedHeadings?: string[];
 }
 
 export function detectEncoding(filePath: string): string {
@@ -105,6 +109,52 @@ export function isPreambleAdLine(line: string): boolean {
 
 const compact = (s: string) => s.replace(/\s+/g, '');
 
+/** 标题末尾作者求票等附言：「第0118章 医术高人【求月票！！…】」「第0006章挡箭牌【有推荐票的，请不吝投几张，谢谢！】」 */
+const TITLE_PROMO_RE = /\s*[【\[〔（(][^】\]〕）)]*(?:票|加更|[一二三四五六七八九十\d]更|收藏|订阅|打赏|推荐|码字|存稿)[^】\]〕）)]*[】\]〕）)]\s*$/;
+
+/** 去掉标题末尾的求票附言（去掉后为空时保留原文）；只用于判断标题和目录显示，章节内容不变 */
+export function stripTitlePromo(title: string): string {
+  return title.replace(TITLE_PROMO_RE, '').trim() || title;
+}
+
+/** 标题最多 60 字（UTF-8 一字最多 4 字节）再加缩进；字节数超过这个值的行不可能是标题，不解码，直接算正文 */
+const MAX_HEADING_BYTES = 400;
+/**
+ * 可能是标题 / 分组 / 分隔线的行首（headingKey、各标题正则能识别的写法都以这些开头）。
+ * 大文件加载时绝大多数正文行在这里就被排除，不再跑后面较慢的正则
+ */
+const HEADING_START_RE = /^(?:正文|第|[【［\[〔（(]|chapter|楔子|序|引子|前言|尾声|后记|终章|番外)/i;
+const SEPARATOR_START_RE = /^[=＝\-－_*＊~～#＃─━·]/;
+
+/**
+ * UTF-8 行首第一个字符的字节（编成一个整数），只包含 HEADING_START_RE / SEPARATOR_START_RE 可能匹配的字符。
+ * UTF-8 文件（扫描时 GBK 等都会被改写成 UTF-8）可以不解码就排除绝大多数正文行
+ */
+const UTF8_CANDIDATE_STARTS = new Set(
+  [...'正第【［[〔（(cC楔序引前尾后终番=＝-－_*＊~～#＃─━·'].map(ch => utf8CharKey(Buffer.from(ch, 'utf8'), 0)),
+);
+
+/** buf[i] 开始的一个 UTF-8 字符的字节编成整数（最多 3 字节，够区分上面的字符） */
+function utf8CharKey(buf: Buffer, i: number): number {
+  const b = buf[i];
+  if (b < 0x80) return b;
+  if (b < 0xe0) return (b << 8) | buf[i + 1];
+  return (b << 16) | (buf[i + 1] << 8) | buf[i + 2];
+}
+
+/** 跳过 UTF-8 行首空白（空格、制表符、CR、不换行空格、全角空格、BOM），返回第一个非空白字节的位置 */
+function skipUtf8Space(buf: Buffer, i: number, end: number): number {
+  while (i < end) {
+    const b = buf[i];
+    if (b === 0x20 || b === 0x09 || b === 0x0d) i++;
+    else if (b === 0xc2 && buf[i + 1] === 0xa0) i += 2;
+    else if (b === 0xe3 && buf[i + 1] === 0x80 && buf[i + 2] === 0x80) i += 3;
+    else if (b === 0xef && buf[i + 1] === 0xbb && buf[i + 2] === 0xbf) i += 3;
+    else break;
+  }
+  return i;
+}
+
 /**
  * 标题里全部的「第 X 卷 / 章 / 回」编号，如「第二回史大郎…」→「第二回」、
  * 「第十卷魔界之战第两千一百三十章斗兽」→「第十卷第两千一百三十章」
@@ -125,10 +175,35 @@ const ENGLISH_CHAPTER_RE = /^chapter\s+(\d+|[ivxlcdm]+|one|two|three|four|five|s
 /** 没有编号的特殊章节：楔子、序章、番外、后记等（整行就是它，或后面跟分隔符和标题） */
 const SPECIAL_CHAPTER_RE = /^(楔子|序章|序言|序幕|引子|前言|尾声|后记|终章|番外[篇\d一二三四五六七八九十]*)(?=$|[\s　:：·．.、\-—])/;
 
-/** 标题的编号部分（用于合并重复标题）：第X章 / Chapter N / 楔子等关键字 */
+const CN_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+const CN_UNITS: Record<string, number> = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
+
+/** 编号转成数值：「0005」「５」「五」「十二」「两千一百三十」 */
+export function chapterNumberValue(num: string): number {
+  if (/^\d+$/.test(num)) return parseInt(num, 10);
+  let total = 0;
+  let section = 0;
+  let digit = 0;
+  for (const ch of num) {
+    if (ch in CN_DIGITS) { digit = CN_DIGITS[ch]; continue; }
+    const unit = CN_UNITS[ch];
+    if (!unit) return NaN;
+    if (unit === 10000) { total += (section + digit) * unit; section = 0; }
+    else section += (digit || (unit === 10 ? 1 : 0)) * unit;
+    digit = 0;
+  }
+  return total + section + digit;
+}
+
+/** 标题的编号部分（用于合并重复标题）：第X章 / Chapter N / 楔子等关键字；编号按数值比较（「第5章」「第0005章」「第五章」相同） */
 const headingNumber = (title: string) => {
   const key = headingKey(title);
-  return (key.match(/第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回]/g) ?? []).join('')
+  return (key.match(/第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回]/g) ?? [])
+    .map(m => {
+      const n = chapterNumberValue(m.slice(1, -1));
+      return Number.isNaN(n) ? m : `第${n}${m.slice(-1)}`;
+    })
+    .join('')
     || key.match(ENGLISH_CHAPTER_RE)?.[0].toLowerCase().replace(/\s+/g, ' ')
     || key.match(SPECIAL_CHAPTER_RE)?.[1]
     || '';
@@ -155,6 +230,19 @@ export function dropRepeatedTitle(paragraphs: string[], title: string): string[]
   }
   if (consumed <= 1 && compact(paragraphs[0] ?? '') === t) return paragraphs;
   return consumed > 0 ? [title, ...paragraphs.slice(consumed)] : paragraphs;
+}
+
+/** 去掉章节开头并入本章的同编号标题行（每个只去一次，只看开头几段） */
+function dropMergedHeadings(paragraphs: string[], merged: string[] | undefined): string[] {
+  if (!merged?.length) return paragraphs;
+  const rest = merged.map(compact);
+  const head = paragraphs.slice(0, merged.length + 3).filter(p => {
+    const i = rest.indexOf(compact(p));
+    if (i === -1) return true;
+    rest.splice(i, 1);
+    return false;
+  });
+  return [...head, ...paragraphs.slice(merged.length + 3)];
 }
 
 export class TxtParser implements ReaderPlugin {
@@ -197,6 +285,7 @@ export class TxtParser implements ReaderPlugin {
       }
     }
 
+    this.toc = null;
     await this.scanChapters();
   }
 
@@ -225,21 +314,48 @@ export class TxtParser implements ReaderPlugin {
       const partPattern = /^第[零〇一二两三四五六七八九十百千万\d]+部\s+\S/;
       let pendingPart: string | null = null;
 
-      const checkLine = (lineBuffer: Buffer, absoluteStart: number) => {
+      // data[start, end) 是一行（不含换行符），absoluteStart 是它在文件里的字节位置。
+      // 大文件加载主要花在逐行处理上：不为每行切 Buffer，长行不解码，非标题行首直接算正文
+      const checkLine = (data: Buffer, start: number, end: number, absoluteStart: number) => {
         if (absoluteStart - segmentStarts[segmentStarts.length - 1] >= SEGMENT) {
           segmentStarts.push(absoluteStart);
         }
-        const lineText = iconv.decode(lineBuffer, encoding).trim();
-        const key = headingKey(lineText);
-        const isHeading = (chapterPattern.test(key) || ENGLISH_CHAPTER_RE.test(key) || SPECIAL_CHAPTER_RE.test(key))
-          && lineText.length < 60 && !looksLikeSentence(lineText);
+        if (end - start > MAX_HEADING_BYTES) {
+          sawBody = true;
+          return;
+        }
+        if (encoding === 'utf8') {
+          const first = skipUtf8Space(data, start, end);
+          if (first >= end) return;   // 空行
+          if (!UTF8_CANDIDATE_STARTS.has(utf8CharKey(data, first))) {
+            sawBody = true;
+            return;
+          }
+        }
+        const lineText = (encoding === 'utf8' ? data.toString('utf8', start, end) : iconv.decode(data.subarray(start, end), encoding)).trim();
+        if (!lineText) return;
+        if (!HEADING_START_RE.test(lineText)) {
+          // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
+          if (!(SEPARATOR_START_RE.test(lineText) && SEPARATOR_LINE_RE.test(compact(lineText)))) sawBody = true;
+          return;
+        }
+        // 判断是不是标题时不看末尾的求票附言（附言里的逗号、感叹号会让标题像正文句子）
+        const headingText = stripTitlePromo(lineText);
+        const key = headingText.length < 60 ? headingKey(headingText) : '';
+        const isHeading = key !== '' && (chapterPattern.test(key) || ENGLISH_CHAPTER_RE.test(key) || SPECIAL_CHAPTER_RE.test(key))
+          && !looksLikeSentence(headingText);
         if (isHeading) {
           const prev = chapters[chapters.length - 1];
           if (prev && !sawBody && headingNumber(prev.title) === headingNumber(lineText)) {
-            // 上一个标题之后没有正文，又是同一编号的标题（网页抓取的书常把每回标题写两遍：
-            // 「第二回史大郎…」+「第二回」「史大郎…」），并为一章，保留较完整的标题。
+            // 上一个标题之后没有正文，又是同一编号的标题，并为一章。网页抓取的书常把每章标题写两遍：
+            // 「第二回史大郎…」+「第二回」「史大郎…」；「第5章 怎么像找对象？」+「第0005章怎么像找对象？？」。
+            // 保留第一个标题；第一个只有编号（「第二回」）时换成后面较完整的。
             // 编号不同（如「第七卷 倒吊人」后接「第一章 欢迎」）仍各自成章
-            if (lineText.length > prev.title.length) prev.title = lineText;
+            const prevHasName = compact(headingKey(stripTitlePromo(prev.title)))
+              .replace(/^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷集回])+/, '').length > 0;
+            if (!prevHasName && lineText.length > prev.title.length) prev.title = lineText;
+            // 与标题一字不差的重复行由 dropRepeatedTitle 处理，不再记入（否则标题会被去掉两次）
+            else if (compact(lineText) !== compact(prev.title)) (prev.mergedHeadings ??= []).push(lineText);
             return;
           }
           if (prev) {
@@ -258,7 +374,8 @@ export class TxtParser implements ReaderPlugin {
         } else if (partPattern.test(key) && lineText.length < 30 && !looksLikeSentence(lineText)) {
           // 「第一部 小丑」：记为下一章开始的分组，不拆章节（章节序号、阅读进度不变）
           pendingPart = lineText;
-        } else if (lineText) {
+        } else if (!SEPARATOR_LINE_RE.test(compact(lineText))) {
+          // 「------------」这类分隔线不算正文（卷名后面常跟一行分隔线）
           sawBody = true;
         }
       };
@@ -290,11 +407,11 @@ export class TxtParser implements ReaderPlugin {
         let searchFrom = 0;
         let nlPos: number;
         while ((nlPos = data.indexOf(0x0a, searchFrom)) !== -1) {
-          checkLine(data.slice(searchFrom, nlPos), searchFrom);
+          checkLine(data, searchFrom, nlPos, searchFrom);
           searchFrom = nlPos + 1;
         }
         if (searchFrom < data.length) {
-          checkLine(data.slice(searchFrom), searchFrom);
+          checkLine(data, searchFrom, data.length, searchFrom);
         }
         finalize();
         return;
@@ -310,8 +427,7 @@ export class TxtParser implements ReaderPlugin {
         let nlPos: number;
 
         while ((nlPos = data.indexOf(0x0a, searchFrom)) !== -1) {
-          const lineBytes = data.slice(searchFrom, nlPos);
-          checkLine(lineBytes, processedBytes + searchFrom);
+          checkLine(data, searchFrom, nlPos, processedBytes + searchFrom);
           searchFrom = nlPos + 1;
         }
 
@@ -321,7 +437,7 @@ export class TxtParser implements ReaderPlugin {
 
       stream.on('end', () => {
         if (remainder.length > 0) {
-          checkLine(remainder, processedBytes);
+          checkLine(remainder, 0, remainder.length, processedBytes);
         }
         finalize();
       });
@@ -330,26 +446,43 @@ export class TxtParser implements ReaderPlugin {
     });
   }
 
-  async getChapters(): Promise<Array<{ index: number; title: string; level?: number; groupTitle?: string }>> {
+  /** 目录（getChapters 的结果）缓存；load 时清空 */
+  private toc: TocEntry[] | null = null;
+
+  async getChapters(): Promise<TocEntry[]> {
+    if (!this.toc) this.toc = this.buildToc();
+    return this.toc;
+  }
+
+  private buildToc(): TocEntry[] {
     // 分卷标题：「第 X 卷」开头、不含章 / 回编号、且只有标题没有正文
     const isVolume = (c: ChapterMeta) =>
       /^第[零〇一二两三四五六七八九十百千万\d]+卷/.test(headingKey(c.title)) && !/[章节回集]/.test(headingNumber(c.title)) && !c.hasBody;
+    // 目录显示的标题：去掉末尾的求票附言
+    const display = (c: ChapterMeta) => stripTitlePromo(c.title);
     if (!this.chapters.some(c => c.partTitle || isVolume(c))) {
-      return this.chapters.map(c => ({ index: c.index, title: c.title }));
+      return this.chapters.map(c => ({ index: c.index, title: display(c) }));
     }
     // 目录分两层：分卷标题 / 「第 X 部」分组在 0 层，其下章节在 1 层（第一个分组之前的章节仍为 0 层）。
     // groupTitle：从这一章开始的「第 X 部」分组标题，由前端显示为不可跳转的分组行
     let inGroup = false;
+    let volumeTitle = '';
     return this.chapters.map(c => {
       if (isVolume(c)) {
         inGroup = true;
-        return { index: c.index, title: c.title, level: 0 };
+        volumeTitle = display(c);
+        return { index: c.index, title: volumeTitle, level: 0 };
+      }
+      // 分卷下的章节标题带着卷名（「第一卷 笼中雀 第一章 惊蛰」）：卷名已在上一层显示，这里去掉
+      let title = display(c);
+      if (volumeTitle && title.startsWith(volumeTitle) && title.slice(volumeTitle.length).trim()) {
+        title = title.slice(volumeTitle.length).trim();
       }
       if (c.partTitle) {
         inGroup = true;
-        return { index: c.index, title: c.title, level: 1, groupTitle: c.partTitle };
+        return { index: c.index, title, level: 1, groupTitle: c.partTitle };
       }
-      return { index: c.index, title: c.title, level: inGroup ? 1 : 0 };
+      return { index: c.index, title, level: inGroup ? 1 : 0 };
     });
   }
 
@@ -360,7 +493,14 @@ export class TxtParser implements ReaderPlugin {
     if (this.chapters.length === 0) return '';
     const chapter = this.chapters[index];
     if (!chapter) throw new Error(`章节 ${index} 不存在`);
-    const body = this.toHtml(dropRepeatedTitle(this.paragraphs(chapter.startByte, chapter.endByte), chapter.title));
+    const paragraphs = dropMergedHeadings(
+      dropRepeatedTitle(this.paragraphs(chapter.startByte, chapter.endByte), chapter.title), chapter.mergedHeadings);
+    // 目录标题去掉了求票附言 / 卷名：正文开头的标题行换成同样的写法，阅读器才能认出它是标题（与标题相同的首段会被隐藏）
+    const shown = (await this.getChapters())[index]?.title;
+    if (shown && shown !== chapter.title && paragraphs.length > 0 && compact(paragraphs[0]) === compact(chapter.title)) {
+      paragraphs[0] = shown;
+    }
+    const body = this.toHtml(paragraphs);
     // 第 0 章带上第一个标题之前的书名 / 简介 / 前言（去掉推广行）
     if (index === 0 && this.leadingTextEnd > 0) {
       const preamble = this.paragraphs(0, this.leadingTextEnd).filter(p => !isPreambleAdLine(p));
