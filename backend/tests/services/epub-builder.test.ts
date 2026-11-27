@@ -132,9 +132,18 @@ describe('writeEpub（逐章写出）', () => {
 
   it('写几千章难压缩的正文时事件循环不被长时间卡住', async () => {
     const out = path.join(TMP, 'big.epub');
-    let last = Date.now();
+    // 量的是两次定时器之间主线程自己用掉的 CPU 时间：代码卡住事件循环时它约等于间隔；
+    // 只用墙钟间隔的话，全量测试并行、进程分不到 CPU 时也会有 1 秒多的间隔（期间 CPU 只有几毫秒），会误报。
+    // process.threadCpuUsage 只算当前线程（Node 22.23 实测可用；@types/node 20 还没有声明），不含线程池里的压缩
+    const threadCpu = (prev?: NodeJS.CpuUsage): NodeJS.CpuUsage =>
+      (process as unknown as { threadCpuUsage(p?: NodeJS.CpuUsage): NodeJS.CpuUsage }).threadCpuUsage(prev);
+    let last = threadCpu();
     let maxGap = 0;
-    const timer = setInterval(() => { const now = Date.now(); maxGap = Math.max(maxGap, now - last); last = now; }, 5);
+    const timer = setInterval(() => {
+      const d = threadCpu(last);
+      maxGap = Math.max(maxGap, (d.user + d.system) / 1000);
+      last = threadCpu();
+    }, 5);
     await writeEpub({
       id: 'big', title: '大书',
       toc: Array.from({ length: 4000 }, (_v, i) => ({ title: `第${i + 1}章` })),

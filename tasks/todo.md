@@ -644,5 +644,11 @@
 - [x] 测试偶发失败：pdf-compat / reader-damaged / book-health「Test environment has been torn down」
   - 根因：parser-pdf 用 new Function 包 import()；jest 同一 worker 依次跑多个测试文件时，V8 缓存同一段 Function 源码（第 2 次编译才入缓存），第 3 个及之后加载 parser-pdf 的文件拿到的函数把 import() 交给已结束的测试文件 → PDF 一字取不出。清 jest 缓存后 worker 分配变化，3/3 复现；最小复现：3 个只含同一句 new Function 的测试文件
   - 修复：importEsm 抽到 src/utils/import-esm.ts（生产不变），jest moduleNameMapper 换成 tests/helpers/import-esm.js（原生 import()）。修后冷缓存全量 3/3 无 PDF 失败，生产构建 node 实测读 PDF 正常
-  - 仍有两个已知偶发（未处理）：epub-builder 事件循环计时（负载高时）、encoding-atomic 与 encoding 共用样本目录
+- [x] 测试偶发：encoding-atomic「does not touch UTF-8 files」得到 garbled
+  - 根因：encoding.test.ts 就地改写仓库样本、每个用例后 writeFileSync 全部写回；encoding-atomic 并行复制样本时读到写了一半的 utf8-normal.txt（截断在多字节字符中间）
+  - 修复：encoding.test.ts 每个用例前把样本复制到临时目录，只改副本；仓库样本只读
+- [x] 测试偶发：epub-builder「事件循环不被长时间卡住」maxGap 1221〜1551ms
+  - 根因：用墙钟间隔衡量；实测失败时 1.4 秒间隔里进程 CPU 只有 5ms → 全量并行时分不到 CPU，不是代码卡住（ZipWriter 全异步）
+  - 修复：改量两次定时器间主线程自己的 CPU 时间（process.threadCpuUsage）；注入 500ms 忙等验证仍能抓到（测得 508ms）
+  - 验证：全量 6 次（3 次清缓存）全部 1053/1053
   - [ ] 用户在本地容器里检查

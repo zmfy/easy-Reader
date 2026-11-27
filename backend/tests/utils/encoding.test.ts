@@ -1,22 +1,19 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { detectAndFixEncoding, _internals } from '../../src/utils/encoding';
 
-const FIX_DIR = path.join(__dirname, '__fixtures__/encoding');
+const SRC_DIR = path.join(__dirname, '__fixtures__/encoding');
+// detectAndFixEncoding 会改写文件：在临时目录的副本上测，不改仓库里的样本
+// （以前就地改写再写回，与同时读样本的 encoding-atomic.test.ts 竞争，偶尔读到写了一半的文件）
+const FIX_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'encoding-test-'));
+afterAll(() => fs.rmSync(FIX_DIR, { recursive: true, force: true }));
 
 describe('detectAndFixEncoding', () => {
-  // Snapshot original bytes so we can restore (since the function may overwrite)
-  const backups = new Map<string, Buffer>();
-  beforeAll(() => {
-    for (const f of fs.readdirSync(FIX_DIR)) {
-      if (f.endsWith('.txt')) {
-        const p = path.join(FIX_DIR, f);
-        backups.set(p, fs.readFileSync(p));
-      }
+  beforeEach(() => {
+    for (const f of fs.readdirSync(SRC_DIR)) {
+      if (f.endsWith('.txt')) fs.copyFileSync(path.join(SRC_DIR, f), path.join(FIX_DIR, f));
     }
-  });
-  afterEach(() => {
-    for (const [p, buf] of backups) fs.writeFileSync(p, buf);
   });
 
   it('detects normal UTF-8 file', async () => {
