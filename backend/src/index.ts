@@ -19,6 +19,7 @@ import noticesRoutes from './routes/notices';
 import opdsCredentialsRoutes from './routes/opds-credentials';
 import opdsRoutes from './routes/opds';
 import { kickApplyWorker } from './services/ai-apply-job';
+import { kickOrganizeWorker } from './services/txt-organize/job';
 import { parseCorsOrigins } from './utils/cors-origins';
 import { parseTrustProxy } from './utils/trust-proxy';
 import { startUpdateChecker } from './services/update-check';
@@ -141,6 +142,7 @@ app.listen(PORT, () => {
   if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
     startUpdateChecker();
     kickApplyWorker();   // 接着跑重启前没跑完的后台采纳任务
+    kickOrganizeWorker();   // 接着跑重启前没跑完的 TXT 整理任务
     // 使用自己的证书：设置页「启用 HTTPS」打开且 DATA_DIR/certs 里有可用的 fullchain.pem + privkey.pem 时，在 HTTPS_PORT 上提供 HTTPS
     startHttpsManager(app, { dir: certDir(DATA_DIR), port: Number(process.env.HTTPS_PORT) || 3443, isEnabled: () => isHttpsEnabled(getDb()) });
   }
