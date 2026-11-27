@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { PdfParser } from '../plugins/parser-pdf';
-import { UmdParser } from '../plugins/parser-umd';
+import { UmdParser, UmdFormatError } from '../plugins/parser-umd';
 import {
   checkEpubHealth, describeError, isFsError, EpubHealth, EPUB_CHECK_TIMEOUT_MS, REASON_INCOMPLETE, REASON_TIMEOUT,
 } from './epub-health';
@@ -22,6 +22,8 @@ export const REASON_PDF_PASSWORD = '需要打开密码（加密的 PDF）';
 const REASON_NO_PAGES = '没有页面';
 const REASON_NOT_UMD = '不是有效的 UMD 文件';
 const REASON_NO_UMD_CHAPTERS = '没有可读的章节';
+const REASON_UMD_COMIC = '暂不支持漫画版 UMD';
+const REASON_UMD_CORRUPT = '正文数据损坏';
 const REASON_EMPTY = '文件是空的';
 
 interface Opts { timeoutMs?: number }
@@ -88,7 +90,15 @@ export async function checkBookHealth(filePath: string, format: string, opts: Op
       const parser = new UmdParser();
       return checkWithParser(filePath, parser,
         async () => ((await parser.getChapters()).length > 0 ? null : REASON_NO_UMD_CHAPTERS),
-        err => (/魔数/.test(err instanceof Error ? err.message : '') ? REASON_NOT_UMD : describeError(err, filePath)), opts);
+        err => {
+          if (!(err instanceof UmdFormatError)) return describeError(err, filePath);
+          switch (err.kind) {
+            case 'not_umd': return REASON_NOT_UMD;
+            case 'incomplete': return REASON_INCOMPLETE;
+            case 'comic': return REASON_UMD_COMIC;
+            default: return REASON_UMD_CORRUPT;
+          }
+        }, opts);
     }
     case 'txt':
       try {

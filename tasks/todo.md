@@ -638,4 +638,7 @@
 - [x] PDF：7 个样本（reportlab CID/TTF/扫描版、Chromium、Calibre、qpdf 两种加密）+ 截断；后端改用 pdfjs-dist 6.4.299（v1.10 取不出不嵌入字体的中文）；前情 / 问书无文字时明确报错。遗留：打开密码 / 截断的 PDF 仍作为正常书入库（归「健康检查扩展」）
 - [x] TXT：Calibre / pandoc 真实样本 + so-novel 格式 + 编码 / 换行 / 标题边界（28 项）；修：GB18030 生僻字被写坏、UTF-16 无 BOM、开头大段英文、CR 换行、5 种标题写法（用户选择直接加进规则）。遗留：阅读 App 导出格式没有真实样本
 - [x] 健康检查扩展到 TXT / PDF / UMD：book-health.ts（PDF 密码 / 截断 / 无页，UMD 打不开 / 无章节，TXT 空文件），HEALTH_CHECK_VERSION 4，阅读接口按原因提示。遗留：正常 UMD 的检查要等 UMD 样本
-- [ ] UMD：规范生成器 + 尽量收集真实样本
+- [x] UMD：按规范重写块读取（#/$ 块、#83 偏移分章、#0B 截断补零、#82 封面去飞库 logo、截断/漫画/解压失败给原因）；规范生成器 + umd-compat 21 项
+  - 真实样本：books/ 下 6 本 UMD（飞库网等）。修前：脂砚斋 82 章→246 段、易中天 6 章→5 章、每本末章带几千个 NUL；修后全对，其余章节与旧解析逐字一致
+  - 遗留：漫画版 UMD 无样本，只报「暂不支持」；后端全量测试偶发失败（epub-builder 计时、pdf-compat / reader-damaged 并行时偶发）未查
+  - [ ] 用户在本地容器里检查

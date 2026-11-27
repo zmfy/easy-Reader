@@ -1,20 +1,23 @@
 /**
  * UMD小说格式解析器
  *
- * 格式规范（通过二进制分析确认）：
- * - 魔数：前3字节为 89 9B 9A（第4字节可为 9C 或 DE 等，忽略）
- * - 块头：23 + type(1字节) + 3字节大端总长度（含5字节头部）
- * - 章节标题块(0x84)：
- *     数据头(13字节): id1(4) + 标记(1) + id2(4) + titleDataLen(4字节LE)
- *     标题列表: [1字节字节长度] + [UTF-16 LE字节] × N
- * - 正文内容块：24 + ID(4字节) + totalSize(4字节LE) + zlib压缩数据
- *     zlib数据长度 = totalSize - 9
- *     下一块zlib位置 = 当前zlib位置 + totalSize
- * - 多节内容之间可能有 23-XX 分隔块或零字节填充
+ * 格式规范（与真实样本——飞库网等工具生成的文件——逐块核对过）：
+ * - 魔数：89 9B 9A DE（只校验前3字节，第4字节偶见其他值）
+ * - 之后是两种块交替：
+ *   - 「#」块：23 + id(2字节LE) + flag(1) + 总长度(1字节，含5字节头) + 数据
+ *   - 「$」块：24 + 校验码(4) + 总长度(4字节LE，含9字节头) + 数据
+ * - # 块：0x01 类型（数据首字节 1=文字版 2=漫画版）、0x02〜0x09 书名/作者/年/月/日/类型/出版者/销售商（UTF-16LE）、
+ *   0x0B 正文字节数(4字节LE)、0x0C 文件结束（之后的块不再读）、0xF1 / 0x0A 夹在正文块之间（跳过）
+ * - 下面这些 # 块后面紧跟一个 $ 块装它的数据：
+ *   0x83 章节偏移（每章 4字节LE，正文里的字节偏移）、0x84 章节标题（[1字节字节长度] + UTF-16LE × N）、
+ *   0x82 封面图片、0x81 正文块索引、0x87 分页信息
+ * - 不跟在上述 # 块后面的 $ 块是正文：每块 zlib 压缩，解压后拼接为 UTF-16LE 正文（最后一块补零到 32KB，按 0x0B 的长度截断）
+ * - 正文用 U+2029（段落分隔符）分段
  */
 
 import fs from 'fs';
 import zlib from 'zlib';
+import crypto from 'crypto';
 import { BookFileMetadata, ReaderPlugin } from '../types';
 import { escapeHtml } from '../utils/html';
 
@@ -25,8 +28,39 @@ interface ChapterMeta {
   endChar: number;
 }
 
-function readUInt24BE(buf: Buffer, offset: number): number {
-  return (buf[offset] << 16) | (buf[offset + 1] << 8) | buf[offset + 2];
+export type UmdErrorKind = 'not_umd' | 'incomplete' | 'comic' | 'corrupt';
+
+/** 文件本身的问题（不是程序错误）；message 可直接给用户看 */
+export class UmdFormatError extends Error {
+  constructor(public kind: UmdErrorKind, message: string) {
+    super(message);
+    this.name = 'UmdFormatError';
+  }
+}
+
+/** 后面紧跟一个 $ 数据块的 # 块 */
+const BLOCK_INDEX = 0x81;
+const BLOCK_COVER = 0x82;
+const BLOCK_OFFSETS = 0x83;
+const BLOCK_TITLES = 0x84;
+const BLOCK_PAGES = 0x87;
+const DATA_BLOCK_IDS = [BLOCK_INDEX, BLOCK_COVER, BLOCK_OFFSETS, BLOCK_TITLES, BLOCK_PAGES];
+
+/**
+ * 制作网站塞进去的 logo，不是书的封面（sha1）；当作没有封面，免得 AI 填充优先采用它
+ * - 飞库网（feiku.com）：飞库网生成的 UMD 都带这张 GIF
+ */
+export const PLACEHOLDER_COVER_SHA1 = new Set(['0c9f91a1f6df240795bcc08e8577475ad1854001']);
+
+interface UmdStructure {
+  type: number | null;
+  contentLength: number | null;
+  offsets: number[] | null;
+  titles: string[] | null;
+  cover: Buffer | null;
+  contentBlocks: Buffer[];
+  truncated: boolean;
+  ended: boolean;
 }
 
 function tryDecompress(data: Buffer): Buffer | null {
@@ -58,78 +92,74 @@ export function parseUmdHeader(buf: Buffer): BookFileMetadata {
   return meta;
 }
 
-/**
- * 解析章节标题块(0x84)数据。
- * 数据头13字节: id1(4) + marker(1) + id2(4) + titleDataLen(4 LE)
- * 之后: [字节长度(1)] + [UTF-16 LE字节] × N
- * 返回标题列表和标题数据总长度。
- */
-function parseChapterTitles(buf: Buffer, dataStart: number): { titles: string[]; titleDataLen: number } {
-  if (dataStart + 13 > buf.length) return { titles: [], titleDataLen: 0 };
-
-  const titleDataLen = buf.readUInt32LE(dataStart + 9);
-  const titlesStart = dataStart + 13;
-  const titlesEnd = titlesStart + titleDataLen;
-
+/** 章节标题数据：[字节长度(1)] + [UTF-16LE] × N */
+function parseTitles(data: Buffer): string[] {
   const titles: string[] = [];
-  let i = titlesStart;
-
-  while (i < titlesEnd && i < buf.length) {
-    const byteLen = buf[i];
+  let i = 0;
+  while (i < data.length) {
+    const byteLen = data[i];
     i++;
-    if (byteLen === 0) continue;
-    if (i + byteLen > titlesEnd) break;  // 不超出标题数据区域
-    titles.push(buf.slice(i, i + byteLen).toString('utf16le').trim());
+    if (i + byteLen > data.length) break;
+    titles.push(data.slice(i, i + byteLen).toString('utf16le').trim());
     i += byteLen;
   }
-
-  return { titles, titleDataLen };
+  return titles;
 }
 
-/**
- * 读取所有zlib压缩的正文内容块，拼接后解码为UTF-16 LE字符串。
- * contentStart: 第一个zlib数据的字节位置（即第一个0x24标记往后9字节）。
- *
- * 循环处理4种情况：
- *   1. buf[pos-9] === 0x24：当前位置为zlib数据起始，读取并解压一个块
- *   2. buf[pos] === 0x24：当前位置为0x24标记，跳过9字节头部
- *   3. buf[pos] === 0x23：当前位置为分隔块，跳过整个块
- *   4. buf[pos] === 0x00：零字节填充，直接跳过
- */
-function readAllContent(buf: Buffer, contentStart: number): string {
-  const decompressedChunks: Buffer[] = [];
-  let pos = contentStart;
+/** 按块顺序读一遍整个文件 */
+function readStructure(buf: Buffer): UmdStructure {
+  const s: UmdStructure = {
+    type: null, contentLength: null, offsets: null, titles: null, cover: null, contentBlocks: [], truncated: false, ended: false,
+  };
+  let pendingData: number | null = null;   // 上一个 # 块等着接收的 $ 数据块
+  let pos = 4;
 
   while (pos < buf.length) {
-    if (pos >= 9 && buf[pos - 9] === 0x24) {
-      // 情况1：当前位置是zlib数据
-      const totalSize = buf.readUInt32LE(pos - 4);
-      if (totalSize < 9 || pos + totalSize - 9 > buf.length) break;
-
-      const compressed = buf.slice(pos, pos + totalSize - 9);
-      const decompressed = tryDecompress(compressed);
-      if (decompressed) decompressedChunks.push(decompressed);
-
-      pos += totalSize;
+    if (buf[pos] === 0x23) {
+      if (pos + 5 > buf.length) { s.truncated = true; break; }
+      const id = buf.readUInt16LE(pos + 1);
+      const len = buf[pos + 4];
+      if (len < 5) break;
+      if (pos + len > buf.length) { s.truncated = true; break; }
+      const data = buf.slice(pos + 5, pos + len);
+      if (id === 0x01 && data.length >= 1) s.type = data[0];
+      else if (id === 0x0b && data.length >= 4) s.contentLength = data.readUInt32LE(0);
+      else if (id === 0x0c) { s.ended = true; break; }
+      pendingData = DATA_BLOCK_IDS.includes(id) ? id : null;
+      pos += len;
     } else if (buf[pos] === 0x24) {
-      // 情况2：当前位置是0x24标记，跳过9字节到达zlib数据
-      pos += 9;
-    } else if (buf[pos] === 0x23) {
-      // 情况3：23-XX分隔块，跳过
-      if (pos + 5 > buf.length) break;
-      const blockLen = readUInt24BE(buf, pos + 2);
-      if (blockLen < 5 || pos + blockLen > buf.length) break;
-      pos += blockLen;
+      if (pos + 9 > buf.length) { s.truncated = true; break; }
+      const len = buf.readUInt32LE(pos + 5);
+      if (len < 9) break;
+      if (pos + len > buf.length) { s.truncated = true; break; }
+      const data = buf.slice(pos + 9, pos + len);
+      if (pendingData === BLOCK_OFFSETS) {
+        s.offsets = [];
+        for (let i = 0; i + 4 <= data.length; i += 4) s.offsets.push(data.readUInt32LE(i));
+      } else if (pendingData === BLOCK_TITLES) {
+        s.titles = parseTitles(data);
+      } else if (pendingData === BLOCK_COVER) {
+        s.cover = data;
+      } else if (pendingData === null) {
+        s.contentBlocks.push(data);
+      }
+      pendingData = null;
+      pos += len;
     } else if (buf[pos] === 0x00) {
-      // 情况4：零字节填充，跳过
+      // 零字节填充
       while (pos < buf.length && buf[pos] === 0x00) pos++;
     } else {
       break;
     }
   }
+  return s;
+}
 
-  if (decompressedChunks.length === 0) return '';
-  return Buffer.concat(decompressedChunks).toString('utf16le');
+function imageMimeType(buf: Buffer): string | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length >= 6 && /^GIF8[79]a$/.test(buf.slice(0, 6).toString('latin1'))) return 'image/gif';
+  return null;
 }
 
 export class UmdParser implements ReaderPlugin {
@@ -137,51 +167,71 @@ export class UmdParser implements ReaderPlugin {
   private chapters: ChapterMeta[] = [];
   private fullText = '';
   private metadata: BookFileMetadata = {};
+  private cover: { buffer: Buffer; mimeType: string } | null = null;
 
   async load(filePath: string): Promise<void> {
     const buf = fs.readFileSync(filePath);
 
     // 校验魔数（前3字节）
     if (buf.length < 4 || buf[0] !== 0x89 || buf[1] !== 0x9B || buf[2] !== 0x9A) {
-      throw new Error('无效的UMD文件（魔数不匹配）');
+      throw new UmdFormatError('not_umd', '无效的UMD文件（魔数不匹配）');
     }
     this.metadata = parseUmdHeader(buf);
 
-    // 在文件前部搜索 23 84 块，获取章节标题和正文起始位置
-    let chapterTitles: string[] = [];
-    let contentStart = -1;
+    const s = readStructure(buf);
+    if (s.type === 2) throw new UmdFormatError('comic', '暂不支持漫画版 UMD');
+    if (s.truncated) throw new UmdFormatError('incomplete', '文件不完整');
 
-    for (let i = 4; i + 5 < buf.length; i++) {
-      if (buf[i] === 0x23 && buf[i + 1] === 0x84) {
-        const { titles, titleDataLen } = parseChapterTitles(buf, i + 5);
-        if (titles.length > 0 || titleDataLen > 0) {
-          chapterTitles = titles;
-          contentStart = i + 5 + 13 + titleDataLen;
-          break;
-        }
-      }
+    const chunks: Buffer[] = [];
+    for (const block of s.contentBlocks) {
+      const data = tryDecompress(block);
+      if (!data) throw new UmdFormatError('corrupt', '正文数据解压失败');
+      chunks.push(data);
+    }
+    let content = Buffer.concat(chunks);
+    // 没有正常结尾、正文又比声明的短：多半是下载 / 复制中断在块与块之间
+    if (!s.ended && s.contentLength !== null && content.length < s.contentLength) {
+      throw new UmdFormatError('incomplete', '文件不完整');
+    }
+    // 最后一块补零到 32KB，按声明的正文长度截断
+    if (s.contentLength !== null && s.contentLength <= content.length) content = content.slice(0, s.contentLength);
+    this.fullText = content.toString('utf16le').replace(/\u0000+$/, '');
+
+    if (s.cover) {
+      const mimeType = imageMimeType(s.cover);
+      const sha1 = crypto.createHash('sha1').update(s.cover).digest('hex');
+      if (mimeType && !PLACEHOLDER_COVER_SHA1.has(sha1)) this.cover = { buffer: s.cover, mimeType };
     }
 
-    if (contentStart < 9 || contentStart >= buf.length) {
-      throw new Error('无法定位UMD文件正文起始位置');
-    }
-
-    this.fullText = readAllContent(buf, contentStart);
-
-    if (chapterTitles.length > 0) {
-      this.buildChapters(chapterTitles);
-    }
-
-    if (this.chapters.length === 0) {
-      this.fallbackSplit();
-    }
+    const titles = s.titles ?? [];
+    if (s.offsets && s.offsets.length > 0) this.buildChaptersFromOffsets(s.offsets, titles);
+    if (this.chapters.length === 0 && titles.length > 0) this.buildChaptersByTitle(titles);
+    if (this.chapters.length === 0) this.fallbackSplit();
   }
 
   /**
-   * 根据章节标题在全文中定位章节边界。
+   * 按章节偏移表（字节偏移，正文是 UTF-16 所以除以 2）切分；偏移不递增或越界时放弃，改按标题定位。
+   * 标题比偏移少时，缺的按「第 N 章」补。
+   */
+  private buildChaptersFromOffsets(offsets: number[], titles: string[]): void {
+    const total = this.fullText.length;
+    const starts = offsets.map(o => Math.floor(o / 2));
+    for (let i = 0; i < starts.length; i++) {
+      if (starts[i] >= total || (i > 0 && starts[i] < starts[i - 1])) return;
+    }
+    this.chapters = starts.map((start, i) => ({
+      index: i,
+      title: titles[i] || `第 ${i + 1} 章`,
+      startChar: start,
+      endChar: i + 1 < starts.length ? starts[i + 1] : total,
+    }));
+  }
+
+  /**
+   * 没有可用的偏移表时，根据章节标题在全文中定位章节边界。
    * 若精确匹配失败，尝试去掉"附："等前缀后再次搜索。
    */
-  private buildChapters(titles: string[]): void {
+  private buildChaptersByTitle(titles: string[]): void {
     const text = this.fullText;
     const chapters: ChapterMeta[] = [];
     let searchFrom = 0;
@@ -260,5 +310,9 @@ export class UmdParser implements ReaderPlugin {
 
   async getMetadata(): Promise<BookFileMetadata> {
     return this.metadata;
+  }
+
+  async getCoverImage(): Promise<{ buffer: Buffer; mimeType: string } | null> {
+    return this.cover;
   }
 }
