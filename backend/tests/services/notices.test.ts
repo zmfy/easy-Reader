@@ -11,7 +11,7 @@ beforeEach(() => {
       message TEXT, link TEXT, action TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, read_at DATETIME);
     CREATE TABLE books (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'normal');
     CREATE TABLE ai_suggestions (book_id TEXT PRIMARY KEY, data TEXT NOT NULL, batch_no INTEGER, apply_job_id TEXT);
-    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT);
+    CREATE TABLE scan_batches (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', summary_counts TEXT, kind TEXT DEFAULT 'scan');
   `);
 });
 afterEach(() => db.close());
@@ -115,6 +115,16 @@ describe('扫描待审核提醒', () => {
     batch('s3', 5);
     notifyScanReview();
     expect(listNotices().items[0].message).toBe('共 2 批待审核，新书 5 本、损坏 2 本，可逐批审核');
+  });
+
+  it('待审核的整理版批次（kind=organize）不算在内', () => {
+    db.prepare("INSERT INTO scan_batches (id, summary_counts, kind) VALUES ('o1', ?, 'organize')").run(JSON.stringify({ organized_duplicate: 1 }));
+    notifyScanReview();
+    expect(listNotices().items).toEqual([]);
+    batch('s4', 3);
+    db.prepare("INSERT INTO scan_batches (id, summary_counts, kind) VALUES ('s5', ?, NULL)").run(JSON.stringify({ new: 1 }));
+    notifyScanReview();
+    expect(listNotices().items[0].message).toBe('共 2 批待审核，新书 4 本，可逐批审核');
   });
 });
 

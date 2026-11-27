@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDb } from '../db';
 import { opdsAuth } from '../middleware/opds-auth';
 import { Book } from '../types';
-import { resolveRealPathInsideRoot } from '../utils/path-safe';
+import { resolveBookRealPath } from '../services/book-file';
 import { categoryFilterSql } from '../utils/category-tree';
 import {
   acquisitionFeed, navigationFeed, openSearchDescription, BookEntry, FeedLinks, NavEntry, OPDS_ACQ_TYPE, OPDS_NAV_TYPE,
@@ -18,7 +18,6 @@ import { availableDownloads, DownloadKind, resolveDownload } from '../services/o
 const router = Router();
 router.use(...opdsAuth);
 
-const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 const SEARCH = '/opds/opensearch.xml';
 const ROOT = '/opds';
 
@@ -238,7 +237,7 @@ router.get('/books/:id/download.:ext', async (req: Request, res: Response) => {
   if (!book) { notFound(res); return; }
   const kind = req.params.ext as DownloadKind;
   if (!availableDownloads(book).includes(kind)) { notFound(res, '这本书不提供该格式'); return; }
-  const realPath = resolveRealPathInsideRoot(BOOKS_DIR, book.file_path);
+  const realPath = resolveBookRealPath(book);
   if (!realPath) { notFound(res, '文件不存在'); return; }
 
   let download;

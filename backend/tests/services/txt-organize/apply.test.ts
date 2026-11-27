@@ -249,8 +249,9 @@ describe('applyOrganizeDecision', () => {
     const opts = { mode: 'auto', ai_fill: false, full_rescan: false };
     const task = createScanTask('admin1', opts);
     await runScanTask(task.id, opts);
-    // （整理版不被扫描当孤儿删掉是 Task 10 的事，这里不检查）
     expect(db.prepare('SELECT id FROM books WHERE file_path = ?').get(fx.src)).toBeUndefined();
+    // 整理版不会被扫描当孤儿删掉
+    expect(book(fx.orgId)).toMatchObject({ status: 'normal' });
   });
 
   it('keep_new_delete_file：原文件被删除', async () => {
@@ -272,7 +273,10 @@ describe('applyOrganizeDecision', () => {
     addReaderData(fx.origId);
     db.exec("CREATE TEMP TRIGGER fail_job BEFORE UPDATE ON txt_organize_jobs BEGIN SELECT RAISE(ABORT, 'boom'); END");
     try {
-      await expect(applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db)).rejects.toThrow('boom');
+      // 不用 toThrow：SqliteError 的构造函数由原生模块按进程缓存，同一 jest worker 先跑过别的测试文件时，
+      // 它继承的是那个文件沙箱里的 Error，instanceof Error 为 false，toThrow 会误报「did not throw」
+      await expect(applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db))
+        .rejects.toMatchObject({ message: expect.stringContaining('boom') });
     } finally {
       db.exec('DROP TRIGGER fail_job');
     }

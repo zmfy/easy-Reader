@@ -79,8 +79,9 @@ function fillPendingTitle(p: PendingFill): string {
   return `AI 填充${range}有 ${p.count} 本待确认`;
 }
 
+// 只算扫描生成的批次；整理版审核（kind='organize'）有自己的通知
 function scanPendingMessage(db: Database.Database): { batches: number; books: number; damaged: number } {
-  const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending'").all() as Array<{ summary_counts: string | null }>;
+  const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending' AND COALESCE(kind, 'scan') = 'scan'").all() as Array<{ summary_counts: string | null }>;
   let books = 0;
   let damaged = 0;
   for (const r of rows) {

@@ -3,7 +3,7 @@ import { buildManifest, getLastReadBookId } from '../../src/services/pwa';
 
 function makeDb() {
   const db = new Database(':memory:');
-  db.exec(`CREATE TABLE books (id TEXT PRIMARY KEY, title TEXT);
+  db.exec(`CREATE TABLE books (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'normal');
     CREATE TABLE reading_progress (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, book_id TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, book_id));`);
   return db;
 }
@@ -43,5 +43,15 @@ describe('pwa', () => {
     expect(getLastReadBookId(db, 'u1')).toBe('b1');
     db.exec("DELETE FROM books");
     expect(getLastReadBookId(db, 'u1')).toBeNull();
+  });
+
+  it('getLastReadBookId skips pending_review organized books', () => {
+    const db = makeDb();
+    db.exec("INSERT INTO books (id, status) VALUES ('b1', 'normal'), ('org', 'pending_review'), ('b0', NULL)");
+    progress(db, 'u1', 'b1', '2026-11-01 10:00:00');
+    progress(db, 'u1', 'org', '2026-11-06 10:00:00');
+    expect(getLastReadBookId(db, 'u1')).toBe('b1');
+    progress(db, 'u1', 'b0', '2026-11-07 10:00:00');
+    expect(getLastReadBookId(db, 'u1')).toBe('b0');
   });
 });

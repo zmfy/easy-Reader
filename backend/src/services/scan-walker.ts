@@ -59,7 +59,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // broken bind-mount) — otherwise we'd wipe the whole library on every misconfig.
     if (allFiles.length > 0) {
       const db = getDb();
-      const rows = db.prepare('SELECT id, file_path FROM books').all() as {
+      // 整理版的文件在数据目录里、不在书库中，不是孤儿
+      const rows = db.prepare('SELECT id, file_path FROM books WHERE organized_from IS NULL').all() as {
         id: string;
         file_path: string;
       }[];

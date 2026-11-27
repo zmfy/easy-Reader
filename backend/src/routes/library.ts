@@ -94,6 +94,11 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged','pending_review'))";
   }
 
+  // 待审核的整理版只在审核页出现：读者无论按什么状态筛选都看不到
+  if (req.user!.role !== 'admin') {
+    whereClause += " AND (status IS NULL OR status != 'pending_review')";
+  }
+
   // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)
   if (seriesGrouped) {
     whereClause += " AND (series_id IS NULL OR series_id = '')";
@@ -172,7 +177,8 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
   }
 
   // Reject if any pending batch exists (force admin to handle prior results first)
-  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' LIMIT 1").get() as
+  // 只看扫描生成的批次：待审核的整理版（kind='organize'）不妨碍扫描
+  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' AND COALESCE(kind, 'scan') = 'scan' LIMIT 1").get() as
     | { id: string }
     | undefined;
   if (pendingBatch) {
@@ -429,7 +435,8 @@ router.post('/ai-suggestions/dismiss', authMiddleware, adminMiddleware, (req: Re
 router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
-  if (!book) {
+  // 待审核的整理版：只有管理员能看（审核时预览）
+  if (!book || (book.status === 'pending_review' && req.user!.role !== 'admin')) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;
   }

@@ -507,6 +507,43 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 
 下载原文件（需要登录），可用于离线阅读或自行渲染 PDF。`Content-Type` 为 `application/pdf`、`application/epub+zip` 或 `application/octet-stream`。
 
+### AI 整理目录（TXT）
+
+TXT 的目录识别不准时，可以请 AI 重新整理：AI 只判断哪些行是章节标题，正文一个字不改，生成一本 EPUB「整理版」，由管理员审核后决定保留哪一本（保留整理版时，阅读进度、书签、书架、阅读历史会迁移过去）。审核通过前，整理版不会出现在书库、书架、阅读历史和 OPDS 中，普通用户按 id 访问也返回 404。
+
+#### GET /api/v1/reader/:bookId/organize
+
+```json
+{
+  "available": true,
+  "job": {
+    "id": "…", "book_id": "…", "requested_by": "…",
+    "status": "running", "phase": "judging",
+    "batches_done": 1, "batches_total": 3, "candidate_count": 812,
+    "result_book_id": null, "error": null,
+    "created_at": "2026-11-27 08:00:00", "finished_at": null
+  },
+  "lastRejectedAt": null
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `available` | 当前用户能否发起：书是 TXT、管理员已配置 AI，且（是管理员，或管理员允许读者发起） |
+| `job` | 这本书最近一次整理任务；没有或已审核完成时为 `null`。`status`：`pending` 排队中、`running` 进行中（`phase`：`candidates` 挑候选行 / `judging` AI 判定 / `writing` 生成整理版）、`review` 等待管理员审核、`failed` 失败（`error` 为原因）。管理员另有 `notes`（AI 的整理说明） |
+| `lastRejectedAt` | 这本书的当前文件整理过、被管理员拒绝的时间（UTC），没有为 `null`。可据此提示「整理过一次未被采用」 |
+
+#### POST /api/v1/reader/:bookId/organize
+
+发起整理，返回 `{ "job": { … } }`（字段同上）。这本书已有进行中或待审核的任务时直接返回那个任务，不会重复发起。不能发起时返回 409 `BUSINESS_CONFLICT`，`message` 可直接显示：
+
+| message | 原因 |
+|---|---|
+| 只有 TXT 可以整理目录 | 书不是 TXT |
+| 管理员尚未配置 AI | 没有配置 AI 插件 |
+| 管理员未开放此功能 | 管理员关闭了读者发起（设置项 `txt_organize_allow_readers` 为 `'0'`） |
+| 今天的整理次数已用完，明天再试 | 普通用户每人每天最多发起 3 次 |
+
 ## 7. 阅读进度
 
 进度按用户、按书保存，网页版与各客户端共用，读到哪里在所有设备上同步。

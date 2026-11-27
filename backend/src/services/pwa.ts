@@ -27,7 +27,7 @@ export function buildManifest(siteName: string): Record<string, unknown> {
 export function getLastReadBookId(db: Database.Database, userId: string): string | null {
   const row = db.prepare(
     `SELECT rp.book_id FROM reading_progress rp JOIN books b ON b.id = rp.book_id
-      WHERE rp.user_id = ? ORDER BY rp.updated_at DESC LIMIT 1`
+      WHERE rp.user_id = ? AND (b.status IS NULL OR b.status != 'pending_review') ORDER BY rp.updated_at DESC LIMIT 1`
   ).get(userId) as { book_id: string } | undefined;
   return row ? row.book_id : null;
 }
