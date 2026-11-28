@@ -284,12 +284,18 @@
 | `rating` | 评分，可能为 `null` |
 | `series_id` | 所属系列 ID，没有为 `null` |
 | `imported_at` | 入库时间 |
-| `status` | `normal`（正常）、`duplicate`（重复）、`garbled`（乱码）或 `damaged`（EPUB 文件损坏） |
+| `status` | `normal`（正常）、`duplicate`（重复）、`garbled`（乱码）、`damaged`（EPUB 文件损坏）或 `pending_review`（AI 整理出的整理版，等待管理员审核；书库列表不返回，只有管理员能按 id 取到） |
 | `damage_reason` | 损坏原因，如「文件不完整（可能下载或复制中断）」；不是损坏的书为 `null` |
+| `organized_from` | 整理版（TXT 目录 AI 整理生成的 EPUB）对应的原书 ID；不是整理版为 `null` |
+| `organized_job_id` | 生成这本整理版的整理任务 ID；不是整理版为 `null` |
 
 ### GET /api/v1/library/:id
 
-单本书的详情，字段同上。
+单本书的详情，字段同上。整理版（`organized_from` 不为空）另有：
+
+| 字段 | 说明 |
+|---|---|
+| `organized_stale` | 原文件在整理之后被修改过（大小或修改时间变了）时为 `true`，整理版可能过时 |
 
 ### GET /api/v1/library/series
 
