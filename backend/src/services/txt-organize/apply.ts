@@ -158,7 +158,13 @@ export async function applyOrganizeDecision(
     });
   })();
 
-  // ---- 提交后删文件：失败只记警告，不撤销已提交的决定 ----
+  // ---- 提交后：决定已提交，这里出的任何错都只记警告，不撤销决定、不让请求失败 ----
+  const warn = (message: string) => {
+    console.warn(`[txt-organize ${jobId}] ${message}`);
+    summary.warnings.push(message);
+  };
+
+  // 删原文件
   if (deleteFileAfterCommit && deleteReq) {
     const real = resolveRealPathInsideRoot(BOOKS_DIR, deleteReq.file_path);
     let deleted = false;
@@ -169,28 +175,43 @@ export async function applyOrganizeDecision(
         fs.rmSync(real);
         deleted = true;
       } catch (err) {
-        const message = `删除原文件失败：${deleteReq.file_path}：${(err as Error).message}`;
-        console.warn(`[txt-organize ${jobId}] ${message}`);
-        summary.warnings.push(message);
+        warn(`删除原文件失败：${deleteReq.file_path}：${(err as Error).message}`);
       }
     }
-    writeAudit({
-      user_id: adminUserId,
-      action: 'delete_book_file',
-      resource_id: origId,
-      file_path: deleteReq.file_path,
-      details: { files_deleted: deleted ? 1 : 0, organize_job_id: jobId },
-    });
-    if (summary.warnings.length > 0) {
-      db.prepare('UPDATE scan_batches SET apply_summary = ? WHERE id = ?').run(JSON.stringify(summary), batchId);
+    try {
+      writeAudit({
+        user_id: adminUserId,
+        action: 'delete_book_file',
+        resource_id: origId,
+        file_path: deleteReq.file_path,
+        details: { files_deleted: deleted ? 1 : 0, organize_job_id: jobId },
+      });
+    } catch (err) {
+      warn(`写审计日志失败：${(err as Error).message}`);
     }
   }
 
-  // ---- 提交后：保留原书时删除整理版文件（只删整理版目录里的）和封面副本 ----
+  // 保留原书时删除整理版文件（只删整理版目录里的）和封面副本
   if (decision === 'keep_old') {
-    const real = resolveRealPathInsideRoot(organizedDir(), item.payload.organized.file_path);
-    if (real) fs.rmSync(real, { force: true });
-    removeCoverFiles(orgId);
+    try {
+      const real = resolveRealPathInsideRoot(organizedDir(), item.payload.organized.file_path);
+      if (real) fs.rmSync(real, { force: true });
+    } catch (err) {
+      warn(`删除整理版文件失败：${item.payload.organized.file_path}：${(err as Error).message}`);
+    }
+    try {
+      removeCoverFiles(orgId);
+    } catch (err) {
+      warn(`删除整理版封面失败：${(err as Error).message}`);
+    }
+  }
+
+  if (summary.warnings.length > 0) {
+    try {
+      db.prepare('UPDATE scan_batches SET apply_summary = ? WHERE id = ?').run(JSON.stringify(summary), batchId);
+    } catch (err) {
+      console.warn(`[txt-organize ${jobId}] 更新审核批次的应用结果失败：${(err as Error).message}`);
+    }
   }
   return summary;
 }

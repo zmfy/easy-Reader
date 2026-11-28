@@ -317,6 +317,46 @@ describe('applyOrganizeDecision', () => {
     expect(JSON.parse(batch(fx.batchId).apply_summary as string)).toEqual(summary);
   });
 
+  it('keep_new_delete_file：提交后写审计日志失败只记警告，不报错', async () => {
+    const fx = await makeOrganized();
+    const audit = require('../../../src/services/audit-log') as typeof import('../../../src/services/audit-log');
+    const realAudit = audit.writeAudit;
+    const spy = jest.spyOn(audit, 'writeAudit').mockImplementation((e) => {
+      if (e.action === 'delete_book_file') throw new Error('disk full');
+      return realAudit(e);
+    });
+    let summary;
+    try {
+      summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(summary.warnings).toEqual([expect.stringContaining('disk full')]);
+    expect(fs.existsSync(fx.src)).toBe(false);
+    expect(book(fx.orgId)).toMatchObject({ status: 'normal' });
+    expect(JSON.parse(batch(fx.batchId).apply_summary as string)).toEqual(summary);
+  });
+
+  it('keep_old：提交后删整理版文件 / 封面失败只记警告，不报错', async () => {
+    const fx = await makeOrganized();
+    const realRm = fs.rmSync;
+    const realOrg = fs.realpathSync(fx.orgFile);
+    const rm = jest.spyOn(fs, 'rmSync').mockImplementation((p, o) => {
+      if (p === realOrg || String(p).includes(`${fx.orgId}-`)) throw new Error('EPERM');
+      realRm(p, o);
+    });
+    let summary;
+    try {
+      summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db);
+    } finally {
+      rm.mockRestore();
+    }
+    expect(summary.warnings).toEqual([expect.stringContaining('EPERM'), expect.stringContaining('EPERM')]);
+    expect(book(fx.orgId)).toBeUndefined();
+    expect(job(fx.jobId)).toMatchObject({ status: 'done' });
+    expect(JSON.parse(batch(fx.batchId).apply_summary as string)).toEqual(summary);
+  });
+
   it('keep_old：整理版记录和文件删除，写拒绝记录，原书数据不变', async () => {
     const fx = await makeOrganized();
     addReaderData(fx.origId);
