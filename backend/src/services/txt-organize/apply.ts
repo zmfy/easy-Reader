@@ -139,6 +139,7 @@ export async function applyOrganizeDecision(
           if (decision === 'keep_new_delete_record' && srcStat) {
             recordSkip(db, { file_path: deleteReq.file_path, file_size: srcStat.size, file_mtime: srcStat.mtimeMs });
           }
+          // deleteBookCascade 内部用 getDb() 另开事务：依赖传进来的 db 就是 getDb()，才会成为这个外层事务的嵌套保存点
           deleteBookCascade(deleteReq, { keepFiles: true });
           deleteFileAfterCommit = decision === 'keep_new_delete_file';
         }
