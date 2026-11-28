@@ -300,8 +300,10 @@ router.get('/:bookId/organize', authMiddleware, (req: Request, res: Response) =>
 router.post('/:bookId/organize', authMiddleware, (req: Request, res: Response) => {
   const book = findOrganizableBook(req, res);
   if (!book) return;
+  const parsed = z.object({ mode: z.enum(['fast', 'full']).optional() }).safeParse(req.body ?? {});
+  if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   try {
-    const job = requestOrganize(book.id, { userId: req.user!.userId, role: req.user!.role });
+    const job = requestOrganize(book.id, { userId: req.user!.userId, role: req.user!.role }, undefined, parsed.data.mode);
     successResponse(res, { job: organizeJobView(job, req) });
   } catch (err) {
     if (err instanceof OrganizeRequestError) {

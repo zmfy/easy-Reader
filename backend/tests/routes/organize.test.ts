@@ -168,7 +168,7 @@ describe('POST / GET /api/reader/:bookId/organize', () => {
 
     mockUser = ADMIN;
     j = await (await api('/reader/b1/organize')).json();
-    expect(j.data.job.notes).toEqual(['第二章疑似缺字']);
+    expect(j.data.job.notes).toEqual(['第二章疑似缺字', '快速模式：规则判定 0 行，AI 判定 3 行']);
     expect(j.data.job.requested_by).toBe('u-reader');
 
     // 有拒绝记录时返回拒绝时间
@@ -180,6 +180,24 @@ describe('POST / GET /api/reader/:bookId/organize', () => {
     // 书不存在 → 404
     expect((await api('/reader/nope/organize')).status).toBe(404);
     expect((await post('/reader/nope/organize')).status).toBe(404);
+  });
+
+  it('mode：不带 body 缺省 fast；full 入库；非法值 422；GET 返回 mode', async () => {
+    addBook('m1');
+    addBook('m2');
+    addBook('m3');
+    let res = await api('/reader/m1/organize', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.job.mode).toBe('fast');
+
+    res = await api('/reader/m2/organize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'full' }) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.job.mode).toBe('full');
+    expect((await (await api('/reader/m2/organize')).json()).data.job.mode).toBe('full');
+
+    res = await api('/reader/m3/organize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'x' }) });
+    expect(res.status).toBe(422);
+    expect((await res.json()).code).toBe('VALIDATION_ERROR');
   });
 
   it('四种 OrganizeRequestError 返回 409 和对应文案', async () => {

@@ -51,6 +51,19 @@ jest.mock('../../../src/services/txt-organize/writer', () => {
   };
 });
 
+// 记录 judgeCandidates 收到的 mode
+let mockJudgeModes: unknown[] = [];
+jest.mock('../../../src/services/txt-organize/judge', () => {
+  const actual = jest.requireActual('../../../src/services/txt-organize/judge');
+  return {
+    ...actual,
+    judgeCandidates: (...args: unknown[]) => {
+      mockJudgeModes.push(args[4]);
+      return (actual.judgeCandidates as (...a: unknown[]) => unknown)(...args);
+    },
+  };
+});
+
 // 清理 / 通知抛错
 let mockCleanupThrow = false;
 let mockNotifyThrow = false;
@@ -131,6 +144,7 @@ beforeEach(() => {
   mockAiConfigured = true;
   mockFail = false;
   mockChatCalls = 0;
+  mockJudgeModes = [];
   mockWriteFail = false;
   mockTouchSource = false;
   mockCleanupThrow = false;
@@ -155,7 +169,7 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
   expect(done).toMatchObject({
     id: created.id, status: 'review', batches_done: 1, batches_total: 1, candidate_count: 4, error: null,
   });
-  expect(done.notes).toEqual(['第二章疑似缺字']);
+  expect(done.notes).toEqual(['第二章疑似缺字', '快速模式：规则判定 0 行，AI 判定 4 行']);
   expect(getJob(created.id)).toMatchObject({ src_size: fs.statSync(src).size, src_mtime: fs.statSync(src).mtimeMs });
   expect(done.finished_at).toBeTruthy();
 
@@ -189,6 +203,7 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
   const payload = JSON.parse(items[0].payload);
   expect(payload).toEqual({
     job_id: created.id,
+    mode: 'fast',
     original: {
       // 现有规则把「第三回合他输了。」误切成一章
       book_id: 'b1', title: '测试书', file_path: src, chapter_count: 4,
@@ -198,7 +213,7 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
       book_id: org.id, title: '测试书（整理版）', file_path: org.file_path, chapter_count: 4,
       toc: [{ title: '前言', level: 0 }, { title: '第一章 开端', level: 0 }, { title: '第二章 发展', level: 0 }, { title: '第三章 结局', level: 0 }],
     },
-    notes: ['第二章疑似缺字'],
+    notes: ['第二章疑似缺字', '快速模式：规则判定 0 行，AI 判定 4 行'],
     batches: 1,
     candidate_count: 4,
     requested_by: { user_id: 'u-reader', username: 'reader' },
@@ -207,6 +222,33 @@ it('成功：生成 pending_review 的整理版、organize 批次和审核项，
   const notice = db.prepare("SELECT * FROM notices WHERE kind = 'txt_organize'").get() as Record<string, unknown>;
   expect(notice.link).toBe(`/library/scan-batches/${batch.id}`);
   expect(notice.title).toContain('测试书');
+});
+
+it('requestOrganize 缺省 mode 为 fast', async () => {
+  addBook('m1');
+  const created = job.requestOrganize('m1', ADMIN);
+  expect(created.mode).toBe('fast');
+  await waitStatus(created.id, 'review');
+  expect(mockJudgeModes).toEqual(['fast']);
+});
+
+it('mode=full 时入库 full，runJob 以 full 调用 judgeCandidates，审核 payload 带 mode', async () => {
+  addBook('m2');
+  const created = job.requestOrganize('m2', ADMIN, undefined, 'full');
+  expect(created.mode).toBe('full');
+  await waitStatus(created.id, 'review');
+  expect(mockJudgeModes).toEqual(['full']);
+  const item = db.prepare("SELECT payload FROM scan_batch_items WHERE type = 'organized_duplicate'").get() as { payload: string };
+  expect(JSON.parse(item.payload).mode).toBe('full');
+});
+
+it('已有进行中任务时以另一模式发起返回原任务', async () => {
+  addBook('m3');
+  const first = job.requestOrganize('m3', ADMIN, undefined, 'full');
+  const again = job.requestOrganize('m3', ADMIN, undefined, 'fast');
+  expect(again.id).toBe(first.id);
+  expect(again.mode).toBe('full');
+  await waitStatus(first.id, 'review');
 });
 
 it('同一本书重复发起返回同一个任务', async () => {

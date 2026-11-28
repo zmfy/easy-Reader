@@ -524,7 +524,7 @@ TXT 的目录识别不准时，可以请 AI 重新整理：AI 只判断哪些行
   "available": true,
   "job": {
     "id": "…", "book_id": "…", "requested_by": "…",
-    "status": "running", "phase": "judging",
+    "status": "running", "mode": "fast", "phase": "judging",
     "batches_done": 1, "batches_total": 3, "candidate_count": 812,
     "result_book_id": null, "error": null,
     "created_at": "2026-11-27 08:00:00", "finished_at": null
@@ -536,12 +536,12 @@ TXT 的目录识别不准时，可以请 AI 重新整理：AI 只判断哪些行
 | 字段 | 说明 |
 |---|---|
 | `available` | 当前用户能否发起：书是 TXT、管理员已配置 AI，且（是管理员，或管理员允许读者发起） |
-| `job` | 这本书最近一次整理任务；没有或已审核完成时为 `null`。`status`：`pending` 排队中、`running` 进行中（`phase`：`candidates` 挑候选行 / `judging` AI 判定 / `writing` 生成整理版）、`review` 等待管理员审核、`failed` 失败（`error` 为原因）。管理员另有 `notes`（AI 的整理说明） |
+| `job` | 这本书最近一次整理任务；没有或已审核完成时为 `null`。`mode`：整理模式，`fast` 快速模式 / `full` 完全 AI 模式（见下）。`status`：`pending` 排队中、`running` 进行中（`phase`：`candidates` 挑候选行 / `judging` AI 判定 / `writing` 生成整理版）、`review` 等待管理员审核、`failed` 失败（`error` 为原因）。管理员另有 `notes`（AI 的整理说明） |
 | `lastRejectedAt` | 这本书的当前文件整理过、被管理员拒绝的时间（UTC），没有为 `null`。可据此提示「整理过一次未被采用」 |
 
 #### POST /api/v1/reader/:bookId/organize
 
-发起整理，返回 `{ "job": { … } }`（字段同上）。这本书已有进行中或待审核的任务时直接返回那个任务，不会重复发起。不能发起时返回 409 `BUSINESS_CONFLICT`，`message` 可直接显示：
+发起整理，返回 `{ "job": { … } }`（字段同上）。请求体可选 `{ "mode": "fast" | "full" }`：`fast`（缺省）先用规则判定明显的行，AI 只看可疑行，更快更省；`full` 把所有疑似标题行都交给 AI。`mode` 取值不合法返回 422 `VALIDATION_ERROR`。这本书已有进行中或待审核的任务时直接返回那个任务（`mode` 为原任务的模式），不会重复发起。不能发起时返回 409 `BUSINESS_CONFLICT`，`message` 可直接显示：
 
 | message | 原因 |
 |---|---|

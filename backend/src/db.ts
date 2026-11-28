@@ -360,6 +360,7 @@ function initSchema(): void {
       notes TEXT,                               -- JSON string[]
       src_size INTEGER,                         -- 整理时原文件的大小和修改时间
       src_mtime REAL,
+      mode TEXT NOT NULL DEFAULT 'full',        -- fast（规则预标注 + AI 只看可疑行）/ full（全部交给 AI）
       result_book_id TEXT,
       error TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -382,6 +383,8 @@ function initSchema(): void {
       PRIMARY KEY (book_id, file_size)
     );
   `);
+  // 快速模式上线前的任务都是完全 AI，旧库补列默认 full
+  try { database.exec("ALTER TABLE txt_organize_jobs ADD COLUMN mode TEXT NOT NULL DEFAULT 'full'"); } catch { /* column exists */ }
   database.prepare("UPDATE txt_organize_jobs SET status = 'pending' WHERE status = 'running'").run();
 
   // 后台任务通知（铃铛）：填充每批完成 / 暂停 / 完成、采纳完成、扫描生成审核批次
