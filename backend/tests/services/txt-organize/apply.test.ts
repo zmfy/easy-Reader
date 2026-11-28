@@ -525,6 +525,15 @@ describe('删除整理版（DELETE /api/library/:id）', () => {
     expect(fs.existsSync(fx.src)).toBe(false);
   });
 
+  it('待审核的整理版不能直接删除：返回 409，记录和文件都还在', async () => {
+    const fx = await makeOrganized();
+    const r = await del(fx.orgId);
+    expect(r.status).toBe(409);
+    expect((await r.json()).code).toBe('PENDING_REVIEW');
+    expect(book(fx.orgId)).toBeDefined();
+    expect(fs.existsSync(fx.orgFile)).toBe(true);
+  });
+
   it('不是整理版的书：文件在书库外（哪怕在整理版目录里）仍被拒绝', async () => {
     const fx = await makeOrganized();
     db.prepare("INSERT INTO books (id, title, file_path, file_format, status) VALUES ('fake', '冒充', ?, 'epub', 'normal')").run(fx.orgFile);

@@ -536,6 +536,7 @@ const deleteQuerySchema = z.object({
 // DELETE /api/library/:id?cascade_duplicates=true&confirm_shelf_impact=true
 //   - keep_file=true: only remove DB records, leave files on disk (default: delete files too)
 //   - Validates path is inside BOOKS_DIR (path traversal protection)
+//   - Pending-review organized book → 409 (handle it on the review page)
 //   - If book is a canonical with duplicates pointing to it → 409 unless cascade_duplicates=true
 //   - If any of the books are on any user's shelf → 409 unless confirm_shelf_impact=true
 //   - Deletes disk file(s) + DB rows in a transaction; writes audit_log entry
@@ -547,6 +548,11 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
   if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  // 待审核的整理版须在审核页处理，直接删除会让审核批次 / 整理任务悬空
+  if (book.status === 'pending_review') {
+    errorResponse(res, 409, 'PENDING_REVIEW', '整理版待审核，请在审核页处理');
+    return;
+  }
 
   const dups = getDuplicatesOf(req.params.id);
   if (dups.length > 0 && !cascade_duplicates) {
