@@ -110,7 +110,7 @@
             </p>
 
             <p v-if="book?.organized_stale" class="note note--warning mismatch-note">
-              原文件已变化，整理版可能过时，可重新整理
+              原文件已变化，整理版可能过时
             </p>
 
             <div class="info-tags">
