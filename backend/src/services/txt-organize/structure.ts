@@ -108,7 +108,7 @@ interface GroupEntry {
 /**
  * 按原文标题行的「第X部」「第Y卷<卷名>」前缀补出 AI 没标出的部 / 卷（编号只增不减），
  * 按 AI 在章节标签上指出的 volumeTitle 补出新卷（与当前卷名相同或互相包含时不建），
- * 并去掉与当前卷编号相同、或卷名与当前卷名一致的单独分卷标题行（重复的卷标题，标题行已在 dropLines 里）。
+ * 并去掉与当前卷编号相同、或一侧编号未知时卷名与当前卷名一致的单独分卷标题行（重复的卷标题，标题行已在 dropLines 里）。
  * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷），标题由 displayTitle 从原文得出
  */
 function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<number>, notes: string[]): GroupEntry[] {
@@ -150,8 +150,9 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     if (vm) {
       const n = numValue(vm[2]);
       const name = volumeNameKey(vm[1].replace(VOLUME_NUM_RE, ''));
-      if (namesMatch(name, curVolumeName)) {
-        // 卷名与当前卷一致（如先按 volumeTitle 建了卷）：同一卷，只补上编号
+      if (curVolume === null && namesMatch(name, curVolumeName)) {
+        // 当前卷没有编号（如先按 volumeTitle 建了卷）且卷名一致：同一卷，只补上编号。
+        // 当前卷有编号时只看编号，避免编号不同的两卷因卷名互相包含被合并
         curVolume = n;
       } else if (greater(n, curVolume)) {
         curVolume = n;
@@ -168,8 +169,9 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
       const m = text.match(VOLUME_START_RE);
       const n = m ? numValue(m[1]) : NaN;
       const name = headingParts(text).name;
-      if ((!Number.isNaN(n) && n === curVolume) || namesMatch(name, curVolumeName)) {
-        // 与当前卷编号相同或卷名一致：重复的卷标题，不另建卷（标题行已在 dropLines 里）
+      if ((!Number.isNaN(n) && n === curVolume) || ((Number.isNaN(n) || curVolume === null) && namesMatch(name, curVolumeName))) {
+        // 与当前卷编号相同，或一侧编号未知时卷名一致：重复的卷标题，不另建卷（标题行已在 dropLines 里）。
+        // 两侧都有编号且不同时是不同的卷，卷名互相包含（如「风起」「风起云涌」）也不合并
         notes.push(`第 ${c.lineNo + 1} 行是重复的分卷标题，已去掉：${c.text}`);
         return;
       }

@@ -55,8 +55,9 @@
 - 跟踪当前卷名 `curVolumeName`：独立卷行取 `headingParts(text).name`；推断卷取 volumeTitle 去标点；「第Y卷<卷名>」前缀推断卷取前缀里的卷名部分。进入新部时清空。
 - **chapter 带 volumeTitle**：若与 `curVolumeName` 不匹配（沿用 `namesMatch`：相等或互相包含），在该章前插入推断卷（`synthetic: true`），标题为 volumeTitle，`curVolume` 编号置为未知（null），`curVolumeName` = 该卷名；匹配则忽略。
 - **按名称合并**：
-  - 「第Y卷<卷名> 第Z章」前缀分支：卷名与 `curVolumeName` 匹配时视为同一卷，只更新 `curVolume = Y`，不新建卷（去前缀显示照旧）。
-  - 独立卷行：编号与 `curVolume` 相同 **或** 卷名与 `curVolumeName` 匹配时，视为重复卷标题（现有 dropLines + note 逻辑）。
+  - 「第Y卷<卷名> 第Z章」前缀分支：当前卷编号未知（`curVolume` 为 null，如 volumeTitle 建的卷）且卷名与 `curVolumeName` 匹配时视为同一卷，只更新 `curVolume = Y`，不新建卷（去前缀显示照旧）；当前卷有编号时只看编号（编号只增不减）。
+  - 独立卷行：编号与 `curVolume` 相同，**或**一侧编号未知（该行无编号或 `curVolume` 为 null）且卷名与 `curVolumeName` 匹配时，视为重复卷标题（现有 dropLines + note 逻辑）。两侧编号都已知且不同即为不同卷，卷名互相包含也不合并（如「第一卷 风起」「第二卷 风起云涌」）。
+  - （实施期决定：最终审查发现原表述「编号相同或卷名匹配」会把编号明确不同、卷名互相包含的两个真卷合并，改为按名称合并只在一侧编号未知时生效。）
 - **卷前言**：chapter 行匹配 `VOLUME_START_RE`（行首第Y卷、不带章号），且它之后的下一个结构性标签是编号同为 Y 的独立卷行 → 把这一章放到那个卷之后（成为该卷第一章）。其他情况不变。
 - 推断出的卷计入现有 note「从章节标题前缀推断出 N 个分卷」；带 volumeTitle 建卷另计 note「AI 指出 N 处新分卷：<卷名列表>」。
 - 显示标题：带书名前缀的章节照旧由 `displayTitle` 去掉「《书名》」（现有 BOOK_NAME_PREFIX_RE 只在后面紧跟「第…」时去，「《鬼吹灯之昆仑神宫》 178 死亡收藏者」需同样去掉：放宽为后面紧跟「第…」或数字）。

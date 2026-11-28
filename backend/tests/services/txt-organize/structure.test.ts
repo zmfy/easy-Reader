@@ -530,6 +530,36 @@ describe('按 AI 指出的 volumeTitle 建卷、同名卷合并', () => {
     expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
   });
 
+  it('编号不同的两个独立卷，卷名互相包含也不合并（「风起 / 风起云涌」）', async () => {
+    const text = '第一卷 风起\n第一章 甲\n正文1\n第二卷 风起云涌\n第二章 乙\n正文2\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: chap(), 3: { type: 'volume' }, 4: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第一卷 风起'], [1, '第一章 甲'], [0, '第二卷 风起云涌'], [1, '第二章 乙'],
+    ]);
+    expect(structure.dropLines.has(3)).toBe(true);
+    expect(structure.notes.some(n => n.includes('重复的分卷标题'))).toBe(false);
+  });
+
+  it('编号不同的两个独立卷，「江湖 上 / 江湖」也不合并', async () => {
+    const text = '第一卷 江湖 上\n第一章 甲\n正文1\n第二卷 江湖\n第二章 乙\n正文2\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: chap(), 3: { type: 'volume' }, 4: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第一卷 江湖 上'], [1, '第一章 甲'], [0, '第二卷 江湖'], [1, '第二章 乙'],
+    ]);
+  });
+
+  it('前缀分支：当前卷有编号时，编号不同的同名前缀不按名称合并（编号不倒退）', async () => {
+    const text = '第三卷 龙岭\n第一章 甲\n正文1\n第二卷龙岭第二章 乙\n正文2\n第三卷龙岭第三章 丙\n正文3\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: chap(), 3: chap(), 5: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第三卷 龙岭'], [1, '第一章 甲'],
+      // 乱入的旧卷前缀：不在该卷下，标题保留前缀
+      [1, '第二卷龙岭第二章 乙'],
+      // 当前卷仍是第三卷：去掉卷名前缀
+      [1, '第三章 丙'],
+    ]);
+  });
+
   it('进入新部后同名卷名不再合并', async () => {
     const text = '《云南虫谷》 第一章 甲\n正文\n第二部\n《云南虫谷》 第二章 乙\n正文\n';
     const { structure } = await prepare(text, { 0: vt('云南虫谷'), 2: { type: 'part' }, 3: vt('云南虫谷') });
