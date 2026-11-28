@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { aiManager } from '../../../src/ai/ai-manager';
 import { Candidate } from '../../../src/services/txt-organize/candidates';
-import { judgeCandidates, judgeRetry, JUDGE_BATCH_SIZE, JUDGE_OVERLAP } from '../../../src/services/txt-organize/judge';
+import { judgeCandidates, judgeRetry, JUDGE_BATCH_SIZE, JUDGE_FAST_BATCH_SIZE, JUDGE_OVERLAP } from '../../../src/services/txt-organize/judge';
 
 const db = new Database(':memory:');
 const book = { title: '测试书', author: '某作者' };
@@ -339,33 +339,34 @@ describe('judgeCandidates 快速模式', () => {
     });
     const res = await judgeCandidates(mk(texts), book, db, undefined, 'fast');
     const odd = (from: number, count: number) => Array.from({ length: count }, (_, i) => 2 * (from + i) + 1);
-    expect(prompts).toHaveLength(2);
-    expect(idsIn(prompts[0])).toEqual(odd(0, 300));
-    expect(idsIn(prompts[1])).toEqual(odd(280, 70));
-    // 上文 #561 之前最近的 chapter 是规则判定的 #560
-    expect(prompts[1].split('\n').find(l => l.startsWith('#561\t'))).toContain('\tprevChapter=第281章 名281');
-    expect(res.batches).toBe(2);
+    expect(prompts).toHaveLength(4);
+    expect(idsIn(prompts[0])).toEqual(odd(0, 100));
+    expect(idsIn(prompts[1])).toEqual(odd(80, 120));
+    expect(idsIn(prompts[3])).toEqual(odd(280, 70));
+    // 上文 #161 之前最近的 chapter 是规则判定的 #160
+    expect(prompts[1].split('\n').find(l => l.startsWith('#161\t'))).toContain('\tprevChapter=第81章 名81');
+    expect(res.batches).toBe(4);
     expect(res.labels).toHaveLength(700);
     expect(res.notes[res.notes.length - 1]).toBe('快速模式：规则判定 350 行，AI 判定 350 行');
   });
 
   it('fast prevChapter 与结构摘要使用前批 AI 判定的 chapter', async () => {
-    // #0 规则判定为章节，#1..#400 全是可疑行；AI 把 #300 判为 chapter、其余判为 noise
+    // #0 规则判定为章节，#1..#400 全是可疑行；AI 把 #100 判为 chapter、其余判为 noise
     const cands = mk(['第一章 起', ...Array.from({ length: 400 }, (_, i) => `可疑${i + 1}`)]);
     const prompts: string[] = [];
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
       prompts.push(prompt);
       return JSON.stringify({
-        labels: idsIn(prompt).map(id => id === 300 ? { id, type: 'chapter' } : { id, type: 'noise', noiseKind: 'text' }),
+        labels: idsIn(prompt).map(id => id === 100 ? { id, type: 'chapter' } : { id, type: 'noise', noiseKind: 'text' }),
         notes: [],
       });
     });
     await judgeCandidates(cands, book, db, undefined, 'fast');
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0].split('\n').find(l => l.startsWith('#300\t'))).toContain('\tprevChapter=第一章 起');
-    expect(prompts[1].split('\n').find(l => l.startsWith('#301\t'))).toContain('\tprevChapter=可疑300');
-    expect(prompts[1].split('\n').find(l => l.startsWith('#300\t'))).toContain('\tprevChapter=第一章 起');
-    expect(prompts[1]).toContain('最近章节标题：第一章 起 / 可疑300');
+    expect(prompts).toHaveLength(4);
+    expect(prompts[0].split('\n').find(l => l.startsWith('#100\t'))).toContain('\tprevChapter=第一章 起');
+    expect(prompts[1].split('\n').find(l => l.startsWith('#101\t'))).toContain('\tprevChapter=可疑100');
+    expect(prompts[1].split('\n').find(l => l.startsWith('#100\t'))).toContain('\tprevChapter=第一章 起');
+    expect(prompts[1]).toContain('最近章节标题：第一章 起 / 可疑100');
   });
 
   it('fast 全部被规则判定 → 不调用 AI', async () => {
@@ -390,5 +391,45 @@ describe('judgeCandidates 快速模式', () => {
     expect(prompts[0]).not.toContain('prevChapter');
     expect(prompts[0]).not.toContain(FAST_NOTE);
     expect(res.notes.some(n => n.startsWith('快速模式'))).toBe(false);
+  });
+
+  it('fast 每批 100 条可疑行：250 条 → 3 批，第 2 批带前一批最后 20 条作上文', async () => {
+    expect(JUDGE_FAST_BATCH_SIZE).toBe(100);
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return chapterJson(idsIn(prompt));
+    });
+    const progress: Array<[number, number]> = [];
+    const texts = Array.from({ length: 250 }, (_, i) => `可疑${i}`);
+    const res = await judgeCandidates(mk(texts), book, db, (d, t) => progress.push([d, t]), 'fast');
+    expect(prompts).toHaveLength(3);
+    expect(idsIn(prompts[0])).toEqual(Array.from({ length: 100 }, (_, i) => i));
+    expect(idsIn(prompts[1])).toEqual(Array.from({ length: 120 }, (_, i) => 80 + i));
+    expect(idsIn(prompts[2])).toEqual(Array.from({ length: 70 }, (_, i) => 180 + i));
+    expect(res.batches).toBe(3);
+    expect(progress.map(p => p[1])).toEqual([3, 3, 3]);
+  });
+});
+
+describe('judgeCandidates full 批大小与网络错误原因', () => {
+  it('full 仍 300 一批：301 个候选 → 2 批', async () => {
+    const spy = jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => chapterJson(idsIn(prompt)));
+    const res = await judgeCandidates(makeCands(301), book, db);
+    expect(res.batches).toBe(2);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('网络错误信息带 cause 原因，重试警告日志也带', async () => {
+    const err = Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_HEADERS_TIMEOUT' } });
+    jest.spyOn(aiManager, 'chat').mockRejectedValue(err);
+    const warn = jest.spyOn(console, 'warn');
+    await expect(judgeCandidates(makeCands(10), book, db)).rejects.toThrow('fetch failed（原因：UND_ERR_HEADERS_TIMEOUT）');
+    expect(warn.mock.calls[0].join(' ')).toContain('UND_ERR_HEADERS_TIMEOUT');
+  });
+
+  it('cause 没有 code 时用 message；没有 cause 时保持原样', async () => {
+    jest.spyOn(aiManager, 'chat').mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause: new Error('socket hang up') }));
+    await expect(judgeCandidates(makeCands(10), book, db)).rejects.toThrow('fetch failed（原因：socket hang up）');
   });
 });

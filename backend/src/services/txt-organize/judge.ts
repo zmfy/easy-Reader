@@ -24,6 +24,8 @@ export interface JudgeResult {
 }
 
 export const JUDGE_BATCH_SIZE = 300;
+/** 快速模式每批行数：可疑行难判断，单批用时随行数超线性增长，300 行一批易超时 */
+export const JUDGE_FAST_BATCH_SIZE = 100;
 export const JUDGE_OVERLAP = 20;
 
 const LABEL_TYPES: LabelType[] = ['part', 'volume', 'chapter', 'duplicate', 'noise'];
@@ -66,6 +68,14 @@ export const judgeRetry = { delaysMs: [5000, 15000, 30000] };
 /** 配置类错误（未配置 AI 插件），重试没有意义 */
 const NO_RETRY_MESSAGES = ['未配置 AI 插件'];
 
+/** fetch failed 的真正原因在 error.cause（如 UND_ERR_HEADERS_TIMEOUT、ECONNRESET），附在错误信息后；没有 cause 保持原样 */
+function errorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  const cause = e instanceof Error ? (e as { cause?: unknown }).cause as { code?: unknown; message?: unknown } | undefined : undefined;
+  const reason = cause && (cause.code || cause.message);
+  return reason ? `${message}（原因：${reason}）` : message;
+}
+
 /**
  * 调一次 AI；网络错误等临时失败按 judgeRetry.delaysMs 的间隔在同一批内重试，不计入 InvalidBatch 的两次尝试。
  * 重试用尽抛 AiCallFailed；配置类错误直接抛出。
@@ -75,7 +85,7 @@ async function chatWithRetry(prompt: string, db: Database.Database): Promise<str
     try {
       return await aiManager.chat(prompt, db);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = errorMessage(e);
       if (NO_RETRY_MESSAGES.includes(message)) throw e;
       if (retry >= judgeRetry.delaysMs.length) {
         throw new AiCallFailed(retry > 0 ? `重试 ${retry} 次后仍失败：${message}` : message);
@@ -237,11 +247,12 @@ export async function judgeCandidates(
     pre.forEach((l, i) => { if (l) labels[i] = l; });
     pending = candidates.filter((_, i) => !pre[i]);
   }
-  const total = Math.ceil(pending.length / JUDGE_BATCH_SIZE);
+  const batchSize = mode === 'fast' ? JUDGE_FAST_BATCH_SIZE : JUDGE_BATCH_SIZE;
+  const total = Math.ceil(pending.length / batchSize);
 
   for (let b = 0; b < total; b++) {
-    const start = b * JUDGE_BATCH_SIZE;
-    const batch = pending.slice(start, start + JUDGE_BATCH_SIZE);
+    const start = b * batchSize;
+    const batch = pending.slice(start, start + batchSize);
     const context = pending.slice(Math.max(0, start - JUDGE_OVERLAP), start);
     // 结构摘要：本批第一条（非上文）候选行之前的已知标签；fast 下未知的空位由 forEach 跳过
     const summary = structureSummary(candidates, labels.slice(0, batch[0].id));
