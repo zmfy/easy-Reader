@@ -195,10 +195,16 @@ export async function applyOrganizeDecision(
   return summary;
 }
 
+/** 采用整理版时从原书复制到整理版的列 */
+const INHERITED_COLUMNS = [
+  'is_finished', 'tags', 'rating', 'publish_date', 'finish_date', 'series_id',
+  'manually_edited_fields', 'ai_fill_version', 'ai_fill_status', 'ai_reviewed_at',
+];
+
 /** 同一用户两本书都有记录时，时间较新的胜出（相同时保留整理版上的） */
 const newer = (a: string | null, b: string | null) => (a ?? '') > (b ?? '');
 
-/** 原书的进度 / 书签 / 书架 / 历史迁到整理版，复制 AI 书目信息，删除按章节序号存的数据。在调用方事务内执行 */
+/** 原书的进度 / 书签 / 书架 / 历史迁到整理版，复制书目信息与 AI 书目信息，删除按章节序号存的数据。在调用方事务内执行 */
 function migrateReaderData(
   db: Database.Database,
   origId: string,
@@ -272,6 +278,11 @@ function migrateReaderData(
     db.prepare('UPDATE reading_history SET book_id = ? WHERE user_id = ? AND book_id = ?').run(orgId, h.user_id, origId);
     m.history++;
   }
+
+  // 整理版就是同一本书：入库时只带了书名 / 作者 / 简介 / 分类 / 封面，其余书目信息和 AI 填充状态照原书补上
+  // （系列也继承；hide_old 时原书已是副本，系列里不重复显示）。AI 填充状态一并复制，免得批量填充又去处理整理版
+  const inherited = INHERITED_COLUMNS.join(', ');
+  db.prepare(`UPDATE books SET (${inherited}) = (SELECT ${inherited} FROM books WHERE id = ?) WHERE id = ?`).run(origId, orgId);
 
   // AI 书目信息复制到整理版（整理版已有的不覆盖）；按章节序号存的数据换了目录就不对了，删掉
   db.prepare(

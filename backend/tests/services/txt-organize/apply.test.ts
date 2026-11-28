@@ -29,6 +29,8 @@ const db: Database.Database = require('../../../src/db').getDb();
 const { applyOrganizeDecision } = require('../../../src/services/txt-organize/apply') as typeof import('../../../src/services/txt-organize/apply');
 const scanBatchRoutes = require('../../../src/routes/scan-batches').default;
 const libraryRoutes = require('../../../src/routes/library').default;
+const { selectFillCandidates } = require('../../../src/services/ai-batch-fill') as typeof import('../../../src/services/ai-batch-fill');
+const { AI_FILL_VERSION } = require('../../../src/services/scan-versions') as typeof import('../../../src/services/scan-versions');
 const { runScanTask } = require('../../../src/services/scan-walker');
 const { createScanTask } = require('../../../src/services/scan-task');
 const { readTxtLines } = require('../../../src/services/txt-organize/lines') as typeof import('../../../src/services/txt-organize/lines');
@@ -397,6 +399,24 @@ describe('applyOrganizeDecision', () => {
       .toEqual([['u1', '2026-11-20 10:00:00'], ['u2', '2026-11-20 10:00:00']]);
     for (const t of ['reading_progress', 'shelf', 'reading_history']) expect(rowsOf(t, fx.origId)).toEqual([]);
   });
+
+  it.each(['keep_new_hide_old', 'keep_new_delete_record', 'keep_new_delete_file'] as const)(
+    '%s：原书的完结状态 / 标签 / 评分 / 日期 / 系列 / 手动编辑字段 / AI 填充状态复制到整理版', async (decision) => {
+      const fx = await makeOrganized();
+      const cols = ['is_finished', 'tags', 'rating', 'publish_date', 'finish_date', 'series_id',
+        'manually_edited_fields', 'ai_fill_version', 'ai_fill_status', 'ai_reviewed_at'];
+      db.prepare(
+        `UPDATE books SET is_finished = 1, tags = '["仙侠","凡人"]', rating = 8.6, publish_date = '2008-01-01', finish_date = '2013-09-23',
+           series_id = 'series-x', manually_edited_fields = '["title"]', ai_fill_version = ?, ai_fill_status = 'filled',
+           ai_reviewed_at = '2026-11-01 00:00:00'
+         WHERE id = ?`
+      ).run(AI_FILL_VERSION, fx.origId);
+      const expected = db.prepare(`SELECT ${cols.join(', ')} FROM books WHERE id = ?`).get(fx.origId);
+
+      await applyOrganizeDecision({ payload: fx.payload }, decision, 'admin1', db);
+      expect(db.prepare(`SELECT ${cols.join(', ')} FROM books WHERE id = ?`).get(fx.orgId)).toEqual(expected);
+      expect(selectFillCandidates(db, false).map(c => c.id)).not.toContain(fx.orgId);
+    });
 
   it('批次已处理：不再执行', async () => {
     const fx = await makeOrganized();
