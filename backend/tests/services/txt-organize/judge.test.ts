@@ -224,6 +224,13 @@ describe('judgeCandidates', () => {
     expect(spy).toHaveBeenCalledTimes(4);
   });
 
+  it('fetch failed 的错误信息带上 cause 里的真正原因', async () => {
+    jest.spyOn(aiManager, 'chat').mockRejectedValue(
+      Object.assign(new TypeError('fetch failed'), { cause: { code: 'UND_ERR_HEADERS_TIMEOUT' } }),
+    );
+    await expect(judgeCandidates(makeCands(10), book, db)).rejects.toThrow('fetch failed（原因：UND_ERR_HEADERS_TIMEOUT）');
+  });
+
   it('按间隔递增等待后重试', async () => {
     judgeRetry.delaysMs = [5, 15, 30];
     const timeout = jest.spyOn(global, 'setTimeout');

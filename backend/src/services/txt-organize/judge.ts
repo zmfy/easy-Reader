@@ -59,6 +59,16 @@ export const judgeRetry = { delaysMs: [5000, 15000, 30000] };
 /** 配置类错误（未配置 AI 插件），重试没有意义 */
 const NO_RETRY_MESSAGES = ['未配置 AI 插件'];
 
+/** fetch failed 的真正原因在 error.cause（如 UND_ERR_HEADERS_TIMEOUT、ECONNRESET），附在错误信息后；没有 cause 保持原样 */
+function errorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  const cause = e instanceof Error ? (e as { cause?: unknown }).cause : undefined;
+  const reason = typeof cause === 'string' ? cause
+    : cause && typeof cause === 'object' ? (cause as { code?: unknown; message?: unknown }).code || (cause as { message?: unknown }).message
+    : undefined;
+  return reason ? `${message}（原因：${reason}）` : message;
+}
+
 /**
  * 调一次 AI；网络错误等临时失败按 judgeRetry.delaysMs 的间隔在同一批内重试，不计入 InvalidBatch 的两次尝试。
  * 重试用尽抛 AiCallFailed；配置类错误直接抛出。
@@ -68,7 +78,7 @@ async function chatWithRetry(prompt: string, db: Database.Database): Promise<str
     try {
       return await aiManager.chat(prompt, db);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = errorMessage(e);
       if (NO_RETRY_MESSAGES.includes(message)) throw e;
       if (retry >= judgeRetry.delaysMs.length) {
         throw new AiCallFailed(retry > 0 ? `重试 ${retry} 次后仍失败：${message}` : message);

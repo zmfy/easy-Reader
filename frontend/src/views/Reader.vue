@@ -1122,9 +1122,12 @@ async function loadOrganize() {
 
 async function handleRequestOrganize() {
   try {
-    await ElMessageBox.confirm('AI 会重新整理这本书的目录，管理员审核后对所有读者生效。', 'AI 整理目录', {
-      type: 'info', confirmButtonText: '开始整理', cancelButtonText: '取消',
-    })
+    await ElMessageBox.confirm(
+      'AI 会逐行判断这本书里疑似标题的行，重新整理目录，管理员审核后对所有读者生效。'
+        + '整理比较慢：几百章的书几分钟，两三千章的长篇约需 30～60 分钟。整理在后台进行，可以继续阅读或关掉页面。',
+      'AI 整理目录',
+      { type: 'warning', confirmButtonText: '开始整理', cancelButtonText: '取消' },
+    )
   } catch { return }
   organizeRequesting.value = true
   clearTimeout(organizePollTimer)

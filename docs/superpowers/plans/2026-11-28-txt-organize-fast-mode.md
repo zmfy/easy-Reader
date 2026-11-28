@@ -1,5 +1,7 @@
 # TXT 目录整理 快速模式 Implementation Plan
 
+> **已撤回（2026-11-28）**：已实现并真书验证，未达目标后撤回（提交 d98d4af）。《凡人修仙传》快速模式 45 分钟，完全 AI 40 分钟：AI 耗时由难判断的行决定，规则去掉的易行本来就便宜；AI 上下文变少后，乱序真章节被丢、裸编号被判成章节。另试低推理强度：快 10 倍以上，但质量明显下降。保留本文档备查。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 发起 TXT 目录整理时可选「快速」（规则预判 + AI 只判可疑行，默认）或「完全 AI」（现有做法）。
