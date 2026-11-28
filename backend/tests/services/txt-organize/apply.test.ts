@@ -28,6 +28,7 @@ jest.mock('../../../src/middleware/auth', () => {
 const db: Database.Database = require('../../../src/db').getDb();
 const { applyOrganizeDecision } = require('../../../src/services/txt-organize/apply') as typeof import('../../../src/services/txt-organize/apply');
 const scanBatchRoutes = require('../../../src/routes/scan-batches').default;
+const libraryRoutes = require('../../../src/routes/library').default;
 const { runScanTask } = require('../../../src/services/scan-walker');
 const { createScanTask } = require('../../../src/services/scan-task');
 const { readTxtLines } = require('../../../src/services/txt-organize/lines') as typeof import('../../../src/services/txt-organize/lines');
@@ -161,13 +162,16 @@ const batch = (id: string) => db.prepare('SELECT * FROM scan_batches WHERE id = 
 
 let server: Server;
 let base: string;
+let libraryBase: string;
 
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
   app.use('/api/scan-batches', scanBatchRoutes);
+  app.use('/api/library', libraryRoutes);
   await new Promise<void>(r => { server = app.listen(0, () => r()); });
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/scan-batches`;
+  libraryBase = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/library`;
 });
 afterAll(async () => {
   await new Promise<void>(r => server.close(() => r()));
@@ -435,5 +439,42 @@ describe('审核批次路由', () => {
     expect(r.status).toBe(200);
     expect(book(fx.origId)).toBeUndefined();
     expect(fs.existsSync(fx.src)).toBe(false);
+  });
+});
+
+describe('删除整理版（DELETE /api/library/:id）', () => {
+  const del = (id: string, query = '') => fetch(`${libraryBase}/${id}${query}`, { method: 'DELETE' });
+
+  it('已采用的整理版连文件一起删除：记录、文件、封面副本都没了', async () => {
+    const fx = await makeOrganized();
+    await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_record', 'admin1', db);
+    const r = await del(fx.orgId);
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toMatchObject({ files_deleted: 1, records_deleted: 1 });
+    expect(book(fx.orgId)).toBeUndefined();
+    expect(fs.existsSync(fx.orgFile)).toBe(false);
+    expect(fs.readdirSync(COVERS).filter(f => f.startsWith(`${fx.orgId}-`))).toEqual([]);
+  });
+
+  it('原书隐藏为整理版的副本：级联删除两本，各自的文件都删掉', async () => {
+    const fx = await makeOrganized();
+    await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_hide_old', 'admin1', db);
+    const r = await del(fx.orgId, '?cascade_duplicates=true');
+    expect(r.status).toBe(200);
+    expect((await r.json()).data).toMatchObject({ files_deleted: 2, records_deleted: 2 });
+    expect(book(fx.orgId)).toBeUndefined();
+    expect(book(fx.origId)).toBeUndefined();
+    expect(fs.existsSync(fx.orgFile)).toBe(false);
+    expect(fs.existsSync(fx.src)).toBe(false);
+  });
+
+  it('不是整理版的书：文件在书库外（哪怕在整理版目录里）仍被拒绝', async () => {
+    const fx = await makeOrganized();
+    db.prepare("INSERT INTO books (id, title, file_path, file_format, status) VALUES ('fake', '冒充', ?, 'epub', 'normal')").run(fx.orgFile);
+    const r = await del('fake');
+    expect(r.status).toBe(500);
+    expect((await r.json()).message).toMatch(/outside root/);
+    expect(fs.existsSync(fx.orgFile)).toBe(true);
+    expect(book('fake')).toBeDefined();
   });
 });

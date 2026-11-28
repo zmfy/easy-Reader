@@ -578,6 +578,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
       cascade_duplicate_ids: dups.map(d => d.id),
       cascade_duplicate_paths: dups.map(d => d.file_path),
       user_id: req.user!.userId,
+      organized_ids: [book, ...dups].filter(b => b.organized_from).map(b => b.id),
     }, { keepFiles: keep_file });
     successResponse(res, result, '已删除');
   } catch (err) {
