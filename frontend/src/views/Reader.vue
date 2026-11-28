@@ -39,7 +39,7 @@
         <div class="nav-inner">
           <button class="nav-btn" title="返回" @click="goBack"><IconChevronLeft :size="22" :stroke-width="1.75" /></button>
           <span class="nav-title">{{ bookTitle }}</span>
-          <span class="nav-progress">
+          <span v-if="!reader.chaptersLoading.value" class="nav-progress">
             {{ reader.currentChapterIndex.value + 1 }} / {{ reader.chapters.value.length }}{{ readerStore.settings.pageMode === 'waterfall' ? ` ${unitLabel} · 瀑布流` : '' }}
           </span>
         </div>
@@ -105,6 +105,13 @@
         <div v-if="reader.loadError.value" class="reader-load-error">
           <IconAlertTriangle :size="28" :stroke-width="1.75" />
           <p>{{ reader.loadError.value }}</p>
+        </div>
+
+        <!-- ── 打开时读取目录：大文件第一次打开要整本扫一遍，显示正在读取，免得以为没反应 ── -->
+        <div v-else-if="reader.chaptersLoading.value" class="reader-opening" role="status">
+          <el-icon class="is-loading"><IconLoader2 /></el-icon>
+          <p>正在读取文件…</p>
+          <p v-if="openingSlow" class="reader-opening-hint">文件较大，第一次打开需要多等一会儿</p>
         </div>
 
         <!-- ── 章节模式 ── -->
@@ -518,6 +525,23 @@
               </ul>
             </template>
           </div>
+          <!-- TXT 目录不准：请 AI 重新整理（管理员审核后生效） -->
+          <div v-if="tocTab === 'toc' && organize?.available" class="toc-organize">
+            <template v-if="organizeJob && (organizeJob.status === 'pending' || organizeJob.status === 'running')">
+              <span class="toc-organize-status">
+                <el-icon class="is-loading"><IconLoader2 /></el-icon>
+                正在整理…<template v-if="organizeJob.batches_total > 0">（第 {{ Math.min(organizeJob.batches_done + 1, organizeJob.batches_total) }} / {{ organizeJob.batches_total }} 批）</template>
+              </span>
+            </template>
+            <span v-else-if="organizeJob?.status === 'review'" class="toc-organize-status">已提交，等待管理员审核</span>
+            <template v-else>
+              <span v-if="organizeJob?.status === 'failed'" class="toc-organize-status error">整理失败：{{ organizeJob.error || '未知原因' }}</span>
+              <span v-else-if="organize.lastRejectedAt" class="toc-organize-status">上次的整理结果未被采用</span>
+              <button class="toc-action" :disabled="organizeRequesting" @click="handleRequestOrganize">
+                <IconSparkles :size="15" :stroke-width="1.75" />{{ organizeJob?.status === 'failed' ? '重试' : '目录不对？让 AI 整理' }}
+              </button>
+            </template>
+          </div>
         </aside>
       </div>
     </Transition>
@@ -542,7 +566,7 @@ import HighlightMenu from '@/components/HighlightMenu.vue'
 import MindExpandPanel from '@/components/MindExpandPanel.vue'
 import { pollUntil } from '@/utils/poll'
 import { rangeToAnchor, applyHighlights, pickChapterHighlights, chapterContentOf, checkNewHighlight, flashText, unwrapMarks, HL_CONTENT_SELECTOR, type TextAnchor } from '@/utils/highlight-anchor'
-import type { Highlight, ReaderTheme, ReadingAnchor } from '@/types'
+import type { Highlight, ReaderTheme, ReadingAnchor, OrganizeStatus } from '@/types'
 import { groupHighlightsByChapter } from '@/utils/highlight-list'
 import { readerKeyAction, pageScrollDistance, alignedPageDistance, contentTapAction } from '@/utils/reader-keys'
 import { readerPalette, hideLeadingTitle, countChapterChars, isDarkReaderTheme, isEinkTheme, nightToggleTheme, isImagePage } from '@/utils/reader-style'
@@ -572,6 +596,15 @@ function goBack() {
 
 const reader = useReader(bookId)
 const loading = computed(() => reader.loading.value)
+// 读取目录超过 3 秒：补一句说明，告诉读者是文件大、不是卡住了
+const openingSlow = ref(false)
+let openingSlowTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => reader.chaptersLoading.value, on => {
+  clearTimeout(openingSlowTimer)
+  openingSlow.value = false
+  if (on) openingSlowTimer = setTimeout(() => { openingSlow.value = true }, 3000)
+}, { immediate: true })
+onUnmounted(() => clearTimeout(openingSlowTimer))
 const contentRef = ref<HTMLElement | null>(null)
 const toolbarVisible = ref(true)
 // 墨水屏：纯黑白、关闭动画，点屏幕两侧瞬间翻页。设置 / 目录抽屉 teleport 到 body，所以也给 <html> 加 class
@@ -1437,6 +1470,71 @@ function expandTocToCurrent() {
 const tocStatus = computed(() =>
   [bookFinished.value ? '已完结' : '', `共${reader.chapters.value.length}${unitLabel.value}`].filter(Boolean).join(' · '))
 
+// ── TXT 目录 AI 整理：目录抽屉底部的入口与任务状态 ──
+const ORGANIZE_POLL_MS = 5000
+const organize = ref<OrganizeStatus | null>(null)
+const organizeJob = computed(() => organize.value?.job ?? null)
+const organizeRequesting = ref(false)
+let organizePollTimer: ReturnType<typeof setTimeout> | undefined
+let organizeUnmounted = false
+// 请求序号：发起整理前后各加一，在此之前发出的轮询结果作废，免得旧状态覆盖 POST 返回的任务
+let organizeSeq = 0
+
+function isOrganizeRunning() {
+  const s = organizeJob.value?.status
+  return s === 'pending' || s === 'running'
+}
+
+// 进行中每 5 秒查一次，直到离开进行中状态；读取失败不打扰阅读，下一轮再试
+function scheduleOrganizePoll() {
+  clearTimeout(organizePollTimer)
+  if (organizeUnmounted || !isOrganizeRunning()) return
+  organizePollTimer = setTimeout(loadOrganize, ORGANIZE_POLL_MS)
+}
+
+async function loadOrganize() {
+  const seq = ++organizeSeq
+  try {
+    const data = (await readerApi.getOrganize(bookId)).data.data ?? null
+    if (seq !== organizeSeq) return
+    organize.value = data
+  } catch {
+    if (seq !== organizeSeq) return
+  }
+  scheduleOrganizePoll()
+}
+
+async function handleRequestOrganize() {
+  try {
+    await ElMessageBox.confirm(
+      'AI 会逐行判断这本书里疑似标题的行，重新整理目录，管理员审核后对所有读者生效。'
+        + '整理比较慢：几百章的书几分钟，两三千章的长篇约需 30～60 分钟。整理在后台进行，可以继续阅读或关掉页面。',
+      'AI 整理目录',
+      { type: 'warning', confirmButtonText: '开始整理', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  organizeRequesting.value = true
+  clearTimeout(organizePollTimer)
+  organizeSeq++
+  try {
+    const job = (await readerApi.requestOrganize(bookId)).data.data?.job ?? null
+    organizeSeq++
+    if (organize.value) organize.value = { ...organize.value, job }
+    scheduleOrganizePoll()
+  } catch (err) {
+    ElMessage.warning(errorMessage(err, '发起整理失败'))
+    // 409（已有任务、开关被关闭等）：同步成后端的真实状态
+    await loadOrganize()
+  } finally {
+    organizeRequesting.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  organizeUnmounted = true
+  clearTimeout(organizePollTimer)
+})
+
 // 点「目录 / 书签 / 笔记」：同一个 Tab 再点一次关闭，否则打开并切到该 Tab
 function openToc(tab: 'toc' | 'bookmark' | 'note') {
   if (tocVisible.value && tocTab.value === tab) {
@@ -1894,6 +1992,7 @@ onMounted(async () => {
   }).catch(() => {})
   await readerStore.loadPrefs()
   if (!await reader.loadChapters()) return
+  if (reader.bookFormat.value === 'txt') loadOrganize()
 
   const wantJump = hasJumpQuery()
   if (isPdf.value) {
@@ -2456,6 +2555,27 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 目录底部：AI 整理目录入口与状态 */
+.toc-organize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 16px 14px 20px;
+  border-top: 1px solid var(--reader-divider);
+}
+.toc-organize-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--reader-text-secondary);
+}
+.toc-organize-status.error { color: var(--danger); }
+.toc-organize .toc-action { margin-left: auto; }
+.toc-organize .toc-action:disabled { opacity: 0.5; cursor: default; }
+
 .toc-empty {
   padding: 64px 16px;
   text-align: center;
@@ -2879,6 +2999,19 @@ onUnmounted(() => {
 .progress-info { font-size: 13px; color: var(--text-2); }
 
 .content-loading { padding: 20px 0; }
+.reader-opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 120px 24px;
+  color: var(--reader-text-secondary);
+  font-size: 15px;
+  text-align: center;
+}
+.reader-opening .el-icon { font-size: 28px; color: var(--accent); }
+.reader-opening p { margin: 0; }
+.reader-opening-hint { font-size: 13px; opacity: 0.8; }
 .reader-load-error {
   display: flex;
   flex-direction: column;

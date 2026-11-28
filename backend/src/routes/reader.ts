@@ -14,7 +14,8 @@ import { getReaderPlugin } from '../plugins/plugin-manager';
 import { isAiConfigured } from '../ai/ai-manager';
 import { generateRecap, answerQuestion } from '../services/ai-reading-run';
 import { getTtsConfig, getSpeech, TTS_MAX_TEXT } from '../services/tts';
-import { resolveRealPathInsideRoot } from '../utils/path-safe';
+import { resolveBookRealPath } from '../services/book-file';
+import { requestOrganize, getActiveOrganizeJob, getLastRejection, OrganizeRequestError, OrganizeRequestErrorCode } from '../services/txt-organize/job';
 import { rewriteEpubAssetUrls } from '../utils/epub-asset-url';
 import { htmlToBlocks } from '../utils/content-blocks';
 import { getLastReadBookId } from '../services/pwa';
@@ -29,14 +30,16 @@ router.get('/last-read', authMiddleware, (req: Request, res: Response) => {
   const bookId = getLastReadBookId(getDb(), req.user!.userId);
   successResponse(res, bookId ? { bookId } : null);
 });
-const BOOKS_DIR = process.env.BOOKS_DIR || '/app/books';
 
-// 读取书籍文件前，校验其真实路径（解析符号链接后）位于书库目录内，
-// 防止登记在库的路径指向书库外的文件（如数据库、密钥）而被读出
-function findReadableBook(bookId: string, res: Response): Book | null {
+// 读取书籍文件前，校验其真实路径（解析符号链接后）位于书库目录内（整理版：位于整理版目录内），
+// 防止登记在库的路径指向书库外的文件（如数据库、密钥）而被读出。
+// 待审核的整理版只有管理员能打开（审核时预览），其他人（含不需要登录的图片接口）当作不存在
+function findReadableBook(bookId: string, req: Request, res: Response): Book | null {
   const book = getDb().prepare('SELECT * FROM books WHERE id = ?').get(bookId) as Book | undefined;
-  if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return null; }
-  const realPath = resolveRealPathInsideRoot(BOOKS_DIR, book.file_path);
+  if (!book || (book.status === 'pending_review' && req.user?.role !== 'admin')) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return null;
+  }
+  const realPath = resolveBookRealPath(book);
   if (!realPath) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在');
     return null;
@@ -64,7 +67,7 @@ const purify = DOMPurify(window);
 // GET /api/reader/:bookId/chapters
 router.get('/:bookId/chapters', authMiddleware, async (req: Request, res: Response) => {
   const db = getDb();
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   if (book.status === 'damaged') { errorResponse(res, 409, 'BUSINESS_CONFLICT', damagedMessage(book.damage_reason)); return; }
 
@@ -111,7 +114,7 @@ const ALLOWED_ASSET_MIME = new Set([
 // BookId is a UUID (unguessable), content is non-sensitive book images — acceptable for a personal NAS reader.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
 
   const assetPath = (req.params as any)[0] as string;
@@ -146,7 +149,7 @@ router.get('/:bookId/asset/*', async (req: Request, res: Response) => {
 
 // GET /api/reader/:bookId/raw — stream the original file (for PDF native rendering)
 router.get('/:bookId/raw', authMiddleware, (req: Request, res: Response) => {
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   if (!fs.existsSync(book.file_path)) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '文件不存在'); return; }
 
@@ -170,7 +173,7 @@ router.get('/:bookId/chapter/:index', authMiddleware, async (req: Request, res: 
   if (format !== 'html' && format !== 'blocks') {
     errorResponse(res, 422, 'VALIDATION_ERROR', 'format 只能是 html 或 blocks'); return;
   }
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
 
   const index = parseInt(req.params.index, 10);
@@ -257,6 +260,61 @@ router.post('/:bookId/progress', authMiddleware, (req: Request, res: Response) =
   successResponse(res, progress, '进度已保存');
 });
 
+// ── TXT 目录 AI 整理 ──
+const ORGANIZE_ERROR_MESSAGES: Record<OrganizeRequestErrorCode, string> = {
+  NOT_TXT: '只有 TXT 可以整理目录',
+  AI_NOT_CONFIGURED: '管理员尚未配置 AI',
+  READERS_DISABLED: '管理员未开放此功能',
+  DAILY_LIMIT: '今天的整理次数已用完，明天再试',
+};
+
+// 整理说明（AI 判定的备注）只给管理员看
+function organizeJobView(job: ReturnType<typeof getActiveOrganizeJob>, req: Request) {
+  if (!job || req.user!.role === 'admin') return job;
+  const { notes: _notes, requested_by: requestedBy, ...rest } = job;
+  // 发起人是谁只告诉发起人本人
+  return requestedBy === req.user!.userId ? { ...rest, requested_by: requestedBy } : rest;
+}
+
+// 读者也能打开的书才能整理（待审核的整理版对读者不存在）
+function findOrganizableBook(req: Request, res: Response): Book | null {
+  const book = getDb().prepare('SELECT * FROM books WHERE id = ?').get(req.params.bookId) as Book | undefined;
+  if (!book || (book.status === 'pending_review' && req.user!.role !== 'admin')) {
+    errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return null;
+  }
+  return book;
+}
+
+// GET /api/reader/:bookId/organize — 能否发起整理、最近的整理任务、上次被拒绝的时间
+router.get('/:bookId/organize', authMiddleware, (req: Request, res: Response) => {
+  const book = findOrganizableBook(req, res);
+  if (!book) return;
+  const db = getDb();
+  const allowReaders = (db.prepare("SELECT value FROM settings WHERE key = 'txt_organize_allow_readers'").get() as { value: string } | undefined)?.value !== '0';
+  const available = book.file_format.toLowerCase() === 'txt' && isAiConfigured(db) && (req.user!.role === 'admin' || allowReaders);
+  successResponse(res, {
+    available,
+    job: organizeJobView(getActiveOrganizeJob(book.id, db), req),
+    lastRejectedAt: getLastRejection(book.id, db)?.rejected_at ?? null,
+  });
+});
+
+// POST /api/reader/:bookId/organize — 发起整理（已有进行中 / 待审核的任务时返回它）
+router.post('/:bookId/organize', authMiddleware, (req: Request, res: Response) => {
+  const book = findOrganizableBook(req, res);
+  if (!book) return;
+  try {
+    const job = requestOrganize(book.id, { userId: req.user!.userId, role: req.user!.role });
+    successResponse(res, { job: organizeJobView(job, req) });
+  } catch (err) {
+    if (err instanceof OrganizeRequestError) {
+      errorResponse(res, 409, 'BUSINESS_CONFLICT', ORGANIZE_ERROR_MESSAGES[err.code]); return;
+    }
+    console.error(`[reader:organize] book=${book.id}`, err);
+    errorResponse(res, 500, 'INTERNAL_ERROR', '发起整理失败');
+  }
+});
+
 // ── 阅读器 AI：前情提要 / 问书（只用当前位置之前的内容，防剧透） ──
 const aiPositionSchema = {
   chapterIndex: z.number().int().min(0).max(1_000_000),
@@ -270,7 +328,7 @@ router.post('/:bookId/recap', authMiddleware, async (req: Request, res: Response
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
   if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   try {
     successResponse(res, await generateRecap(db, book, parsed.data.chapterIndex, parsed.data.paragraphIndex));
@@ -290,7 +348,7 @@ router.post('/:bookId/ask', authMiddleware, async (req: Request, res: Response) 
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
   if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   try {
     successResponse(res, await answerQuestion(db, book, parsed.data));
@@ -419,7 +477,7 @@ router.post('/:bookId/highlights/:id/expand', authMiddleware, async (req: Reques
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
   const db = getDb();
   if (!isAiConfigured(db)) { errorResponse(res, 400, 'AI_NOT_CONFIGURED', AI_NOT_CONFIGURED_MSG); return; }
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   try {
     const result = await expandHighlight(db, book, req.user!.userId, { highlightId: req.params.id, ...parsed.data });
@@ -438,7 +496,7 @@ router.post('/:bookId/highlights/:id/expand', authMiddleware, async (req: Reques
 // GET /api/reader/:bookId/mind-nodes?highlightId= — 每个节点附 source_later（出处在当前用户阅读边界之后）
 router.get('/:bookId/mind-nodes', authMiddleware, async (req: Request, res: Response) => {
   const highlightId = typeof req.query.highlightId === 'string' && req.query.highlightId ? req.query.highlightId : undefined;
-  const book = findReadableBook(req.params.bookId, res);
+  const book = findReadableBook(req.params.bookId, req, res);
   if (!book) return;
   try {
     successResponse(res, await listMindNodesWithLater(getDb(), book, req.user!.userId, highlightId));

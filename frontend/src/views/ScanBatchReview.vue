@@ -4,21 +4,40 @@
       <PageHeader :title="`${readOnly ? '查看批次' : '审核批次'} ${batchIdShort}`" back="/library/scan-batches">
         <template #actions>
           <el-tag v-if="batch" :type="statusType" size="small">{{ statusLabel }}</el-tag>
-          <el-tag v-if="!readOnly && unreviewedCount > 0" type="warning">{{ unreviewedCount }} 项未审视</el-tag>
+          <el-tag v-if="!readOnly && !isOrganize && unreviewedCount > 0" type="warning">{{ unreviewedCount }} 项未审视</el-tag>
           <el-tag v-if="!readOnly && undecidedDamaged > 0" type="danger">还有 {{ undecidedDamaged }} 本损坏的书没选</el-tag>
-          <el-button v-if="!readOnly" type="danger" plain @click="onDiscard">废弃批次</el-button>
+          <el-button v-if="!readOnly" type="danger" plain @click="onDiscard">{{ isOrganize ? '废弃（保留原书）' : '废弃批次' }}</el-button>
           <el-button
             v-if="!readOnly"
             type="primary"
             :disabled="batch?.status !== 'pending' || undecidedDamaged > 0"
             @click="onApply"
-          >应用全部</el-button>
+          >{{ isOrganize ? '执行决定' : '应用全部' }}</el-button>
         </template>
       </PageHeader>
 
       <!-- Applied/discarded: show audit summary at top -->
       <el-alert
-        v-if="readOnly && appliedSummary"
+        v-if="readOnly && organizeSummary"
+        type="success"
+        :closable="false"
+        show-icon
+        class="audit-alert"
+      >
+        <template #title>
+          {{ batch?.status === 'discarded' ? '已废弃' : '已执行' }} · {{ formatServerTime(batch?.applied_at) }} by {{ batch?.applied_by }}
+        </template>
+        <div class="audit-summary">
+          {{ ORGANIZE_DECISION_LABELS[organizeSummary.decision] }}
+          <template v-if="organizeSummary.decision !== 'keep_old'">
+            · 迁移阅读进度 {{ organizeSummary.migrated.progress }} · 书签 {{ organizeSummary.migrated.bookmarks }} ·
+            书架 {{ organizeSummary.migrated.shelf }} · 阅读历史 {{ organizeSummary.migrated.history }}
+          </template>
+          <div v-for="(w, i) in organizeSummary.warnings ?? []" :key="i" class="errors">{{ w }}</div>
+        </div>
+      </el-alert>
+      <el-alert
+        v-else-if="readOnly && appliedSummary"
         type="success"
         :closable="false"
         show-icon
@@ -43,7 +62,19 @@
         </div>
       </el-alert>
 
-      <div v-if="batch" class="section-card section-card--flush">
+      <!-- 整理审核批次：只有一条 organized_duplicate -->
+      <template v-if="batch && isOrganize">
+        <OrganizedDuplicateCard
+          v-for="item in organizeItems"
+          :key="item.id"
+          :payload="organizePayload(item)"
+          :decision="organizeDecisionOf(item)"
+          :read-only="readOnly"
+          @change="(d) => onOrganizeDecide(item.id, d)"
+        />
+      </template>
+
+      <div v-else-if="batch" class="section-card section-card--flush">
       <el-collapse v-model="activePanels">
         <el-collapse-item v-if="grouped.new.length > 0" :name="'new'">
           <template #title>
@@ -217,10 +248,11 @@ import PageHeader from '@/components/PageHeader.vue'
 import DuplicateGroupCard from '@/components/DuplicateGroupCard.vue'
 import SeriesGroupCard from '@/components/SeriesGroupCard.vue'
 import BatchItemPreview from '@/components/BatchItemPreview.vue'
+import OrganizedDuplicateCard from '@/components/OrganizedDuplicateCard.vue'
 import { scanBatchesApi } from '@/api/scan-batches'
 import { useSystemNoticeStore } from '@/stores/system-notice'
-import { undecidedDamagedCount } from '@/utils/scan-review'
-import type { ScanBatch, ScanBatchItem } from '@/types'
+import { undecidedDamagedCount, organizeDecisionOf, ORGANIZE_DECISION_LABELS } from '@/utils/scan-review'
+import type { ScanBatch, ScanBatchItem, OrganizeApplySummary, OrganizeDecision, OrganizedDuplicatePayload } from '@/types'
 
 const PAGE_SIZE = 20
 
@@ -265,9 +297,21 @@ interface ApplySummary {
   errors: Array<{ item_id: string; message: string }>
 }
 const appliedSummary = computed<ApplySummary | null>(() => {
-  if (!batch.value?.apply_summary) return null
+  if (!batch.value?.apply_summary || isOrganize.value) return null
   try { return JSON.parse(batch.value.apply_summary) as ApplySummary } catch { return null }
 })
+
+// 整理审核批次（kind='organize'）：一条 organized_duplicate，决定存在 admin_payload.decision
+const isOrganize = computed(() => batch.value?.kind === 'organize')
+const organizeItems = computed(() => items.value.filter(i => i.type === 'organized_duplicate'))
+const organizeSummary = computed<OrganizeApplySummary | null>(() => {
+  if (!batch.value?.apply_summary || !isOrganize.value) return null
+  try { return JSON.parse(batch.value.apply_summary) as OrganizeApplySummary } catch { return null }
+})
+// admin_payload 只有 { decision }，书目信息始终取原始 payload
+function organizePayload(item: ScanBatchItem): OrganizedDuplicatePayload {
+  return JSON.parse(item.payload) as OrganizedDuplicatePayload
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function payload(item: ScanBatchItem): any {
@@ -347,14 +391,45 @@ async function onDamagedDecide(itemId: string, v: string | number | boolean | un
   await scanBatchesApi.updateItem(batchId, itemId, v)
   await fetchBatch()
 }
+async function onOrganizeDecide(itemId: string, d: OrganizeDecision): Promise<void> {
+  await scanBatchesApi.updateItem(batchId, itemId, d === 'keep_old' ? 'reject' : 'accept', { decision: d })
+  await fetchBatch()
+}
+async function onApplyOrganize(): Promise<void> {
+  const item = organizeItems.value[0]
+  if (!item) return
+  const d = organizeDecisionOf(item)
+  const p = organizePayload(item)
+  if (d === 'keep_new_delete_file') {
+    // 删除原文件不可恢复：二次确认，写明要删的文件
+    await ElMessageBox.confirm(
+      `将从磁盘删除原文件「${p.original.file_path}」，删除后无法恢复。确定执行？`,
+      '删除原文件',
+      { type: 'error', confirmButtonText: '删除原文件', confirmButtonClass: 'el-button--danger' },
+    )
+  } else {
+    await ElMessageBox.confirm(`确认执行：${ORGANIZE_DECISION_LABELS[d]}？`, '执行确认', { type: 'warning' })
+  }
+  const resp = await scanBatchesApi.apply(batchId)
+  const r = resp.data.data as OrganizeApplySummary
+  const warnings = r.warnings ?? []
+  ElMessage({
+    type: warnings.length > 0 ? 'warning' : 'success',
+    message: `已执行：${ORGANIZE_DECISION_LABELS[r.decision]}${warnings.length > 0 ? `（${warnings.join('；')}）` : ''}`,
+    duration: 6000,
+  })
+  void noticeStore.loadTasks()
+  await fetchBatch()
+}
 async function onApply(): Promise<void> {
+  if (isOrganize.value) return onApplyOrganize()
   await ElMessageBox.confirm(
     `确认应用？\n${unreviewedCount.value} 项未审视将按 AI 判定执行（重复=合并、系列=归纳）。`,
     '应用确认',
     { type: 'warning' },
   )
   const resp = await scanBatchesApi.apply(batchId)
-  const r = resp.data.data!
+  const r = resp.data.data! as Exclude<NonNullable<typeof resp.data.data>, OrganizeApplySummary>
   ElMessage({
     type: r.errors.length > 0 ? 'warning' : 'success',
     message: `已应用：新增 ${r.inserted} · 更新 ${r.updated} · 关联重复 ${r.duplicates_linked} · 创建系列 ${r.series_created} · 标乱码 ${r.garbled_marked}${r.damaged_imported || r.damaged_skipped ? ` · 损坏导入 ${r.damaged_imported} · 损坏跳过 ${r.damaged_skipped}` : ''}${r.errors.length > 0 ? ` · 错误 ${r.errors.length}` : ''}`,
@@ -364,7 +439,11 @@ async function onApply(): Promise<void> {
   await fetchBatch() // stay on page, now in read-only mode showing audit
 }
 async function onDiscard(): Promise<void> {
-  await ElMessageBox.confirm('确认废弃整个批次？AI 判定结果将丢弃，但已修复编码的文件不会还原。', '废弃确认', { type: 'warning' })
+  await ElMessageBox.confirm(
+    isOrganize.value ? '废弃即保留原书，整理版将被删除。确定？' : '确认废弃整个批次？AI 判定结果将丢弃，但已修复编码的文件不会还原。',
+    '废弃确认',
+    { type: 'warning' },
+  )
   await scanBatchesApi.discard(batchId)
   ElMessage.success('已废弃')
   void noticeStore.loadTasks()

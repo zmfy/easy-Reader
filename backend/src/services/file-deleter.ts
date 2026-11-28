@@ -1,8 +1,10 @@
 import fs from 'fs';
 import { getDb } from '../db';
 import { assertPathInsideRoot } from '../utils/path-safe';
+import { removeCoverFiles } from '../utils/cover';
 import { writeAudit } from './audit-log';
 import { deleteBookRelations } from './relation-cleanup';
+import { organizedDir } from './txt-organize/writer';
 
 const DEFAULT_ROOT = process.env.BOOKS_DIR || '/app/books';
 
@@ -20,6 +22,8 @@ export interface DeleteRequest {
   cascade_duplicate_ids: string[];
   cascade_duplicate_paths: string[];
   user_id: string;
+  /** 其中的整理版（organized_from 不为空）：文件在整理版目录而不在书库内 */
+  organized_ids?: string[];
 }
 
 export interface DeleteResult {
@@ -40,17 +44,20 @@ export interface DeleteOptions {
  * Delete a book file + its DB record, optionally cascading to duplicate books.
  *
  * Safety:
- *  - All file paths must be inside the BOOKS_DIR root (path traversal prevention)
+ *  - All file paths must be inside the BOOKS_DIR root (path traversal prevention);
+ *    整理版（organized_ids）的文件改为必须在整理版目录内，删记录时一并删掉它的封面副本
  *  - All operations are wrapped in a DB transaction; if any fails we throw and
  *    nothing commits (BUT note: files already removed from disk are not restored)
  */
 export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}): DeleteResult {
   // Path checks guard file deletion; a record-only delete never touches the disk
+  const organized = new Set(req.organized_ids ?? []);
+  const rootOf = (id: string) => (organized.has(id) ? organizedDir() : root());
   if (!opts.keepFiles) {
-    assertPathInsideRoot(root(), req.file_path);
-    for (const p of req.cascade_duplicate_paths) {
-      assertPathInsideRoot(root(), p);
-    }
+    assertPathInsideRoot(rootOf(req.book_id), req.file_path);
+    req.cascade_duplicate_paths.forEach((p, i) => {
+      assertPathInsideRoot(rootOf(req.cascade_duplicate_ids[i]), p);
+    });
   }
 
   const result: DeleteResult = {
@@ -106,6 +113,15 @@ export function deleteBookCascade(req: DeleteRequest, opts: DeleteOptions = {}):
   });
   tx();
 
+  // 整理版的封面是整理时复制出来的副本，记录删了就没用了
+  for (const id of organized) {
+    try {
+      removeCoverFiles(id);
+    } catch (err) {
+      result.warnings.push(`failed to remove covers of ${id}: ${(err as Error).message}`);
+    }
+  }
+
   return result;
 }
 
@@ -125,9 +141,9 @@ export function countAffectedUsers(bookIds: string[]): number {
 /**
  * Get duplicate book IDs and file_paths for a canonical book.
  */
-export function getDuplicatesOf(bookId: string): Array<{ id: string; file_path: string }> {
+export function getDuplicatesOf(bookId: string): Array<{ id: string; file_path: string; organized_from: string | null }> {
   const db = getDb();
   return db.prepare(
-    'SELECT id, file_path FROM books WHERE duplicate_of = ?'
-  ).all(bookId) as Array<{ id: string; file_path: string }>;
+    'SELECT id, file_path, organized_from FROM books WHERE duplicate_of = ?'
+  ).all(bookId) as Array<{ id: string; file_path: string; organized_from: string | null }>;
 }

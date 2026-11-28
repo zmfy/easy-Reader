@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { TxtParser, looksLikeSentence } from '../../src/plugins/parser-txt';
+import { TxtParser, looksLikeSentence, chapterNumberValue, stripTitlePromo } from '../../src/plugins/parser-txt';
 
 async function chaptersOf(text: string) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
@@ -103,10 +103,10 @@ describe('TxtParser keeps volume headings separate', () => {
 describe('TxtParser merge compares every number in the heading', () => {
   it('keeps 「第十卷…第2130章」 and 「第十卷…第2131章」 apart even when the first has no body', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
-    fs.writeFileSync(file, '第十卷魔界之战第两千一百三十章斗兽\n\n第十卷魔界之战第两千一百三十一章得晶\n正文。\n', 'utf-8');
+    fs.writeFileSync(file, '第十卷魔界之战第二千一百三十章斗兽\n\n第十卷魔界之战第两千一百三十一章得晶\n正文。\n', 'utf-8');
     const p = new TxtParser();
     await p.load(file);
-    expect((await p.getChapters()).map(c => c.title)).toEqual(['第十卷魔界之战第两千一百三十章斗兽', '第十卷魔界之战第两千一百三十一章得晶']);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第十卷魔界之战第二千一百三十章斗兽', '第十卷魔界之战第两千一百三十一章得晶']);
   });
 });
 
@@ -141,7 +141,135 @@ describe('TxtParser volume levels', () => {
     ]);
   });
 
+  it('「第一部第一卷《名》」连写、单独一行的「第二部」、卷名下带引言：部 → 卷 → 章三层（《鬼吹灯》）', async () => {
+    const text = '鬼吹灯\n引子\n引子正文。\n第一部第一卷《精绝古城》\n第一章 白纸人\n正文。\n第一部第二卷《龙岭迷窟》\n第二章 鼠友\n正文。\n第二部\n第一卷 黄皮子坟\n《鬼吹灯Ⅱ黄皮子坟》 引言一段。\n第一章 赶冬荒\n正文。\n第二卷 南海归墟\n引言\n引言正文。\n第二章 出海\n正文。\n';
+    expect(await chaptersWithLevel(text)).toEqual([
+      ['引子', 0],
+      ['第一卷《精绝古城》', 1, '第一部'], ['第一章 白纸人', 2], ['第二卷《龙岭迷窟》', 1], ['第二章 鼠友', 2],
+      ['第一卷 黄皮子坟', 1, '第二部'], ['第一章 赶冬荒', 2], ['第二卷 南海归墟', 1], ['第二章 出海', 2],
+    ]);
+  });
+
+  it('拿「卷」当章用的书（每卷都有正文、下面没有章）：卷不算分卷', async () => {
+    expect(await chaptersWithLevel('第一卷 开端\n正文。\n第二卷 发展\n正文。\n')).toEqual([['第一卷 开端', undefined], ['第二卷 发展', undefined]]);
+  });
+
   it('adds no level when the book has no volume headings', async () => {
     expect(await chaptersWithLevel('第一章 开端\n正文。\n第二章 发展\n正文。\n')).toEqual([['第一章 开端', undefined], ['第二章 发展', undefined]]);
+  });
+});
+
+describe('TxtParser 网文抓取的大文件（《校花的贴身高手》《剑来》的写法）', () => {
+  async function load(text: string, encoding: BufferEncoding = 'utf-8') {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'txt-')), 'book.txt');
+    fs.writeFileSync(file, Buffer.from(text, encoding));
+    const p = new TxtParser();
+    await p.load(file);
+    return p;
+  }
+  const text = async (p: TxtParser, i: number) => (await p.getChapterContent(i)).replace(/<\/?p>/g, '').split('\n');
+
+  it('chapterNumberValue：阿拉伯数字（含补零）和中文数字按数值比较', () => {
+    expect(chapterNumberValue('0005')).toBe(5);
+    expect(chapterNumberValue('五')).toBe(5);
+    expect(chapterNumberValue('十二')).toBe(12);
+    expect(chapterNumberValue('一千零五')).toBe(1005);
+    expect(chapterNumberValue('两千一百三十')).toBe(2130);
+    expect(chapterNumberValue('一万二千')).toBe(12000);
+  });
+
+  it('「第5章 …」后紧跟「第0005章…」：并为一章，保留第一个标题，正文里不再多一行标题', async () => {
+    const p = await load('第5章 怎么像找对象？\r\n\r\n第0005章怎么像找对象？？\r\n    正文五。\r\n第6章 这土包子是谁？\r\n\r\n第0006章挡箭牌【有推荐票的，请不吝投几张，谢谢！】\r\n    正文六。\r\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第5章 怎么像找对象？', '第6章 这土包子是谁？']);
+    expect(await text(p, 0)).toEqual(['第5章 怎么像找对象？', '正文五。']);
+    expect(await text(p, 1)).toEqual(['第6章 这土包子是谁？', '正文六。']);
+  });
+
+  it('后一个标题在章名后多出文字（「太极」→「太极图」）用后一个；多出的是「，到网址」这类水印则保留第一个', async () => {
+    const p = await load('第二千零二章太极\n第二千零二章太极图\n正文一。\n第二千一百三十章斗兽\n第二千一百三十章斗兽，到网址\n正文二。\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第二千零二章太极图', '第二千一百三十章斗兽']);
+    expect(await text(p, 0)).toEqual(['第二千零二章太极图', '正文一。']);
+    expect(await text(p, 1)).toEqual(['第二千一百三十章斗兽', '正文二。']);
+  });
+
+  it('同章号标题一个带卷名一个不带、或中间只夹着「请到」这类杂行：并为一章（《凡人修仙传》）', async () => {
+    const p = await load('第六卷通天灵宝第九百九十一章紫雾\n\n第九百九十一章紫雾\n正文一。\n第九百九十二章 下一章\n\n请到\n\n第六卷通天灵宝第九百九十二章 下一章\n正文二。\n第九百九十三章 再下一章\n这是正常的一段正文，字数明显超过杂行的上限，不能当成杂行合并。韩立看着眼前的景象，心中暗暗吃惊，却没有说出来。\n第九百九十三章 再下一章\n正文三。\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual([
+      '第六卷通天灵宝第九百九十一章紫雾', '第九百九十二章 下一章', '第九百九十三章 再下一章', '第九百九十三章 再下一章',
+    ]);
+    expect(await text(p, 1)).toEqual(['第九百九十二章 下一章', '请到', '正文二。']);
+  });
+
+  it('正文里夹着另一套只有编号的「第2章」（编号不大于前一个带名章节）：不算新章节，正文里也不显示（《凡人修仙传》）', async () => {
+    const body = (s: string) => `${s}二愣子睁大着双眼，直直望着茅草和烂泥糊成的黑屋顶，身上盖着的旧棉被已呈深黄色，看不出原来的本来面目。`;
+    const p = await load(`第一章山边小村\n${body('一')}\n第二章青牛镇\n${body('二上')}\n第2章\n${body('二下')}\n第三章七玄门\n${body('三')}\n第四章炼骨崖\n${body('四上')}\n第3章\n${body('四下')}\n第五章墨大夫\n${body('五')}\n`);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第一章山边小村', '第二章青牛镇', '第三章七玄门', '第四章炼骨崖', '第五章墨大夫']);
+    expect(await text(p, 1)).toEqual(['第二章青牛镇', body('二上'), body('二下')]);
+  });
+
+  it('零星一处打错的章号（「第8217章」写成「第817章」）照常算一章（《校花的贴身高手》）', async () => {
+    const chapters = Array.from({ length: 30 }, (_, i) => `第${8200 + i}章 标题${i}\n正文${i}。\n`);
+    chapters.splice(17, 1, '第817章\n正文17。\n');
+    const p = await load(chapters.join(''));
+    const titles = (await p.getChapters()).map(c => c.title);
+    expect(titles).toHaveLength(30);
+    expect(titles[17]).toBe('第817章');
+  });
+
+  it('只有编号、没有章名的书照常切章；新分卷后章节从第一章重新编号也照常切章', async () => {
+    const bare = await load('第1章\n正文一。\n第2章\n正文二。\n第3章\n正文三。\n');
+    expect((await bare.getChapters()).map(c => c.title)).toEqual(['第1章', '第2章', '第3章']);
+    const vols = await load('第一卷 开端\n第一章 起\n正文。\n第二章 承\n正文。\n第二卷 发展\n第1章\n正文。\n第2章\n正文。\n');
+    expect((await vols.getChapters()).map(c => c.title)).toEqual(['第一卷 开端', '第一章 起', '第二章 承', '第二卷 发展', '第1章', '第2章']);
+  });
+
+  it('同一标题一字不差写两遍：正文里保留一份', async () => {
+    const p = await load('第53章 请神\n第53章 请神\n正文。\n第54章 下一章\n正文。\n');
+    expect(await text(p, 0)).toEqual(['第53章 请神', '正文。']);
+  });
+
+  it('标题末尾的求票附言：照样识别为标题，目录和正文首行都去掉附言', async () => {
+    const p = await load('第0118章 医术高人【求月票！！！月票啊！读者们，你们的月票可以给我么？？】\n正文一。\n第0119章挡箭牌【有推荐票的，请不吝投几张，谢谢！】\n正文二。\n第120章 山洞奇遇（上）\n正文三。\n');
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第0118章 医术高人', '第0119章挡箭牌', '第120章 山洞奇遇（上）']);
+    expect(await text(p, 1)).toEqual(['第0119章挡箭牌', '正文二。']);
+  });
+
+  it('stripTitlePromo 只去求票类附言，「（上）」这类正常括号保留', () => {
+    expect(stripTitlePromo('第1768章 迷蜃幻境（第一更）')).toBe('第1768章 迷蜃幻境');
+    expect(stripTitlePromo('第12章 山洞奇遇（上）')).toBe('第12章 山洞奇遇（上）');
+    expect(stripTitlePromo('第3章 【序】')).toBe('第3章 【序】');
+  });
+
+  it('卷名后跟一行分隔线：仍识别为分卷', async () => {
+    const p = await load('------------\n\n第一卷 神奇的任务\n\n------------\n\n第1章 神奇的任务\n正文。\n第2章 骗局\n正文。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([['第一卷 神奇的任务', 0], ['第1章 神奇的任务', 1], ['第2章 骗局', 1]]);
+  });
+
+  it('章节标题带着卷名（「第一卷 笼中雀 第一章 惊蛰」）：目录和正文首行去掉卷名', async () => {
+    const p = await load('第一卷 笼中雀\n\n第一卷 笼中雀 第一章 惊蛰\n正文一。\n第一卷 笼中雀 第二章 开门\n正文二。\n第二卷 山水郎\n第二卷 山水郎 第一章 走\n正文三。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([
+      ['第一卷 笼中雀', 0], ['第一章 惊蛰', 1], ['第二章 开门', 1], ['第二卷 山水郎', 0], ['第一章 走', 1],
+    ]);
+    expect(await text(p, 1)).toEqual(['第一章 惊蛰', '正文一。']);
+  });
+
+  it('卷末说明「第二卷《山水郎》结束。」是正文；之后没写卷名的章节回到第一层', async () => {
+    const p = await load('第一卷 笼中雀\n第一卷 笼中雀 第一章 惊蛰\n正文一。\n第二卷 山水郎\n第二卷 山水郎 第二章 走\n正文二。\n    第二卷《山水郎》结束。\n------------\n第三章 添土\n正文三。\n');
+    expect((await p.getChapters()).map(c => [c.title, c.level])).toEqual([
+      ['第一卷 笼中雀', 0], ['第一章 惊蛰', 1], ['第二卷 山水郎', 0], ['第二章 走', 1], ['第三章 添土', 0],
+    ]);
+    expect(await text(p, 3)).toContain('第二卷《山水郎》结束。');
+  });
+
+  it('「第一回跟皇帝老爷打交道，钱俊说话都不利索了。」是正文句子，不是标题', async () => {
+    expect(looksLikeSentence('第一回跟皇帝老爷打交道，钱俊说话都不利索了。')).toBe(true);
+    expect(looksLikeSentence('第一千一百三十九章神念附灵。')).toBe(false);
+  });
+
+  it('全角空格 / 不换行空格缩进的标题照样识别；超长的「第…」行算正文', async () => {
+    const long = '第一天' + '很长的正文'.repeat(100);
+    const p = await load(`\u3000\u3000第一章 开端\n${long}\n\u00a0第二章 发展\n正文。\n`);
+    expect((await p.getChapters()).map(c => c.title)).toEqual(['第一章 开端', '第二章 发展']);
+    expect((await text(p, 0))[1]).toBe(long);
   });
 });

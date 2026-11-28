@@ -25,7 +25,9 @@ export interface Book {
   file_size?: number;
   imported_at: string;
   // 扫描增强字段（Plan 1）
-  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged';
+  status?: 'normal' | 'duplicate' | 'garbled' | 'encoding_fixed' | 'damaged' | 'pending_review';
+  organized_from?: string | null;
+  organized_job_id?: string | null;
   damage_reason?: string | null;
   health_check_version?: number | null;
   ai_fill_status?: 'filled' | 'failed' | null;
@@ -198,6 +200,8 @@ export interface ScanBatch {
   apply_summary?: string | null;  // JSON of ApplyResult (audit trail)
   part_index?: number | null;     // 同一次扫描拆成多批时：第几批 / 共几批
   part_count?: number | null;
+  kind?: 'scan' | 'organize';
+  organize_title?: string | null;  // 列表接口：整理审核批次的原书名
 }
 
 export type ScanBatchItemType =
@@ -318,7 +322,8 @@ export type AuditAction =
   | 'ai_suggestion_apply'
   | 'opds_enable'
   | 'opds_reset'
-  | 'opds_disable';
+  | 'opds_disable'
+  | 'organize_apply';
 
 export interface AuditLog {
   id: string;

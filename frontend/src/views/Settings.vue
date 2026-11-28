@@ -285,6 +285,11 @@
               <el-switch v-model="aiLookupEnabled" />
               <div class="form-hint">AI 填充时多轮搜索豆瓣，核对书名、作者后再取封面、评分和改编；会增加 AI 调用次数</div>
             </div>
+            <div class="form-field">
+              <label>允许读者发起 AI 整理目录</label>
+              <el-switch v-model="organizeAllowReaders" />
+              <div class="form-hint">TXT 目录识别不准时，读者可在阅读页目录底部请 AI 重新整理（每人每天最多 3 次），管理员审核后生效；关闭后只有管理员能发起</div>
+            </div>
           </div>
           <div class="section-actions">
             <el-button type="primary" :loading="saving" @click="saveSettings('ai')">保存 AI 设置</el-button>
@@ -600,6 +605,7 @@ const selectedAiPlugin = ref('')
 const aiSummaryLength = ref<number>(100)
 const aiFillConcurrency = ref<number>(2)
 const aiLookupEnabled = ref<boolean>(true)
+const organizeAllowReaders = ref<boolean>(true)
 const aiForm = reactive<Record<string, string>>({})
 const settingsData = ref<Record<string, string>>({})
 
@@ -902,6 +908,8 @@ async function loadSettings() {
     aiFillConcurrency.value = fillConcStored
   }
   aiLookupEnabled.value = parseLookupEnabled(data['ai_lookup_enabled'])
+  // 缺省为允许（同后端：只有 '0' 才关闭）
+  organizeAllowReaders.value = data['txt_organize_allow_readers'] !== '0'
 }
 
 async function loadPlugins() {
@@ -941,6 +949,7 @@ async function saveSettings(tab: string) {
         aiFillConcurrency.value,
         aiLookupEnabled.value,
       ))
+      payload.txt_organize_allow_readers = organizeAllowReaders.value ? '1' : '0'
     }
     await settingsApi.update(payload)
     if (tab === 'smtp') {

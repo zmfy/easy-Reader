@@ -29,12 +29,15 @@ export function recordOpen(db: Database.Database, userId: string, bookId: string
   return true;
 }
 
+// 管理员审核时预览过的待审核整理版不列出
+const NOT_PENDING_REVIEW = "(b.status IS NULL OR b.status != 'pending_review')";
+
 /** 最近打开的在前；已从书库删除的书不列出 */
 export function listHistory(
   db: Database.Database, userId: string, page: number, pageSize: number,
 ): { items: HistoryItem[]; total: number } {
   const total = (db.prepare(
-    'SELECT COUNT(*) AS n FROM reading_history h JOIN books b ON b.id = h.book_id WHERE h.user_id = ?'
+    `SELECT COUNT(*) AS n FROM reading_history h JOIN books b ON b.id = h.book_id WHERE h.user_id = ? AND ${NOT_PENDING_REVIEW}`
   ).get(userId) as { n: number }).n;
   const items = db.prepare(
     `SELECT h.book_id, h.opened_at, b.title, b.author, b.cover_url, b.category, b.file_format,
@@ -42,7 +45,7 @@ export function listHistory(
      FROM reading_history h
      JOIN books b ON b.id = h.book_id
      LEFT JOIN reading_progress rp ON rp.user_id = h.user_id AND rp.book_id = h.book_id
-     WHERE h.user_id = ?
+     WHERE h.user_id = ? AND ${NOT_PENDING_REVIEW}
      ORDER BY h.opened_at DESC, h.rowid DESC
      LIMIT ? OFFSET ?`
   ).all(userId, pageSize, (page - 1) * pageSize) as HistoryItem[];

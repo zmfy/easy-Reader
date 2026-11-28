@@ -91,7 +91,12 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     // no status filter
   } else {
     // default: normal-only library view — hide duplicate + garbled
-    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged'))";
+    whereClause += " AND (status IS NULL OR status NOT IN ('duplicate','garbled','damaged','pending_review'))";
+  }
+
+  // 待审核的整理版只在审核页出现：读者无论按什么状态筛选都看不到
+  if (req.user!.role !== 'admin') {
+    whereClause += " AND (status IS NULL OR status != 'pending_review')";
   }
 
   // series_grouped: exclude books that are part of a series (SeriesCard shows them separately)
@@ -172,7 +177,8 @@ router.post('/scan', authMiddleware, adminMiddleware, (req: Request, res: Respon
   }
 
   // Reject if any pending batch exists (force admin to handle prior results first)
-  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' LIMIT 1").get() as
+  // 只看扫描生成的批次：待审核的整理版（kind='organize'）不妨碍扫描
+  const pendingBatch = getDb().prepare("SELECT id FROM scan_batches WHERE status = 'pending' AND COALESCE(kind, 'scan') = 'scan' LIMIT 1").get() as
     | { id: string }
     | undefined;
   if (pendingBatch) {
@@ -425,15 +431,33 @@ router.post('/ai-suggestions/dismiss', authMiddleware, adminMiddleware, (req: Re
   successResponse(res, { dismissed: dismissSuggestions(getDb(), parsed.data.book_ids) });
 });
 
+// 整理版的原文件在整理之后是否变过（大小或修改时间与整理任务记录的不同）；原书记录或文件不在了不提示
+function isOrganizedStale(db: ReturnType<typeof getDb>, organized: Book): boolean {
+  const job = db.prepare(
+    'SELECT src_size, src_mtime FROM txt_organize_jobs WHERE id = ? OR result_book_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).get(organized.organized_job_id ?? organized.id, organized.id) as { src_size: number | null; src_mtime: number | null } | undefined;
+  const original = db.prepare('SELECT file_path FROM books WHERE id = ?').get(organized.organized_from) as { file_path: string } | undefined;
+  if (!job || !original) return false;
+  try {
+    const st = fs.statSync(original.file_path);
+    return st.size !== job.src_size || st.mtimeMs !== job.src_mtime;
+  } catch {
+    return false;
+  }
+}
+
 // GET /api/library/:id
 router.get('/:id', authMiddleware, (req: Request, res: Response) => {
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
-  if (!book) {
+  // 待审核的整理版：只有管理员能看（审核时预览）
+  if (!book || (book.status === 'pending_review' && req.user!.role !== 'admin')) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;
   }
-  successResponse(res, withDisplayTitle(hideFilePathForNonAdmin(req, book)));
+  const result: Record<string, unknown> = { ...withDisplayTitle(hideFilePathForNonAdmin(req, book)) };
+  if (book.organized_from) result.organized_stale = isOrganizedStale(db, book);
+  successResponse(res, result);
 });
 
 const updateBookSchema = z.object({
@@ -512,6 +536,7 @@ const deleteQuerySchema = z.object({
 // DELETE /api/library/:id?cascade_duplicates=true&confirm_shelf_impact=true
 //   - keep_file=true: only remove DB records, leave files on disk (default: delete files too)
 //   - Validates path is inside BOOKS_DIR (path traversal protection)
+//   - Pending-review organized book → 409 (handle it on the review page)
 //   - If book is a canonical with duplicates pointing to it → 409 unless cascade_duplicates=true
 //   - If any of the books are on any user's shelf → 409 unless confirm_shelf_impact=true
 //   - Deletes disk file(s) + DB rows in a transaction; writes audit_log entry
@@ -523,6 +548,11 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
   const db = getDb();
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) as Book | undefined;
   if (!book) { errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在'); return; }
+  // 待审核的整理版须在审核页处理，直接删除会让审核批次 / 整理任务悬空
+  if (book.status === 'pending_review') {
+    errorResponse(res, 409, 'PENDING_REVIEW', '整理版待审核，请在审核页处理');
+    return;
+  }
 
   const dups = getDuplicatesOf(req.params.id);
   if (dups.length > 0 && !cascade_duplicates) {
@@ -554,6 +584,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, (req: Request, res: Respo
       cascade_duplicate_ids: dups.map(d => d.id),
       cascade_duplicate_paths: dups.map(d => d.file_path),
       user_id: req.user!.userId,
+      organized_ids: [book, ...dups].filter(b => b.organized_from).map(b => b.id),
     }, { keepFiles: keep_file });
     successResponse(res, result, '已删除');
   } catch (err) {

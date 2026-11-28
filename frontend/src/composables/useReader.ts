@@ -18,6 +18,8 @@ export function useReader(bookId: string) {
   const highlights = ref<Highlight[]>([])
   const progress = ref<ReadingProgress>({ chapterIndex: 0, scrollTop: 0 })
   const loading = ref(false)
+  /** 正在读取目录（打开书时）：大文件第一次打开要整本扫一遍，可能要几秒 */
+  const chaptersLoading = ref(true)
   const bookFormat = ref('')
   const pdfUsePlugin = ref(false)
   /** 查看模式（从学习导图打开）下所有进度保存都被跳过 */
@@ -30,6 +32,7 @@ export function useReader(bookId: string) {
 
   /** 返回 false 表示目录读取失败，原因见 loadError */
   async function loadChapters(): Promise<boolean> {
+    chaptersLoading.value = true
     try {
       const resp = await readerApi.getChapters(bookId)
       const data = resp.data.data
@@ -40,6 +43,8 @@ export function useReader(bookId: string) {
     } catch (err) {
       loadError.value = errorMessage(err, '无法读取章节')
       return false
+    } finally {
+      chaptersLoading.value = false
     }
   }
 
@@ -146,7 +151,7 @@ export function useReader(bookId: string) {
 
   return {
     chapters, currentChapterIndex, currentContent, bookmarks, progress,
-    loading, currentChapter, bookFormat, pdfUsePlugin, progressMode, loadError,
+    loading, chaptersLoading, currentChapter, bookFormat, pdfUsePlugin, progressMode, loadError,
     loadChapters, loadChapter, fetchChapterContent, loadProgress, saveProgress, saveProgressOnHide,
     loadBookmarks, addBookmark, deleteBookmark, prevChapter, nextChapter,
     highlights, loadHighlights, addHighlight, setHighlightNote, removeHighlight,

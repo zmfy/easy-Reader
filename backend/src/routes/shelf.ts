@@ -17,7 +17,7 @@ router.get('/', authMiddleware, (req: Request, res: Response) => {
     FROM shelf s
     JOIN books b ON s.book_id = b.id
     LEFT JOIN reading_progress rp ON rp.user_id = s.user_id AND rp.book_id = s.book_id
-    WHERE s.user_id = ?
+    WHERE s.user_id = ? AND (b.status IS NULL OR b.status != 'pending_review')
     ORDER BY COALESCE(s.last_read_at, s.added_at) DESC
   `).all(req.user!.userId) as Array<{ title?: string }>;
   successResponse(res, withDisplayTitle(items));
@@ -40,7 +40,8 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
   }
 
   const db = getDb();
-  const book = db.prepare('SELECT id FROM books WHERE id = ?').get(parsed.data.bookId);
+  // 待审核的整理版不能加入书架（审核保留后，原书的书架记录会迁移过去）
+  const book = db.prepare("SELECT id FROM books WHERE id = ? AND (status IS NULL OR status != 'pending_review')").get(parsed.data.bookId);
   if (!book) {
     errorResponse(res, 404, 'RESOURCE_NOT_FOUND', '书籍不存在');
     return;

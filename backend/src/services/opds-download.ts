@@ -87,7 +87,7 @@ function ensureCached(book: Book, name: string, produce: (tmpPath: string) => Pr
   return job;
 }
 
-function readCover(coverUrl: string | null | undefined): EpubInput['cover'] {
+export function readCover(coverUrl: string | null | undefined): EpubInput['cover'] {
   const m = coverUrl?.match(/^\/covers\/([^/?#]+\.(jpe?g|png|webp|gif))(?:[?#].*)?$/i);
   if (!m) return null;
   const file = path.join(COVERS_DIR, m[1]);

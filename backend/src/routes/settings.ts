@@ -101,6 +101,11 @@ router.put('/', authMiddleware, adminMiddleware, (req: Request, res: Response) =
   const schema = z.record(z.string(), z.string().max(200));
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) { errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return; }
+  // 允许读者发起 AI 整理目录：'1' 允许（默认）/ '0' 只有管理员
+  const allowReaders = parsed.data.txt_organize_allow_readers;
+  if (allowReaders !== undefined && allowReaders !== '0' && allowReaders !== '1') {
+    errorResponse(res, 422, 'VALIDATION_ERROR', '参数校验失败'); return;
+  }
 
   const db = getDb();
   const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');

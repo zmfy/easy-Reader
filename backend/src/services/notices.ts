@@ -79,8 +79,9 @@ function fillPendingTitle(p: PendingFill): string {
   return `AI 填充${range}有 ${p.count} 本待确认`;
 }
 
+// 只算扫描生成的批次；整理版审核（kind='organize'）有自己的通知
 function scanPendingMessage(db: Database.Database): { batches: number; books: number; damaged: number } {
-  const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending'").all() as Array<{ summary_counts: string | null }>;
+  const rows = db.prepare("SELECT summary_counts FROM scan_batches WHERE status = 'pending' AND COALESCE(kind, 'scan') = 'scan'").all() as Array<{ summary_counts: string | null }>;
   let books = 0;
   let damaged = 0;
   for (const r of rows) {
@@ -145,6 +146,25 @@ export function notifyScanHealth(
     // 只有自动修正时，问题书籍页里没有这些书，不带链接
     link: hasDamaged || counts.recovered > 0 ? '/library/problems' : undefined,
   }, db);
+}
+
+/** TXT 目录 AI 整理的结果：生成了待审核的整理版（带审核批次链接）或整理失败 */
+export function notifyOrganizeResult(
+  job: { book_title: string; batch_id?: string | null; error?: string | null },
+  result: 'review' | 'failed',
+  db: Database.Database = getDb()
+): void {
+  if (result === 'review') {
+    addNotice({
+      kind: 'txt_organize', level: 'info', title: `《${job.book_title}》AI 整理目录完成`,
+      message: '已生成整理版，请审核后决定保留哪一本', link: `/library/scan-batches/${job.batch_id}`,
+    }, db);
+  } else {
+    addNotice({
+      kind: 'txt_organize', level: 'warning', title: `《${job.book_title}》AI 整理目录失败`,
+      message: job.error ?? undefined,
+    }, db);
+  }
 }
 
 /** 按现状校正待处理类提醒：处理完的删掉，没处理完的更新本数 */

@@ -59,7 +59,8 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
     // broken bind-mount) — otherwise we'd wipe the whole library on every misconfig.
     if (allFiles.length > 0) {
       const db = getDb();
-      const rows = db.prepare('SELECT id, file_path FROM books').all() as {
+      // 整理版的文件在数据目录里、不在书库中，不是孤儿
+      const rows = db.prepare('SELECT id, file_path FROM books WHERE organized_from IS NULL').all() as {
         id: string;
         file_path: string;
       }[];
@@ -133,6 +134,11 @@ export async function runScanTask(taskId: string, options: ScanOptions): Promise
       let st: fs.Stats;
       try { st = fs.statSync(fullPath); } catch { processed++; continue; }
       const pre = prefetched.get(fullPath);
+      // 管理员跳过的文件（损坏书选择跳过、整理审核删除原书记录时保留的文件）：文件没变就不再作为新书
+      if (!pre && isSkippedUnchanged(getDb(), fullPath, st.size, st.mtimeMs) && !bookByPathStmt.get(fullPath)) {
+        bumpProgress(50);
+        continue;
+      }
       const ext = path.extname(fullPath).slice(1).toLowerCase();
       // 扫描时做健康检查的格式（见 book-health.ts）
       const isChecked = HEALTH_FORMATS.includes(ext);

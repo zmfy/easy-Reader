@@ -284,12 +284,18 @@
 | `rating` | 评分，可能为 `null` |
 | `series_id` | 所属系列 ID，没有为 `null` |
 | `imported_at` | 入库时间 |
-| `status` | `normal`（正常）、`duplicate`（重复）、`garbled`（乱码）或 `damaged`（EPUB 文件损坏） |
+| `status` | `normal`（正常）、`duplicate`（重复）、`garbled`（乱码）、`damaged`（EPUB 文件损坏）或 `pending_review`（AI 整理出的整理版，等待管理员审核；书库列表不返回，只有管理员能按 id 取到） |
 | `damage_reason` | 损坏原因，如「文件不完整（可能下载或复制中断）」；不是损坏的书为 `null` |
+| `organized_from` | 整理版（TXT 目录 AI 整理生成的 EPUB）对应的原书 ID；不是整理版为 `null` |
+| `organized_job_id` | 生成这本整理版的整理任务 ID；不是整理版为 `null` |
 
 ### GET /api/v1/library/:id
 
-单本书的详情，字段同上。
+单本书的详情，字段同上。整理版（`organized_from` 不为空）另有：
+
+| 字段 | 说明 |
+|---|---|
+| `organized_stale` | 原文件在整理之后被修改过（大小或修改时间变了）时为 `true`，整理版可能过时 |
 
 ### GET /api/v1/library/series
 
@@ -506,6 +512,43 @@ PDF 另有 `pdfUsePlugin`：为 `false` 时 `chapters` 为空，表示管理员�
 ### GET /api/v1/reader/:bookId/raw
 
 下载原文件（需要登录），可用于离线阅读或自行渲染 PDF。`Content-Type` 为 `application/pdf`、`application/epub+zip` 或 `application/octet-stream`。
+
+### AI 整理目录（TXT）
+
+TXT 的目录识别不准时，可以请 AI 重新整理：AI 只判断哪些行是章节标题，正文一个字不改，生成一本 EPUB「整理版」，由管理员审核后决定保留哪一本（保留整理版时，阅读进度、书签、书架、阅读历史会迁移过去）。审核通过前，整理版不会出现在书库、书架、阅读历史和 OPDS 中，普通用户按 id 访问也返回 404。
+
+#### GET /api/v1/reader/:bookId/organize
+
+```json
+{
+  "available": true,
+  "job": {
+    "id": "…", "book_id": "…", "requested_by": "…",
+    "status": "running", "phase": "judging",
+    "batches_done": 1, "batches_total": 3, "candidate_count": 812,
+    "result_book_id": null, "error": null,
+    "created_at": "2026-11-27 08:00:00", "finished_at": null
+  },
+  "lastRejectedAt": null
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `available` | 当前用户能否发起：书是 TXT、管理员已配置 AI，且（是管理员，或管理员允许读者发起） |
+| `job` | 这本书最近一次整理任务；没有或已审核完成时为 `null`。`status`：`pending` 排队中、`running` 进行中（`phase`：`candidates` 挑候选行 / `judging` AI 判定 / `writing` 生成整理版）、`review` 等待管理员审核、`failed` 失败（`error` 为原因）。管理员另有 `notes`（AI 的整理说明） |
+| `lastRejectedAt` | 这本书的当前文件整理过、被管理员拒绝的时间（UTC），没有为 `null`。可据此提示「整理过一次未被采用」 |
+
+#### POST /api/v1/reader/:bookId/organize
+
+发起整理，返回 `{ "job": { … } }`（字段同上）。这本书已有进行中或待审核的任务时直接返回那个任务，不会重复发起。不能发起时返回 409 `BUSINESS_CONFLICT`，`message` 可直接显示：
+
+| message | 原因 |
+|---|---|
+| 只有 TXT 可以整理目录 | 书不是 TXT |
+| 管理员尚未配置 AI | 没有配置 AI 插件 |
+| 管理员未开放此功能 | 管理员关闭了读者发起（设置项 `txt_organize_allow_readers` 为 `'0'`） |
+| 今天的整理次数已用完，明天再试 | 普通用户每人每天最多发起 3 次 |
 
 ## 7. 阅读进度
 

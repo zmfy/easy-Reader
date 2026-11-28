@@ -1,6 +1,6 @@
 {
   "name": "novel-reader-frontend",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -346,6 +346,47 @@ function initSchema(): void {
   `);
   database.prepare("UPDATE ai_apply_jobs SET status = 'pending' WHERE status = 'running'").run();
 
+  // TXT 目录 AI 整理：整理版书籍来源、任务、章节映射、拒绝记录
+  try { database.exec('ALTER TABLE books ADD COLUMN organized_from TEXT'); } catch { /* column exists */ }
+  try { database.exec('ALTER TABLE books ADD COLUMN organized_job_id TEXT'); } catch { /* column exists */ }
+  try { database.exec("ALTER TABLE scan_batches ADD COLUMN kind TEXT DEFAULT 'scan'"); } catch { /* column exists */ }
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS txt_organize_jobs (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      requested_by TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',   -- pending / running / review / failed / done
+      phase TEXT,
+      batches_done INTEGER DEFAULT 0,
+      batches_total INTEGER DEFAULT 0,
+      candidate_count INTEGER DEFAULT 0,
+      notes TEXT,                               -- JSON string[]
+      src_size INTEGER,                         -- 整理时原文件的大小和修改时间
+      src_mtime REAL,
+      result_book_id TEXT,
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_txt_organize_jobs_book ON txt_organize_jobs(book_id);
+    CREATE INDEX IF NOT EXISTS idx_txt_organize_jobs_user ON txt_organize_jobs(requested_by, created_at);
+    CREATE TABLE IF NOT EXISTS txt_organize_chapter_map (
+      book_id TEXT NOT NULL,                    -- 整理版 id
+      chapter_index INTEGER NOT NULL,
+      src_start INTEGER NOT NULL,               -- 原 TXT 字节区间（UTF-16 原文指转码后的 UTF-8 缓冲区，与 TxtParser 一致）
+      src_end INTEGER NOT NULL,
+      PRIMARY KEY (book_id, chapter_index)
+    );
+    CREATE TABLE IF NOT EXISTS txt_organize_rejections (
+      book_id TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      file_mtime REAL,
+      rejected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (book_id, file_size)
+    );
+  `);
+  database.prepare("UPDATE txt_organize_jobs SET status = 'pending' WHERE status = 'running'").run();
+
   // 后台任务通知（铃铛）：填充每批完成 / 暂停 / 完成、采纳完成、扫描生成审核批次
   database.exec(`
     CREATE TABLE IF NOT EXISTS notices (

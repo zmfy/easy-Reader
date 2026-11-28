@@ -18,7 +18,11 @@
         </el-table-column>
         <el-table-column label="统计">
           <template #default="{ row }">
-            <span v-if="row.summary_counts" class="summary">
+            <span v-if="row.kind === 'organize'" class="summary">
+              <el-tag size="small" type="primary">AI 整理目录</el-tag>
+              <span class="organize-title">{{ row.organize_title || '（书名未知）' }}</span>
+            </span>
+            <span v-else-if="row.summary_counts" class="summary">
               新增 {{ summary(row.summary_counts).new }}，
               重复组 {{ summary(row.summary_counts).duplicate_groups }}，
               系列 {{ summary(row.summary_counts).series }}，
@@ -87,7 +91,8 @@ function goReview(id: string): void {
 }
 
 async function onDiscard(id: string): Promise<void> {
-  await ElMessageBox.confirm('废弃此批次将丢失 AI 判定结果，确定？', '确认', { type: 'warning' })
+  const organize = batches.value.find(b => b.id === id)?.kind === 'organize'
+  await ElMessageBox.confirm(organize ? '废弃即保留原书，整理版将被删除。确定？' : '废弃此批次将丢失 AI 判定结果，确定？', '确认', { type: 'warning' })
   await scanBatchesApi.discard(id)
   ElMessage.success('已废弃')
   void noticeStore.loadTasks()
@@ -100,4 +105,5 @@ onMounted(fetchBatches)
 <style scoped>
 .part { margin-left: 8px; font-size: 12px; color: var(--text-2); }
 .summary { font-size: 13px; color: var(--text-2); }
+.organize-title { margin-left: 8px; color: var(--text-0); }
 </style>
