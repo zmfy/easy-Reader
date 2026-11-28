@@ -114,7 +114,11 @@ export class PositionMapper {
     return clamp((c * organizedCount) / this.originalCount, 0, organizedCount - 1);
   }
 
-  /** 包含该字节的整理版章节；落在区间之间（只有标题的部 / 卷所在行等）时取起点不超过它的最后一章 */
+  /**
+   * 包含该字节的整理版章节；落在区间之间（只有标题的部 / 卷所在行等）时取起点不超过它的最后一章。
+   * 注：卷前言归位后（前言章移到其卷之后），rows 不再按 src_start 单调递增，fallback 取的是行序上最后一个
+   * 起点不超过该字节的章，可能是排在卷之后的前言章而不是起点最大的那一章——前言章与卷标题行在原文里紧挨着，属可接受行为
+   */
   private organizedChapterAt(byte: number): number {
     let fallback = 0;
     for (let i = 0; i < this.rows.length; i++) {
