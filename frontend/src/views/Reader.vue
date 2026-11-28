@@ -478,7 +478,7 @@
             <template v-else>
               <span v-if="organizeJob?.status === 'failed'" class="toc-organize-status error">整理失败：{{ organizeJob.error || '未知原因' }}</span>
               <span v-else-if="organize.lastRejectedAt" class="toc-organize-status">上次的整理结果未被采用</span>
-              <button class="toc-action" :disabled="organizeRequesting" @click="organizeDialogVisible = true">
+              <button class="toc-action" :disabled="organizeRequesting" @click="openOrganizeDialog">
                 <IconSparkles :size="15" :stroke-width="1.75" />{{ organizeJob?.status === 'failed' ? '重试' : '目录不对？让 AI 整理' }}
               </button>
             </template>
@@ -489,7 +489,7 @@
 
     </template><!-- end 章节模式 -->
 
-    <el-dialog v-model="organizeDialogVisible" title="AI 整理目录" width="460px" append-to-body>
+    <el-dialog v-model="organizeDialogVisible" title="AI 整理目录" width="min(calc(100vw - 32px), 460px)" append-to-body>
       <p class="section-desc">AI 会重新整理这本书的目录，管理员审核后对所有读者生效。</p>
       <el-radio-group v-model="organizeMode" class="organize-modes">
         <el-radio value="fast">
@@ -503,7 +503,7 @@
       </el-radio-group>
       <template #footer>
         <el-button @click="organizeDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleRequestOrganize">开始整理</el-button>
+        <el-button type="primary" :loading="organizeRequesting" @click="handleRequestOrganize">开始整理</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1144,7 +1144,13 @@ async function loadOrganize() {
   scheduleOrganizePoll()
 }
 
+function openOrganizeDialog() {
+  organizeMode.value = 'fast'
+  organizeDialogVisible.value = true
+}
+
 async function handleRequestOrganize() {
+  if (organizeRequesting.value) return
   organizeDialogVisible.value = false
   organizeRequesting.value = true
   clearTimeout(organizePollTimer)
