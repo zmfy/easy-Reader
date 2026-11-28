@@ -54,8 +54,8 @@ export const readerApi = {
     http.get<ApiResponse<OrganizeStatus>>(`/reader/${bookId}/organize`),
 
   // 发起整理；已有进行中 / 待审核的任务时返回它
-  requestOrganize: (bookId: string, mode: 'fast' | 'full') =>
-    http.post<ApiResponse<{ job: OrganizeJob }>>(`/reader/${bookId}/organize`, { mode }),
+  requestOrganize: (bookId: string) =>
+    http.post<ApiResponse<{ job: OrganizeJob }>>(`/reader/${bookId}/organize`),
 
   deleteBookmark: (bookId: string, id: string) =>
     http.delete<ApiResponse<null>>(`/reader/${bookId}/bookmarks/${id}`),

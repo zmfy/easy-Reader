@@ -204,7 +204,6 @@ export interface OrganizeJob {
   batches_done: number
   batches_total: number
   candidate_count: number
-  mode?: 'fast' | 'full'
   notes?: string[]
   result_book_id: string | null
   error: string | null
@@ -236,7 +235,6 @@ export interface OrganizedDuplicatePayload {
   notes: string[]
   batches: number
   candidate_count: number
-  mode?: 'fast' | 'full'
   requested_by: { user_id: string; username: string }
 }
 

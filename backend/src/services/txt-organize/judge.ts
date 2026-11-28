@@ -2,10 +2,6 @@ import Database from 'better-sqlite3';
 import { aiManager } from '../../ai/ai-manager';
 import { extractJsonObject } from '../../ai/json-extract';
 import { Candidate } from './candidates';
-import { prelabelCandidates } from './prelabel';
-
-/** fast：规则先判干净行，AI 只判可疑行；full：所有候选行都交给 AI */
-export type OrganizeMode = 'fast' | 'full';
 
 export type LabelType = 'part' | 'volume' | 'chapter' | 'duplicate' | 'noise';
 
@@ -24,8 +20,6 @@ export interface JudgeResult {
 }
 
 export const JUDGE_BATCH_SIZE = 300;
-/** 快速模式每批行数：可疑行难判断，单批用时随行数超线性增长，300 行一批易超时 */
-export const JUDGE_FAST_BATCH_SIZE = 100;
 export const JUDGE_OVERLAP = 20;
 
 const LABEL_TYPES: LabelType[] = ['part', 'volume', 'chapter', 'duplicate', 'noise'];
@@ -50,9 +44,6 @@ const INSTRUCTIONS = `你是中文网络小说 TXT 的目录整理助手。下�
 {"labels":[{"id":0,"type":"chapter"},{"id":1,"type":"noise","noiseKind":"text"}],"notes":["需要提醒审核人的问题，可为空数组"]}
 labels 必须覆盖下面列出的每一个 id，且每个 id 恰好出现一次（标为「上文」的候选行是上一批的重叠部分，仅供你参考上下文，也请一并标注）。`;
 
-/** 仅快速模式：追加在 INSTRUCTIONS 之后 */
-const FAST_INSTRUCTIONS = '已省略程序判定为正常章节或孤立编号的行，序号不连续是正常的；prevChapter 是该行之前最近的章节标题。';
-
 export const JUDGE_MIN_SPLIT = 50;
 const MAX_LISTED_IDS = 5;
 
@@ -68,14 +59,6 @@ export const judgeRetry = { delaysMs: [5000, 15000, 30000] };
 /** 配置类错误（未配置 AI 插件），重试没有意义 */
 const NO_RETRY_MESSAGES = ['未配置 AI 插件'];
 
-/** fetch failed 的真正原因在 error.cause（如 UND_ERR_HEADERS_TIMEOUT、ECONNRESET），附在错误信息后；没有 cause 保持原样 */
-function errorMessage(e: unknown): string {
-  const message = e instanceof Error ? e.message : String(e);
-  const cause = e instanceof Error ? (e as { cause?: unknown }).cause as { code?: unknown; message?: unknown } | undefined : undefined;
-  const reason = cause && (cause.code || cause.message);
-  return reason ? `${message}（原因：${reason}）` : message;
-}
-
 /**
  * 调一次 AI；网络错误等临时失败按 judgeRetry.delaysMs 的间隔在同一批内重试，不计入 InvalidBatch 的两次尝试。
  * 重试用尽抛 AiCallFailed；配置类错误直接抛出。
@@ -85,7 +68,7 @@ async function chatWithRetry(prompt: string, db: Database.Database): Promise<str
     try {
       return await aiManager.chat(prompt, db);
     } catch (e) {
-      const message = errorMessage(e);
+      const message = e instanceof Error ? e.message : String(e);
       if (NO_RETRY_MESSAGES.includes(message)) throw e;
       if (retry >= judgeRetry.delaysMs.length) {
         throw new AiCallFailed(retry > 0 ? `重试 ${retry} 次后仍失败：${message}` : message);
@@ -96,23 +79,8 @@ async function chatWithRetry(prompt: string, db: Database.Database): Promise<str
   }
 }
 
-/** prevChapter 仅快速模式传入（可为空字符串），full 模式不带该字段 */
-function candidateLine(c: Candidate, prevChapter?: string): string {
-  const line = `#${c.id}\t${c.text}\tbodyChars=${c.bodyChars}\tbodyLines=${c.bodyLines}\tprev=${c.prevSnippet}\tnext=${c.nextSnippet}\thint=${c.ruleHint}`;
-  return prevChapter === undefined ? line : `${line}\tprevChapter=${prevChapter}`;
-}
-
-/** 快速模式：每条可疑行之前最近一个已知 chapter 标签（规则或前批 AI）的候选行原文，没有则空。labels 与 candidates 下标对齐 */
-function prevChapters(candidates: Candidate[], labels: Label[], lines: Candidate[]): Map<number, string> {
-  const map = new Map<number, string>();
-  for (const c of lines) {
-    let text = '';
-    for (let i = c.id - 1; i >= 0; i--) {
-      if (labels[i]?.type === 'chapter') { text = candidates[i].text.trim(); break; }
-    }
-    map.set(c.id, text);
-  }
-  return map;
+function candidateLine(c: Candidate): string {
+  return `#${c.id}\t${c.text}\tbodyChars=${c.bodyChars}\tbodyLines=${c.bodyLines}\tprev=${c.prevSnippet}\tnext=${c.nextSnippet}\thint=${c.ruleHint}`;
 }
 
 /** 上一批结束时的结构摘要：当前部 / 卷、最近几个章节的原文标题行。labels 与 candidates 下标对齐 */
@@ -135,16 +103,14 @@ function buildPrompt(
   summary: string,
   context: Candidate[],
   batch: Candidate[],
-  prevChapter?: Map<number, string>,
 ): string {
-  const line = (c: Candidate) => candidateLine(c, prevChapter?.get(c.id));
   const parts = [
-    prevChapter ? `${INSTRUCTIONS}\n${FAST_INSTRUCTIONS}` : INSTRUCTIONS,
+    INSTRUCTIONS,
     `书名：${book.title}\n作者：${book.author || '未知'}`,
     `上一批结束时的结构摘要：\n${summary}`,
   ];
-  if (context.length > 0) parts.push(`上文（重叠部分，仅供参考，也请标注）：\n${context.map(line).join('\n')}`);
-  parts.push(`本批候选行：\n${batch.map(line).join('\n')}`);
+  if (context.length > 0) parts.push(`上文（重叠部分，仅供参考，也请标注）：\n${context.map(candidateLine).join('\n')}`);
+  parts.push(`本批候选行：\n${batch.map(candidateLine).join('\n')}`);
   return parts.join('\n\n');
 }
 
@@ -196,7 +162,6 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
  * 判定一批（或拆出的半批）：最多两次；两次都无效则对半拆分，两半各自沿用同样的上文和结构摘要递归判定，
  * 新候选行少于 2 × JUDGE_MIN_SPLIT 时不再拆分，抛出最后一次的 InvalidBatch。
  * 网络等 AI 调用错误在 chatWithRetry 里同批重试，用尽后抛 AiCallFailed（不触发拆分）。
- * prevChapter 仅快速模式传入，拆出的半批沿用同一份。
  */
 async function judgeBatch(
   book: { title: string; author?: string | null },
@@ -204,9 +169,8 @@ async function judgeBatch(
   context: Candidate[],
   batch: Candidate[],
   db: Database.Database,
-  prevChapter?: Map<number, string>,
 ): Promise<ParsedBatch> {
-  const prompt = buildPrompt(book, summary, context, batch, prevChapter);
+  const prompt = buildPrompt(book, summary, context, batch);
   let lastError: InvalidBatch | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -218,8 +182,8 @@ async function judgeBatch(
   }
   if (batch.length < JUDGE_MIN_SPLIT * 2) throw lastError!;
   const mid = Math.ceil(batch.length / 2);
-  const first = await judgeBatch(book, summary, context, batch.slice(0, mid), db, prevChapter);
-  const second = await judgeBatch(book, summary, context, batch.slice(mid), db, prevChapter);
+  const first = await judgeBatch(book, summary, context, batch.slice(0, mid), db);
+  const second = await judgeBatch(book, summary, context, batch.slice(mid), db);
   // 上文部分以后一半为准（与「重叠部分以后一批为准」一致）
   const byId = new Map<number, Label>();
   for (const l of [...first.labels, ...second.labels]) byId.set(l.id, l);
@@ -235,31 +199,19 @@ export async function judgeCandidates(
   book: { title: string; author?: string | null },
   db: Database.Database,
   onBatch?: (done: number, total: number) => void,
-  mode: OrganizeMode = 'full',
 ): Promise<JudgeResult> {
+  const total = Math.ceil(candidates.length / JUDGE_BATCH_SIZE);
   // 按候选序号存放；重叠部分后一批覆盖前一批
   const labels: Label[] = new Array(candidates.length);
   const notes: string[] = [];
-  // 交给 AI 的行：full 为全部候选；fast 为规则没判定的可疑行（规则标签先填入 labels）
-  let pending = candidates;
-  if (mode === 'fast') {
-    const pre = prelabelCandidates(candidates);
-    pre.forEach((l, i) => { if (l) labels[i] = l; });
-    pending = candidates.filter((_, i) => !pre[i]);
-  }
-  const batchSize = mode === 'fast' ? JUDGE_FAST_BATCH_SIZE : JUDGE_BATCH_SIZE;
-  const total = Math.ceil(pending.length / batchSize);
 
   for (let b = 0; b < total; b++) {
-    const start = b * batchSize;
-    const batch = pending.slice(start, start + batchSize);
-    const context = pending.slice(Math.max(0, start - JUDGE_OVERLAP), start);
-    // 结构摘要：本批第一条（非上文）候选行之前的已知标签；fast 下未知的空位由 forEach 跳过
-    const summary = structureSummary(candidates, labels.slice(0, batch[0].id));
-    const prevChapter = mode === 'fast' ? prevChapters(candidates, labels, [...context, ...batch]) : undefined;
+    const start = b * JUDGE_BATCH_SIZE;
+    const batch = candidates.slice(start, start + JUDGE_BATCH_SIZE);
+    const context = candidates.slice(Math.max(0, start - JUDGE_OVERLAP), start);
     let parsed: ParsedBatch;
     try {
-      parsed = await judgeBatch(book, summary, context, batch, db, prevChapter);
+      parsed = await judgeBatch(book, structureSummary(candidates, labels.slice(0, start)), context, batch, db);
     } catch (e) {
       if (e instanceof InvalidBatch) throw new Error(`AI 判定失败：第 ${b + 1} 批（${e.message}）`);
       if (e instanceof AiCallFailed) throw new Error(`AI 调用失败：第 ${b + 1} 批（${e.message}）`);
@@ -272,7 +224,6 @@ export async function judgeCandidates(
     if (parsed.repaired > 0) notes.push(`第 ${b + 1} 批有 ${parsed.repaired} 条标签格式不全，已按保守方式处理`);
     onBatch?.(b + 1, total);
   }
-  if (mode === 'fast') notes.push(`快速模式：规则判定 ${candidates.length - pending.length} 行，AI 判定 ${pending.length} 行`);
 
   if (!labels.some(l => l.type === 'chapter')) throw new Error('AI 判定失败：没有识别出任何 chapter 章节');
   const firstReal = labels.find(l => l.type !== 'noise');

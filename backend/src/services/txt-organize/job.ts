@@ -10,7 +10,7 @@ import { removeCoverFiles, saveCoverFile } from '../../utils/cover';
 import { readCover } from '../opds-download';
 import { notifyOrganizeResult } from '../notices';
 import { collectCandidates } from './candidates';
-import { judgeCandidates, type OrganizeMode } from './judge';
+import { judgeCandidates } from './judge';
 import { buildStructure } from './structure';
 import { organizedDir, writeOrganizedEpub } from './writer';
 
@@ -34,7 +34,6 @@ export interface OrganizeJob {
   book_id: string;
   requested_by: string;
   status: OrganizeJobStatus;
-  mode: OrganizeMode;
   phase: OrganizePhase | null;
   batches_done: number;
   batches_total: number;
@@ -49,8 +48,6 @@ export interface OrganizeJob {
 /** 审核项 organized_duplicate 的 payload */
 export interface OrganizedDuplicatePayload {
   job_id: string;
-  /** 整理模式；旧 payload 没有这个字段 */
-  mode?: OrganizeMode;
   original: { book_id: string; title: string; file_path: string; chapter_count: number; toc: Array<{ title: string; level: number }> };
   organized: { book_id: string; title: string; file_path: string; chapter_count: number; toc: Array<{ title: string; level: number }> };
   notes: string[];
@@ -75,7 +72,7 @@ export class OrganizeRequestError extends Error {
   }
 }
 
-const JOB_COLUMNS = 'id, book_id, requested_by, status, mode, phase, batches_done, batches_total, candidate_count, notes, result_book_id, error, created_at, finished_at';
+const JOB_COLUMNS = 'id, book_id, requested_by, status, phase, batches_done, batches_total, candidate_count, notes, result_book_id, error, created_at, finished_at';
 
 type JobRow = Omit<OrganizeJob, 'notes'> & { notes: string | null };
 
@@ -107,7 +104,6 @@ export function requestOrganize(
   bookId: string,
   user: { userId: string; role: 'admin' | 'user' },
   db: Database.Database = getDb(),
-  mode: OrganizeMode = 'fast',
 ): OrganizeJob {
   const open = findOpenJob(bookId, db);
   if (open) return open;
@@ -127,7 +123,7 @@ export function requestOrganize(
   }
 
   const id = randomUUID();
-  db.prepare("INSERT INTO txt_organize_jobs (id, book_id, requested_by, status, mode) VALUES (?, ?, ?, 'pending', ?)").run(id, bookId, user.userId, mode);
+  db.prepare("INSERT INTO txt_organize_jobs (id, book_id, requested_by, status) VALUES (?, ?, ?, 'pending')").run(id, bookId, user.userId);
   kickOrganizeWorker();
   return getJob(id, db)!;
 }
@@ -170,8 +166,8 @@ async function runWorker(): Promise<void> {
   const db = getDb();
   for (;;) {
     const job = db.prepare(
-      "SELECT id, book_id, requested_by, mode FROM txt_organize_jobs WHERE status = 'pending' ORDER BY created_at, rowid LIMIT 1"
-    ).get() as { id: string; book_id: string; requested_by: string; mode: OrganizeMode } | undefined;
+      "SELECT id, book_id, requested_by FROM txt_organize_jobs WHERE status = 'pending' ORDER BY created_at, rowid LIMIT 1"
+    ).get() as { id: string; book_id: string; requested_by: string } | undefined;
     if (!job) return;
     db.prepare("UPDATE txt_organize_jobs SET status = 'running', phase = NULL, error = NULL WHERE id = ?").run(job.id);
     const title = (db.prepare('SELECT title FROM books WHERE id = ?').get(job.book_id) as { title: string } | undefined)?.title ?? '已删除的书';
@@ -248,7 +244,7 @@ interface BookRow {
 }
 
 /** 跑一个任务，成功时返回审核批次 id；失败抛错 */
-async function runJob(job: { id: string; book_id: string; requested_by: string; mode: OrganizeMode }, db: Database.Database): Promise<string> {
+async function runJob(job: { id: string; book_id: string; requested_by: string }, db: Database.Database): Promise<string> {
   const loadBook = () => db.prepare(
     'SELECT id, title, author, summary, category, cover_url, file_path FROM books WHERE id = ?'
   ).get(job.book_id) as BookRow | undefined;
@@ -271,7 +267,7 @@ async function runJob(job: { id: string; book_id: string; requested_by: string; 
   // 2. AI 判定
   const progress = db.prepare('UPDATE txt_organize_jobs SET batches_done = ?, batches_total = ? WHERE id = ?');
   const judged = await judgeCandidates(candidates, { title: book.title, author: book.author }, db,
-    (done, total) => { progress.run(done, total, job.id); }, job.mode);
+    (done, total) => { progress.run(done, total, job.id); });
   const structure = buildStructure(candidates, judged.labels, stat.size);
   const notes = [...judged.notes, ...structure.notes];
   setPhase.run('writing', job.id);
@@ -312,7 +308,6 @@ async function runJob(job: { id: string; book_id: string; requested_by: string; 
 
     const payload: OrganizedDuplicatePayload = {
       job_id: job.id,
-      mode: job.mode,
       original: { book_id: current.id, title: current.title, file_path: current.file_path, chapter_count: originalToc.length, toc: originalToc },
       organized: { book_id: newBookId, title: newTitle, file_path: filePath, chapter_count: organizedToc.length, toc: organizedToc },
       notes,
