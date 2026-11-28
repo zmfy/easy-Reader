@@ -10,6 +10,8 @@ export interface Label {
   type: LabelType;
   /** noise 必有 */
   noiseKind?: 'stray_number' | 'text';
+  /** 仅 chapter 可选：AI 指出这一章开始了新的一卷，卷名原样摘自该行（已校验是原行去空白后的连续子串） */
+  volumeTitle?: string;
 }
 
 export interface JudgeResult {
@@ -30,7 +32,7 @@ const INSTRUCTIONS = `你是中文网络小说 TXT 的目录整理助手。下�
 标签类型（type）：
 - part：「部」级标题，例如单独一行的「第二部」，或「第一部 xxx」。
 - volume：「卷」级标题，例如「第一卷 xxx」；同一行同时带部和卷的（如「第一部第一卷《精绝古城》」）标为 volume，不要拆成两行。
-- chapter：真正的章节标题（「第12章 xxx」「楔子」「番外」等），后面通常跟着一段正常篇幅的正文。
+- chapter：真正的章节标题（「第12章 xxx」「楔子」「番外」等），后面通常跟着一段正常篇幅的正文。chapter 不一定以「第…章」开头，「183 古格银眼」这类「数字＋章名」的行也可能是章节标题。
 - duplicate：同一个标题被重复写了第二遍。例：「第5章 怎么像找对象？」后面紧接「第0005章怎么像找对象？？」，后一行是 duplicate（前一行才是 chapter）。
 - noise：不是标题的行，必须再给 noiseKind：
   - stray_number：正文里夹杂的另一套编号，整行只有「第N章」之类、没有章名，且编号不大于前面已出现的有名章节编号。例：已有「第二章 青牛镇」后又出现孤零零的「第2章」。
@@ -40,8 +42,10 @@ const INSTRUCTIONS = `你是中文网络小说 TXT 的目录整理助手。下�
 
 只需判断类型，不要给出或改写标题（目录标题由程序从原文得出）。
 
+例外：若某个 chapter 行同时表明开始了新的一卷，而前面没有对应的独立卷标题行（例如「《鬼吹灯之云南虫谷》 第一百章 人皮地图」，章名前的书名前缀与前面的章节不同），请在该 chapter 标签上给出 "volumeTitle"：卷名，必须原样摘自这一行（本例为「云南虫谷」）。卷名与当前卷相同、或前面已有该卷的独立卷标题行时不要给。
+
 只返回一个 JSON 对象，不要任何额外说明：
-{"labels":[{"id":0,"type":"chapter"},{"id":1,"type":"noise","noiseKind":"text"}],"notes":["需要提醒审核人的问题，可为空数组"]}
+{"labels":[{"id":0,"type":"chapter"},{"id":1,"type":"noise","noiseKind":"text"},{"id":2,"type":"chapter","volumeTitle":"云南虫谷"}],"notes":["需要提醒审核人的问题，可为空数组"]}
 labels 必须覆盖下面列出的每一个 id，且每个 id 恰好出现一次（标为「上文」的候选行是上一批的重叠部分，仅供你参考上下文，也请一并标注）。`;
 
 export const JUDGE_MIN_SPLIT = 50;
@@ -102,7 +106,11 @@ function structureSummary(candidates: Candidate[], labels: Label[]): string {
     const text = candidates[i].text.trim();
     if (l.type === 'part') { part = text; volume = ''; }
     else if (l.type === 'volume') volume = text;
-    else if (l.type === 'chapter') chapters.push(text);
+    else if (l.type === 'chapter') {
+      // AI 推断的新卷也算「当前卷」，让下一批知道卷名
+      if (l.volumeTitle) volume = l.volumeTitle;
+      chapters.push(text);
+    }
   });
   if (!part && !volume && chapters.length === 0) return '（这是第一批，没有前文）';
   return `当前部：${part || '无'}\n当前卷：${volume || '无'}\n最近章节标题：${chapters.slice(-SUMMARY_CHAPTERS).join(' / ') || '无'}`;
@@ -129,16 +137,23 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
+/** 去掉所有空白，用于比较卷名是否摘自原行 */
+function compact(s: string): string {
+  return s.replace(/\s+/g, '');
+}
+
 interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number }
 
 /**
  * 解析一批 AI 输出。id 缺失 / 重复 / 多出、type 不在五种之内 → 整批无效；
- * noise 缺 noiseKind 则保守补全为 text（保留原文）。AI 给的 title 等其他字段一律忽略（标题由 displayTitle 从原文得出）。
+ * noise 缺 noiseKind 则保守补全为 text（保留原文）；volumeTitle 只在 chapter 上、非空且是原行（去空白）连续子串时保留，否则丢弃并计入补全。
+ * AI 给的 title 等其他字段一律忽略（标题由 displayTitle 从原文得出）。
  */
 function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
   const obj = extractJsonObject(raw);
   if (!obj || !Array.isArray(obj.labels)) throw new InvalidBatch('无法解析 JSON');
   const expectedIds = new Set(expected.map(c => c.id));
+  const textById = new Map(expected.map(c => [c.id, c.text]));
   const byId = new Map<number, Label>();
   const duplicated: number[] = [];
   const extra: string[] = [];
@@ -154,6 +169,11 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
     if (type === 'noise') {
       if (item.noiseKind === 'stray_number' || item.noiseKind === 'text') label.noiseKind = item.noiseKind;
       else { label.noiseKind = 'text'; repaired++; }
+    }
+    if (item.volumeTitle !== undefined) {
+      const volumeTitle = typeof item.volumeTitle === 'string' ? item.volumeTitle.trim() : '';
+      if (type === 'chapter' && volumeTitle && compact(textById.get(id)!).includes(compact(volumeTitle))) label.volumeTitle = volumeTitle;
+      else repaired++;
     }
     byId.set(id, label);
   }

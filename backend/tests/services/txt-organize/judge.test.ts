@@ -274,6 +274,78 @@ describe('judgeCandidates', () => {
     expect(res.notes).toEqual(['备注1', '备注2']);
   });
 
+  describe('volumeTitle', () => {
+    /** 给指定 id 的标签附加额外字段，其余为 chapter */
+    const withExtra = (extra: Record<number, object>) => async (prompt: string) => JSON.stringify({
+      labels: idsIn(prompt).map(id => ({ id, type: 'chapter', ...(extra[id] || {}) })),
+      notes: [],
+    });
+
+    it('volumeTitle 合法保留', async () => {
+      jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({ 1: { volumeTitle: '云南虫谷' } }));
+      const cands = makeCands(3);
+      cands[1].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(res.labels[1]).toEqual({ id: 1, type: 'chapter', volumeTitle: '云南虫谷' });
+      expect(res.notes).toEqual([]);
+    });
+
+    it('不在原行中 → 丢弃并计入补全', async () => {
+      jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({ 1: { volumeTitle: '昆仑神宫' } }));
+      const cands = makeCands(3);
+      cands[1].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(res.labels[1]).toEqual({ id: 1, type: 'chapter' });
+      expect(res.notes.some(n => n.includes('标签格式不全，已按保守方式处理'))).toBe(true);
+    });
+
+    it('非 chapter 带 volumeTitle → 丢弃', async () => {
+      jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({ 1: { type: 'noise', noiseKind: 'text', volumeTitle: '云南虫谷' } }));
+      const cands = makeCands(3);
+      cands[1].text = '《鬼吹灯之云南虫谷》 结束了';
+      const res = await judgeCandidates(cands, book, db);
+      expect(res.labels[1]).toEqual({ id: 1, type: 'noise', noiseKind: 'text' });
+      expect(res.labels[1]).not.toHaveProperty('volumeTitle');
+      expect(res.notes).toEqual(['第 1 批有 1 条标签格式不全，已按保守方式处理']);
+    });
+
+    it('非字符串 / 空白 → 丢弃；原行有空白时按去空白比较', async () => {
+      jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({
+        0: { volumeTitle: 123 }, 1: { volumeTitle: '  ' }, 2: { volumeTitle: ' 云南 虫谷 ' },
+      }));
+      const cands = makeCands(3);
+      cands[2].text = '《鬼吹灯之云南虫 谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(res.labels[0]).toEqual({ id: 0, type: 'chapter' });
+      expect(res.labels[1]).toEqual({ id: 1, type: 'chapter' });
+      expect(res.labels[2]).toEqual({ id: 2, type: 'chapter', volumeTitle: '云南 虫谷' });
+      expect(res.notes).toEqual(['第 1 批有 2 条标签格式不全，已按保守方式处理']);
+    });
+
+    it('提示词含新说明', async () => {
+      const prompts: string[] = [];
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => { prompts.push(prompt); return chapterJson(idsIn(prompt)); });
+      await judgeCandidates(makeCands(2), book, db);
+      expect(prompts[0]).toContain('183 古格银眼');
+      expect(prompts[0]).toContain('volumeTitle');
+      expect(prompts[0]).toContain('"volumeTitle":"云南虫谷"');
+    });
+
+    it('下一批摘要的当前卷为推断卷', async () => {
+      const prompts: string[] = [];
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+        prompts.push(prompt);
+        return withExtra({ 0: { type: 'volume' }, 100: { volumeTitle: '云南虫谷' } })(prompt);
+      });
+      const cands = makeCands(400);
+      cands[0].text = '第一卷 精绝古城';
+      cands[100].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      await judgeCandidates(cands, book, db);
+      expect(prompts[1]).toMatch(/当前卷：[^\n]*云南虫谷/);
+      expect(prompts[1]).not.toMatch(/当前卷：[^\n]*精绝古城/);
+    });
+  });
+
   it('onBatch 回调按批报告进度', async () => {
     jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => chapterJson(idsIn(prompt)));
     const calls: Array<[number, number]> = [];
