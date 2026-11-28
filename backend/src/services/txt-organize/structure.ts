@@ -75,8 +75,13 @@ const numValue = (s: string) =>
 
 /** 行首「正文」及其后的空白 / 冒号 */
 const BODY_PREFIX_RE = /^正文[\s:：]*/;
-/** 行首《书名》前缀（后面紧跟「第N章 / 节 / 回 / 集 / 卷 / 部」） */
-const BOOK_NAME_PREFIX_RE = new RegExp(`^《[^》]*》\\s*(?=第\\s*${NUM_CHARS}\\s*[章节回集卷部])`);
+/** 行首《书名》前缀（后面紧跟「第N章 / 节 / 回 / 集 / 卷 / 部」或阿拉伯 / 全角数字） */
+const BOOK_NAME_PREFIX_RE = new RegExp(`^《[^》]*》\\s*(?=第\\s*${NUM_CHARS}\\s*[章节回集卷部]|[\\d０-９])`);
+/** 「第Y卷」开头（用来从卷前缀里取出卷名） */
+const VOLUME_NUM_RE = new RegExp(`^第\\s*${NUM_CHARS}\\s*卷`);
+
+/** 卷名比较用：去掉标点、符号和空白 */
+const volumeNameKey = (s: string) => s.replace(/[\p{P}\p{S}\s]/gu, '');
 
 /**
  * 目录里显示的标题：一律由原文按固定规则得出（AI 只判断类型，章卷编号不会被改动）。
@@ -102,13 +107,18 @@ interface GroupEntry {
 
 /**
  * 按原文标题行的「第X部」「第Y卷<卷名>」前缀补出 AI 没标出的部 / 卷（编号只增不减），
- * 并去掉与当前卷编号相同的单独分卷标题行（重复的卷标题，加入 dropLines）。
+ * 按 AI 在章节标签上指出的 volumeTitle 补出新卷（与当前卷名相同或互相包含时不建），
+ * 并去掉与当前卷编号相同、或卷名与当前卷名一致的单独分卷标题行（重复的卷标题，标题行已在 dropLines 里）。
  * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷），标题由 displayTitle 从原文得出
  */
 function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<number>, notes: string[]): GroupEntry[] {
   const entries: GroupEntry[] = [];
   let curPart: number | null = null;
   let curVolume: number | null = null;
+  // 当前卷名（去掉标点），用来按名称合并同一卷；进入新部时清空
+  let curVolumeName = '';
+  // 按 volumeTitle 建出的卷名
+  const aiVolumes: string[] = [];
   let partCount = 0;
   let volumeCount = 0;
   const greater = (n: number, cur: number | null) => !Number.isNaN(n) && (cur === null || n > cur);
@@ -121,6 +131,7 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
       const n = m ? numValue(m[1]) : NaN;
       if (!Number.isNaN(n)) curPart = n;
       curVolume = null;
+      curVolumeName = '';
       entries.push({ type: 'part', title: displayTitle(text, {}), idx: i, synthetic: false });
       return;
     }
@@ -128,6 +139,7 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     if (pm && greater(numValue(pm[1]), curPart)) {
       curPart = numValue(pm[1]);
       curVolume = null;
+      curVolumeName = '';
       partCount++;
       entries.push({ type: 'part', title: pm[0], idx: i, synthetic: true });
     }
@@ -137,8 +149,13 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     const vm = text.match(VOLUME_PREFIX_RE);
     if (vm) {
       const n = numValue(vm[2]);
-      if (greater(n, curVolume)) {
+      const name = volumeNameKey(vm[1].replace(VOLUME_NUM_RE, ''));
+      if (namesMatch(name, curVolumeName)) {
+        // 卷名与当前卷一致（如先按 volumeTitle 建了卷）：同一卷，只补上编号
         curVolume = n;
+      } else if (greater(n, curVolume)) {
+        curVolume = n;
+        curVolumeName = name;
         volumeCount++;
         entries.push({ type: 'volume', title: vm[1].trim(), idx: i, synthetic: true });
       }
@@ -150,20 +167,79 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     if (l.type === 'volume') {
       const m = text.match(VOLUME_START_RE);
       const n = m ? numValue(m[1]) : NaN;
-      if (!Number.isNaN(n) && n === curVolume) {
-        // 与当前卷编号相同：重复的卷标题，不另建卷（标题行已在 dropLines 里）
+      const name = headingParts(text).name;
+      if ((!Number.isNaN(n) && n === curVolume) || namesMatch(name, curVolumeName)) {
+        // 与当前卷编号相同或卷名一致：重复的卷标题，不另建卷（标题行已在 dropLines 里）
         notes.push(`第 ${c.lineNo + 1} 行是重复的分卷标题，已去掉：${c.text}`);
         return;
       }
       if (!Number.isNaN(n)) curVolume = n;
+      curVolumeName = name;
       entries.push({ type: 'volume', title: displayTitle(text, { partPrefix }), idx: i, synthetic: false });
       return;
+    }
+    // AI 指出这一章开始了新的一卷（前面没有对应的独立卷标题行）
+    const volumeTitle = l.type === 'chapter' ? l.volumeTitle : undefined;
+    const vtName = volumeTitle ? volumeNameKey(volumeTitle) : '';
+    if (volumeTitle && vtName && !namesMatch(vtName, curVolumeName)) {
+      curVolume = null;
+      curVolumeName = vtName;
+      aiVolumes.push(volumeTitle);
+      entries.push({ type: 'volume', title: volumeTitle, idx: i, synthetic: true });
     }
     entries.push({ type: 'chapter', title: displayTitle(text, { partPrefix }), idx: i, synthetic: false });
   });
   if (partCount > 0) notes.push(`从章节标题前缀推断出 ${partCount} 个分部`);
   if (volumeCount > 0) notes.push(`从章节标题前缀推断出 ${volumeCount} 个分卷`);
+  if (aiVolumes.length > 0) notes.push(`AI 指出 ${aiVolumes.length} 处新分卷：${aiVolumes.join('、')}`);
   return entries;
+}
+
+/**
+ * 标题行（候选下标 idx）到下一个标题行之间有没有正文：
+ * 非候选正文行（计在 bodyChars 里）或未被去掉的候选行都算正文。headIdx 为各标题行候选下标（按原文顺序）
+ */
+function hasBodyAfter(candidates: Candidate[], dropLines: Set<number>, headIdx: number[], idx: number): boolean {
+  const next = headIdx[headIdx.indexOf(idx) + 1];
+  const end = next === undefined ? candidates.length : next;
+  for (let j = idx; j < end; j++) {
+    if (candidates[j].bodyChars > 0) return true;
+    if (j > idx && !dropLines.has(candidates[j].lineNo)) return true;
+  }
+  return false;
+}
+
+/**
+ * 卷前言归位：行首「第Y卷」、不带章号的章（如「第三卷 怒晴湘西 前言」），紧接着是编号同为 Y 的独立卷行时，
+ * 把这一章移到该卷之后（成为该卷第一章）。只在卷标题行后没有正文时移动——此时卷只有标题、不输出正文，
+ * 各条目字节区间仍按原文位置，输出的正文顺序与原文一致；卷标题行后有正文时不移动，记 note
+ */
+function placeVolumePrefaces(
+  entries: GroupEntry[], candidates: Candidate[], labels: Label[], dropLines: Set<number>, headIdx: number[], notes: string[],
+): GroupEntry[] {
+  const out = entries.slice();
+  for (let k = 0; k + 1 < out.length; k++) {
+    const e = out[k];
+    const v = out[k + 1];
+    if (e.type !== 'chapter' || e.synthetic || v.type !== 'volume' || v.synthetic) continue;
+    const text = candidates[e.idx].text.trim();
+    const m = text.match(VOLUME_START_RE);
+    if (!m || headingParts(text).unit === 'chapter') continue;
+    // 下一个结构性标签必须就是这个卷行
+    let j = e.idx + 1;
+    while (j < labels.length && !isStructural(labels[j])) j++;
+    if (j !== v.idx) continue;
+    const vm = candidates[v.idx].text.trim().match(VOLUME_START_RE);
+    if (!vm || numValue(vm[1]) !== numValue(m[1])) continue;
+    if (hasBodyAfter(candidates, dropLines, headIdx, v.idx)) {
+      notes.push(`第 ${candidates[e.idx].lineNo + 1} 行像是卷前言，但卷标题后有正文，未调整位置：${candidates[e.idx].text}`);
+      continue;
+    }
+    out[k] = v;
+    out[k + 1] = e;
+    k++;
+  }
+  return out;
 }
 
 /** 由判定结果生成章节结构。labels 与 candidates 下标对齐 */
@@ -187,8 +263,10 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
     }
   }
 
-  const entries = inferGroups(candidates, labels, dropLines, notes);
-  const headIdx = entries.filter(e => !e.synthetic).map(e => e.idx);
+  const grouped = inferGroups(candidates, labels, dropLines, notes);
+  // 各标题行候选下标，按原文顺序（卷前言归位后输出顺序会变，字节区间仍按原文位置算）
+  const headIdx = grouped.filter(e => !e.synthetic).map(e => e.idx);
+  const entries = placeVolumePrefaces(grouped, candidates, labels, dropLines, headIdx, notes);
   const hasPart = entries.some(e => e.type === 'part');
 
   const sections: OrgSection[] = [];
@@ -218,16 +296,7 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
       sections.push({ level: level as 0 | 1 | 2, title: e.title, groupOnly: true, srcStart: c.byteStart, srcEnd: c.byteStart });
       continue;
     }
-    if (e.type !== 'chapter') {
-      // 标题行到下一个标题之间：非候选正文行（计在 bodyChars 里）或未被去掉的候选行都算正文
-      const end = next === undefined ? candidates.length : next;
-      let hasBody = false;
-      for (let j = e.idx; j < end && !hasBody; j++) {
-        if (candidates[j].bodyChars > 0) hasBody = true;
-        else if (j > e.idx && !dropLines.has(candidates[j].lineNo)) hasBody = true;
-      }
-      groupOnly = !hasBody;
-    }
+    if (e.type !== 'chapter') groupOnly = !hasBodyAfter(candidates, dropLines, headIdx, e.idx);
     sections.push({
       level: level as 0 | 1 | 2,
       title: e.title,
@@ -237,7 +306,8 @@ export function buildStructure(candidates: Candidate[], labels: Label[], fileSiz
     });
   }
 
-  const firstStart = sections.length > 0 ? sections[0].srcStart : fileSize;
+  // 卷前言归位后第一个条目不一定在原文最前：取最小的起点
+  const firstStart = sections.length > 0 ? sections.reduce((m, x) => Math.min(m, x.srcStart), fileSize) : fileSize;
   const preface = firstStart > 0 ? { srcStart: 0, srcEnd: firstStart } : null;
   return { sections, dropLines, preface, notes };
 }

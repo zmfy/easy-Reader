@@ -227,6 +227,28 @@ describe('writeOrganizedEpub', () => {
     expect(res.chapterMap[0]).toEqual({ chapterIndex: 0, srcStart: 0, srcEnd: 0 });
   });
 
+  it('卷前言归位：卷在前、前言章在其下，正文顺序与原文一致，整理成功', async () => {
+    const text = [
+      '书名：鬼吹灯', '',
+      '第三卷 怒晴湘西 前言', '前言正文', '第三卷 怒晴湘西', '', '第一章 琉璃厂', '正文1',
+      '《鬼吹灯之云南虫谷》 第二章 虫谷', '正文2', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      2: chap(), 4: { type: 'volume' }, 6: chap(), 8: { type: 'chapter', volumeTitle: '云南虫谷' },
+    });
+    const res = await writeOrganizedEpub({ newBookId: 'volpre', sourcePath: f, structure, title: '书' });
+    const { chapters, bodies } = await readBack(res.filePath);
+    expect(chapters.map(c => [c.title, c.level ?? 0])).toEqual([
+      ['前言', 0],
+      ['第三卷 怒晴湘西', 0],
+      ['第三卷 怒晴湘西 前言', 1],
+      ['第一章 琉璃厂', 1],
+      ['云南虫谷', 0],
+      ['第二章 虫谷', 1],
+    ]);
+    expect(bodies).toEqual([['书名：鬼吹灯'], [], ['前言正文'], ['正文1'], [], ['正文2']]);
+  });
+
   it('原文里的控制字符写 EPUB 时去掉，校验两边同一口径，整理成功', async () => {
     const { f, structure } = await prepare('第一章 开端\n正文\u0001甲\n\u0002\n乙\n', { 0: chap() });
     const res = await writeOrganizedEpub({ newBookId: 'ctl', sourcePath: f, structure, title: '书' });

@@ -87,6 +87,11 @@ describe('displayTitle', () => {
     expect(displayTitle('《山海经》读后', {})).toBe('《山海经》读后');
   });
 
+  it('去掉后面紧跟数字的《书名》前缀', () => {
+    expect(displayTitle('《鬼吹灯之昆仑神宫》 178 死亡收藏者', {})).toBe('178 死亡收藏者');
+    expect(displayTitle('《鬼吹灯之昆仑神宫》１７９ 冰川', {})).toBe('１７９ 冰川');
+  });
+
   it('放在该卷下的章去掉卷名前缀', () => {
     expect(displayTitle('第五卷名震一方第六百四十八章至木灵婴', { volumePrefix: '第五卷名震一方' })).toBe('第六百四十八章至木灵婴');
   });
@@ -433,5 +438,153 @@ describe('按标题前缀推断分部 / 分卷', () => {
     expect(structure.sections.map(s => [s.level, s.title])).toEqual([
       [0, '第 ２ 部'], [1, '第３卷 风起'], [2, '第１章 甲'],
     ]);
+  });
+});
+
+describe('按 AI 指出的 volumeTitle 建卷、同名卷合并', () => {
+  const vt = (volumeTitle: string): L => ({ type: 'chapter', volumeTitle });
+
+  it('volumeTitle 建卷：之后的章挂在新卷下，记 note', async () => {
+    const text = [
+      '第一卷 甲', '第一章 子', '正文1', '第二章 丑', '正文2',
+      '《鬼吹灯之云南虫谷》 第三章 寅', '正文3', '第四章 卯', '正文4', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, {
+      0: { type: 'volume' }, 1: chap(), 3: chap(), 5: vt('云南虫谷'), 7: chap(),
+    });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第一卷 甲', true],
+      [1, '第一章 子', false],
+      [1, '第二章 丑', false],
+      [0, '云南虫谷', true],
+      [1, '第三章 寅', false],
+      [1, '第四章 卯', false],
+    ]);
+    // 推断卷：区间为空，落在触发它的章的开头
+    expect(structure.sections[3].srcStart).toBe(structure.sections[4].srcStart);
+    expect(structure.sections[3].srcEnd).toBe(structure.sections[3].srcStart);
+    expect(structure.notes).toContain('AI 指出 1 处新分卷：云南虫谷');
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('与上一独立卷同名不新建', async () => {
+    const text = '第一部第二卷《龙岭迷窟》\n《鬼吹灯之龙岭迷窟》 第一章 甲\n正文\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: vt('龙岭迷窟') });
+    expect(structure.sections.filter(s => s.title.includes('龙岭')).length).toBe(1);
+    expect(structure.sections.map(s => s.title)).toEqual(['第一部', '第二卷《龙岭迷窟》', '第一章 甲']);
+    expect(structure.notes.some(n => n.startsWith('AI 指出'))).toBe(false);
+  });
+
+  it('同一卷多次给出 volumeTitle 不重复建卷', async () => {
+    const text = '《云南虫谷》 第一章 甲\n正文\n《云南虫谷》 第二章 乙\n正文\n';
+    const { structure } = await prepare(text, { 0: vt('云南虫谷'), 2: vt('云南虫谷') });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '云南虫谷'], [1, '第一章 甲'], [1, '第二章 乙'],
+    ]);
+    expect(structure.notes).toContain('AI 指出 1 处新分卷：云南虫谷');
+  });
+
+  it('推断卷后同名前缀不新建，章去掉卷名前缀', async () => {
+    const text = [
+      '《鬼吹灯之巫峡棺山》 第四十四章 入峡', '正文1',
+      '第四卷 巫峡棺山 第四十五章 奇遇', '正文2', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, { 0: vt('巫峡棺山'), 2: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '巫峡棺山'], [1, '第四十四章 入峡'], [1, '第四十五章 奇遇'],
+    ]);
+    expect(structure.notes).toEqual(['AI 指出 1 处新分卷：巫峡棺山']);
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('命中前缀分支的行忽略其 volumeTitle', async () => {
+    const text = '第五卷名震一方第六百四十八章 甲\n正文\n';
+    const { structure } = await prepare(text, { 0: vt('名震一方') });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([[0, '第五卷名震一方'], [1, '第六百四十八章 甲']]);
+    expect(structure.notes).toEqual(['从章节标题前缀推断出 1 个分卷']);
+  });
+
+  it('短卷名与长卷名视为同卷', async () => {
+    const text = '第二卷《龙岭迷窟》\n龙岭 第一章 甲\n正文\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: vt('龙岭') });
+    expect(structure.sections.map(s => s.title)).toEqual(['第二卷《龙岭迷窟》', '龙岭 第一章 甲']);
+  });
+
+  it('不同卷名不误合并', async () => {
+    const text = '《云南虫谷》 第一章 甲\n正文\n《昆仑神宫》 第二章 乙\n正文\n';
+    const { structure } = await prepare(text, { 0: vt('云南虫谷'), 2: vt('昆仑神宫') });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '云南虫谷'], [1, '第一章 甲'], [0, '昆仑神宫'], [1, '第二章 乙'],
+    ]);
+    expect(structure.notes).toContain('AI 指出 2 处新分卷：云南虫谷、昆仑神宫');
+  });
+
+  it('volumeTitle 卷之后出现同名独立卷行 → 视为重复卷标题去掉', async () => {
+    const text = '《云南虫谷》 第一章 甲\n正文1\n第三卷 云南虫谷\n第二章 乙\n正文2\n';
+    const { f, structure } = await prepare(text, { 0: vt('云南虫谷'), 2: { type: 'volume' }, 3: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '云南虫谷'], [1, '第一章 甲'], [1, '第二章 乙'],
+    ]);
+    expect(structure.dropLines.has(2)).toBe(true);
+    expect(structure.notes).toContain('第 3 行是重复的分卷标题，已去掉：第三卷 云南虫谷');
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('进入新部后同名卷名不再合并', async () => {
+    const text = '《云南虫谷》 第一章 甲\n正文\n第二部\n《云南虫谷》 第二章 乙\n正文\n';
+    const { structure } = await prepare(text, { 0: vt('云南虫谷'), 2: { type: 'part' }, 3: vt('云南虫谷') });
+    expect(structure.sections.map(s => s.title)).toEqual(['云南虫谷', '第一章 甲', '第二部', '云南虫谷', '第二章 乙']);
+  });
+});
+
+describe('卷前言归位', () => {
+  it('卷标题行后无正文：前言章放到该卷之下，逐字校验通过', async () => {
+    const text = [
+      '第三卷 怒晴湘西 前言', '前言正文', '第三卷 怒晴湘西', '', '第一章 琉璃厂', '正文1', '',
+    ].join('\n');
+    const { f, structure } = await prepare(text, { 0: chap(), 2: { type: 'volume' }, 4: chap() });
+    expect(structure.sections.map(s => [s.level, s.title, s.groupOnly])).toEqual([
+      [0, '第三卷 怒晴湘西', true],
+      [1, '第三卷 怒晴湘西 前言', false],
+      [1, '第一章 琉璃厂', false],
+    ]);
+    // 字节区间按原文位置
+    const [vol, pre, ch1] = structure.sections;
+    expect(pre.srcStart).toBe(0);
+    expect(pre.srcEnd).toBe(vol.srcStart);
+    expect(vol.srcEnd).toBe(ch1.srcStart);
+    expect(structure.preface).toBeNull();
+    // 按输出顺序切出正文（只有标题的卷不输出正文），与原文逐字一致
+    const out: string[] = [];
+    for (const s of structure.sections) {
+      const parts: string[] = [];
+      for await (const line of readTxtLines(f)) {
+        if (s.groupOnly || structure.dropLines.has(line.lineNo)) continue;
+        if (line.byteStart >= s.srcStart && line.byteStart < s.srcEnd) parts.push(line.text);
+      }
+      out.push(parts.join('\n'));
+    }
+    expect(out.slice(0, 2)).toEqual(['', '前言正文']);
+    expect(out[2].trim()).toBe('正文1');
+    expect(await verifyVerbatim(f, structure, iter(out))).toEqual({ ok: true });
+    expect(structure.notes).toEqual([]);
+  });
+
+  it('卷标题后有正文：不重排，记 note', async () => {
+    const text = [
+      '第三卷 怒晴湘西 前言', '前言正文', '第三卷 怒晴湘西', '卷首语', '第一章 琉璃厂', '正文1', '',
+    ].join('\n');
+    const { structure } = await prepare(text, { 0: chap(), 2: { type: 'volume' }, 4: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第三卷 怒晴湘西 前言'], [0, '第三卷 怒晴湘西'], [1, '第一章 琉璃厂'],
+    ]);
+    expect(structure.notes).toEqual(['第 1 行像是卷前言，但卷标题后有正文，未调整位置：第三卷 怒晴湘西 前言']);
+  });
+
+  it('卷编号不同不当卷前言', async () => {
+    const text = '第二卷 甲 后记\n正文\n第三卷 乙\n第一章 子\n正文\n';
+    const { structure } = await prepare(text, { 0: chap(), 2: { type: 'volume' }, 3: chap() });
+    expect(structure.sections.map(s => s.title)).toEqual(['第二卷 甲 后记', '第三卷 乙', '第一章 子']);
+    expect(structure.notes).toEqual([]);
   });
 });
