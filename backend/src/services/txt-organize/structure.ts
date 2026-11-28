@@ -107,7 +107,7 @@ interface GroupEntry {
 
 /**
  * 按原文标题行的「第X部」「第Y卷<卷名>」前缀补出 AI 没标出的部 / 卷（编号只增不减），
- * 按 AI 在章节标签上指出的 volumeTitle 补出新卷（与当前卷名相同或互相包含时不建），
+ * 按 AI 在章节标签上指出的 volumeTitle 补出新卷（与当前卷名相同或互相包含时不建；当前卷有编号无卷名且还没有章时只补卷名），
  * 并去掉与当前卷编号相同、或一侧编号未知时卷名与当前卷名一致的单独分卷标题行（重复的卷标题，标题行已在 dropLines 里）。
  * 返回按顺序排列的部 / 卷 / 章（含推断出的部 / 卷），标题由 displayTitle 从原文得出
  */
@@ -183,7 +183,12 @@ function inferGroups(candidates: Candidate[], labels: Label[], dropLines: Set<nu
     // AI 指出这一章开始了新的一卷（前面没有对应的独立卷标题行）
     const volumeTitle = l.type === 'chapter' ? l.volumeTitle : undefined;
     const vtName = volumeTitle ? volumeNameKey(volumeTitle) : '';
-    if (volumeTitle && vtName && !namesMatch(vtName, curVolumeName)) {
+    const last = entries[entries.length - 1];
+    if (vtName && curVolume !== null && !curVolumeName && last && last.type === 'volume') {
+      // 当前卷有编号但没有卷名（如单独一行「第三卷」）、且还没有章：volumeTitle 就是这一卷的卷名，
+      // 只补上卷名（卷标题保持原文），编号保留，不另建卷
+      curVolumeName = vtName;
+    } else if (volumeTitle && vtName && !namesMatch(vtName, curVolumeName)) {
       curVolume = null;
       curVolumeName = vtName;
       aiVolumes.push(volumeTitle);

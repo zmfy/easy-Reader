@@ -53,7 +53,7 @@
 ### 3. 结构（structure.ts，inferGroups）
 
 - 跟踪当前卷名 `curVolumeName`：独立卷行取 `headingParts(text).name`；推断卷取 volumeTitle 去标点；「第Y卷<卷名>」前缀推断卷取前缀里的卷名部分。进入新部时清空。
-- **chapter 带 volumeTitle**：若与 `curVolumeName` 不匹配（沿用 `namesMatch`：相等或互相包含），在该章前插入推断卷（`synthetic: true`），标题为 volumeTitle，`curVolume` 编号置为未知（null），`curVolumeName` = 该卷名；匹配则忽略。
+- **chapter 带 volumeTitle**：若与 `curVolumeName` 不匹配（沿用 `namesMatch`：相等或互相包含），在该章前插入推断卷（`synthetic: true`），标题为 volumeTitle，`curVolume` 编号置为未知（null），`curVolumeName` = 该卷名；匹配则忽略。例外（实施期决定）：当前卷有编号但卷名为空（如单独一行「第三卷」）且该卷下还没有章时，不另建卷，只把 volumeTitle 补作 `curVolumeName`（卷标题保持原文，`curVolume` 保留编号）。
 - **按名称合并**：
   - 「第Y卷<卷名> 第Z章」前缀分支：当前卷编号未知（`curVolume` 为 null，如 volumeTitle 建的卷）且卷名与 `curVolumeName` 匹配时视为同一卷，只更新 `curVolume = Y`，不新建卷（去前缀显示照旧）；当前卷有编号时只看编号（编号只增不减）。
   - 独立卷行：编号与 `curVolume` 相同，**或**一侧编号未知（该行无编号或 `curVolume` 为 null）且卷名与 `curVolumeName` 匹配时，视为重复卷标题（现有 dropLines + note 逻辑）。两侧编号都已知且不同即为不同卷，卷名互相包含也不合并（如「第一卷 风起」「第二卷 风起云涌」）。

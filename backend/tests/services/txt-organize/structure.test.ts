@@ -560,6 +560,25 @@ describe('按 AI 指出的 volumeTitle 建卷、同名卷合并', () => {
     ]);
   });
 
+  it('有编号无卷名、尚无章的卷后紧跟带 volumeTitle 的章 → 只补卷名，不另建卷', async () => {
+    const text = '第三卷\n《鬼吹灯之云南虫谷》 第一章 甲\n正文1\n第二章 乙\n正文2\n第三卷 云南虫谷\n第三章 丙\n正文3\n';
+    const { f, structure } = await prepare(text, { 0: { type: 'volume' }, 1: vt('云南虫谷'), 3: chap(), 5: { type: 'volume' }, 6: chap() });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第三卷'], [1, '第一章 甲'], [1, '第二章 乙'], [1, '第三章 丙'],
+    ]);
+    expect(structure.notes.some(n => n.startsWith('AI 指出'))).toBe(false);
+    expect(structure.notes).toContain('第 6 行是重复的分卷标题，已去掉：第三卷 云南虫谷');
+    expect(await verifyVerbatim(f, structure, iter(await render(f, structure)))).toEqual({ ok: true });
+  });
+
+  it('有编号无卷名的卷下已有章时，volumeTitle 照常建新卷', async () => {
+    const text = '第三卷\n第一章 甲\n正文1\n《鬼吹灯之云南虫谷》 第二章 乙\n正文2\n';
+    const { structure } = await prepare(text, { 0: { type: 'volume' }, 1: chap(), 3: vt('云南虫谷') });
+    expect(structure.sections.map(s => [s.level, s.title])).toEqual([
+      [0, '第三卷'], [1, '第一章 甲'], [0, '云南虫谷'], [1, '第二章 乙'],
+    ]);
+  });
+
   it('进入新部后同名卷名不再合并', async () => {
     const text = '《云南虫谷》 第一章 甲\n正文\n第二部\n《云南虫谷》 第二章 乙\n正文\n';
     const { structure } = await prepare(text, { 0: vt('云南虫谷'), 2: { type: 'part' }, 3: vt('云南虫谷') });
