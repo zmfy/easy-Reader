@@ -21,6 +21,16 @@ const MAX_CANDIDATE_CHARS = 60;
 const SNIPPET_CHARS = 20;
 /** 候选行行首：章节标题、括号附言、特殊章节、书名号 */
 const CANDIDATE_START_RE = /^(?:第|正文|[【［\[〔（(]|chapter|楔子|序|引子|前言|尾声|后记|终章|番外|《)/i;
+/** 「数字＋章名」（如「165 天崩」「1．10：古物」）：数字后接非数字、非标点的字符 */
+const NUM_TITLE_RE = /^[0-9０-９]{1,4}[\s　.．、:：]*[^\d\s０-９。！？；，,.!?]/;
+/** 「数字＋章名」整行字数上限 */
+const MAX_NUM_TITLE_CHARS = 24;
+/** 「数字＋章名」不得含的句内 / 句末标点 */
+const NUM_TITLE_PUNCT_RE = /[。！？；，,!?]/;
+
+function isNumTitle(text: string): boolean {
+  return text.length <= MAX_NUM_TITLE_CHARS && NUM_TITLE_RE.test(text) && !NUM_TITLE_PUNCT_RE.test(text);
+}
 
 export async function collectCandidates(filePath: string, parser: TxtParser): Promise<{ candidates: Candidate[]; totalLines: number }> {
   const starts = parser.getHeadingStarts();
@@ -42,7 +52,8 @@ export async function collectCandidates(filePath: string, parser: TxtParser): Pr
     if (!text) continue;
     const hint = hintByByte.get(line.byteStart);
     const isCandidate = hint !== undefined
-      || (text.length <= MAX_CANDIDATE_CHARS && CANDIDATE_START_RE.test(text));
+      || (text.length <= MAX_CANDIDATE_CHARS && CANDIDATE_START_RE.test(text))
+      || isNumTitle(text);
     if (awaitingNext) {
       awaitingNext.nextSnippet = text.slice(0, SNIPPET_CHARS);
       awaitingNext = null;

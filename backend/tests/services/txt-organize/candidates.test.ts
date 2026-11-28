@@ -114,6 +114,31 @@ describe('collectCandidates', () => {
     expect(candidates.map(c => c.text)).toEqual(['第一章 开端']);
   });
 
+  it('数字＋章名进候选', async () => {
+    const f = write('n1.txt', '第一章 开端\n他说话了\n165 天崩\n他说话了\n158影骨\n他又说\n183 古格银眼\n他说了\n1．10：古物的命名方式\n他说了\n');
+    const { candidates } = await collectCandidates(f, await loaded(f));
+    expect(candidates.map(c => c.text)).toEqual(['第一章 开端', '165 天崩', '158影骨', '183 古格银眼', '1．10：古物的命名方式']);
+    expect(candidates.slice(1).every(c => c.ruleHint === 'none')).toBe(true);
+  });
+
+  it('数字开头但含句内或句末标点的行不进候选', async () => {
+    const f = write('n2.txt', '第一章 开端\n3年后他回来了。\n2010年，他来了\n普通行\n');
+    const { candidates } = await collectCandidates(f, await loaded(f));
+    expect(candidates.map(c => c.text)).toEqual(['第一章 开端']);
+  });
+
+  it('数字＋章名超过 24 字不进候选', async () => {
+    const f = write('n3.txt', '第一章 开端\n12 ' + '字'.repeat(23) + '\n普通行\n');
+    const { candidates } = await collectCandidates(f, await loaded(f));
+    expect(candidates.map(c => c.text)).toEqual(['第一章 开端']);
+  });
+
+  it('纯数字行不进候选', async () => {
+    const f = write('n4.txt', '第一章 开端\n2010\n普通行\n');
+    const { candidates } = await collectCandidates(f, await loaded(f));
+    expect(candidates.map(c => c.text)).toEqual(['第一章 开端']);
+  });
+
   it('分卷标题的 ruleHint 为 volume', async () => {
     const f = write('v.txt', '第一卷 风起\n第一章 开端\n他拔出剑来\n第二章 发展\n她转身离去\n');
     const p = await loaded(f);
