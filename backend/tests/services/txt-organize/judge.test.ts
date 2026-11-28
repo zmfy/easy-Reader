@@ -299,14 +299,14 @@ describe('judgeCandidates', () => {
       expect(res.notes.some(n => n.includes('标签格式不全，已按保守方式处理'))).toBe(true);
     });
 
-    it('非 chapter 带 volumeTitle → 丢弃', async () => {
+    it('非 chapter 带 volumeTitle → 静默丢弃，不计入补全', async () => {
       jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({ 1: { type: 'noise', noiseKind: 'text', volumeTitle: '云南虫谷' } }));
       const cands = makeCands(3);
       cands[1].text = '《鬼吹灯之云南虫谷》 结束了';
       const res = await judgeCandidates(cands, book, db);
       expect(res.labels[1]).toEqual({ id: 1, type: 'noise', noiseKind: 'text' });
       expect(res.labels[1]).not.toHaveProperty('volumeTitle');
-      expect(res.notes).toEqual(['第 1 批有 1 条标签格式不全，已按保守方式处理']);
+      expect(res.notes).toEqual([]);
     });
 
     it('非字符串 → 丢弃并计入补全；null / 空白视为没给不计入；原行有空白时按去空白比较', async () => {

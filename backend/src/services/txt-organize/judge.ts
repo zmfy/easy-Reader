@@ -157,7 +157,7 @@ interface ParsedBatch { labels: Label[]; notes: string[]; repaired: number }
 
 /**
  * 解析一批 AI 输出。id 缺失 / 重复 / 多出、type 不在五种之内 → 整批无效；
- * noise 缺 noiseKind 则保守补全为 text（保留原文）；volumeTitle 只在 chapter 上、非空且是原行（去空白）连续子串时保留，否则丢弃并计入补全。
+ * noise 缺 noiseKind 则保守补全为 text（保留原文）；volumeTitle 只在 chapter 上、非空且是原行（去空白）连续子串时保留，chapter 上的非法值丢弃并计入补全，其他类型上的直接忽略。
  * AI 给的 title 等其他字段一律忽略（标题由 displayTitle 从原文得出）。
  */
 function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
@@ -181,10 +181,11 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
       if (item.noiseKind === 'stray_number' || item.noiseKind === 'text') label.noiseKind = item.noiseKind;
       else { label.noiseKind = 'text'; repaired++; }
     }
+    // 只看 chapter 上的 volumeTitle（其他类型上的直接忽略，不计入补全）；
     // null、空串视为没给；其他非字符串或不在原行中的值丢弃并计入补全
     const rawVolumeTitle = typeof item.volumeTitle === 'string' ? item.volumeTitle.trim() : item.volumeTitle;
-    if (rawVolumeTitle !== undefined && rawVolumeTitle !== null && rawVolumeTitle !== '') {
-      if (type === 'chapter' && typeof rawVolumeTitle === 'string' && compact(textById.get(id)!).includes(compact(rawVolumeTitle))) label.volumeTitle = rawVolumeTitle;
+    if (type === 'chapter' && rawVolumeTitle !== undefined && rawVolumeTitle !== null && rawVolumeTitle !== '') {
+      if (typeof rawVolumeTitle === 'string' && compact(textById.get(id)!).includes(compact(rawVolumeTitle))) label.volumeTitle = rawVolumeTitle;
       else repaired++;
     }
     byId.set(id, label);
