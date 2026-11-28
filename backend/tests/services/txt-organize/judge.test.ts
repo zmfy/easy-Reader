@@ -274,3 +274,121 @@ describe('judgeCandidates', () => {
     expect(calls).toEqual([[1, 3], [2, 3], [3, 3]]);
   });
 });
+
+describe('judgeCandidates 快速模式', () => {
+  const FAST_NOTE = '已省略程序判定为正常章节或孤立编号的行，序号不连续是正常的；prevChapter 是该行之前最近的章节标题。';
+  const mk = (texts: string[]): Candidate[] => texts.map((text, i) => ({
+    id: i, lineNo: i * 10, byteStart: i * 100, byteEnd: i * 100 + 50, text,
+    bodyChars: 1000, bodyLines: 10, prevSnippet: '前文', nextSnippet: '后文', ruleHint: 'heading' as const,
+  }));
+  const fiveCands = () => mk(['第一章 山边小村', '第二章 青牛镇', '第三章 七玄门', '第二章', '第三卷结束。']);
+
+  it('fast 只把可疑行发给 AI，规则标签与 AI 标签按 id 合并', async () => {
+    const prompts: string[] = [];
+    const spy = jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return JSON.stringify({ labels: idsIn(prompt).map(id => ({ id, type: 'noise', noiseKind: 'text' })), notes: [] });
+    });
+    const progress: Array<[number, number]> = [];
+    const res = await judgeCandidates(fiveCands(), book, db, (d, t) => progress.push([d, t]), 'fast');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(idsIn(prompts[0])).toEqual([4]);
+    expect(prompts[0]).toContain(FAST_NOTE);
+    expect(res.labels).toHaveLength(5);
+    expect(res.labels.map(l => l.id)).toEqual([0, 1, 2, 3, 4]);
+    expect(res.labels[0]).toEqual({ id: 0, type: 'chapter' });
+    expect(res.labels[3]).toEqual({ id: 3, type: 'noise', noiseKind: 'stray_number' });
+    expect(res.labels[4]).toEqual({ id: 4, type: 'noise', noiseKind: 'text' });
+    expect(res.batches).toBe(1);
+    expect(progress).toEqual([[1, 1]]);
+    expect(res.notes[res.notes.length - 1]).toBe('快速模式：规则判定 4 行，AI 判定 1 行');
+  });
+
+  it('fast 可疑行带 prevChapter，结构摘要含规则判定的章节', async () => {
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return chapterJson(idsIn(prompt));
+    });
+    await judgeCandidates(fiveCands(), book, db, undefined, 'fast');
+    const line4 = prompts[0].split('\n').find(l => l.startsWith('#4\t'))!;
+    expect(line4).toContain('\tprevChapter=第三章 七玄门');
+    expect(prompts[0]).toContain('最近章节标题：第一章 山边小村 / 第二章 青牛镇 / 第三章 七玄门');
+  });
+
+  it('fast 第一条可疑行之前没有章节 → prevChapter 为空', async () => {
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return chapterJson(idsIn(prompt));
+    });
+    await judgeCandidates(mk(['楔子', '第一章 山边小村', '第二章 青牛镇']), book, db, undefined, 'fast');
+    const line0 = prompts[0].split('\n').find(l => l.startsWith('#0\t'))!;
+    expect(line0.endsWith('\tprevChapter=')).toBe(true);
+  });
+
+  it('fast 多批：重叠上文取前面的可疑行，prevChapter 用前批 AI 标签', async () => {
+    // 偶数 id 为干净章节（规则判定），奇数 id 为无编号的可疑行
+    const texts: string[] = [];
+    let n = 0;
+    for (let i = 0; i < 700; i++) texts.push(i % 2 === 0 ? `第${++n}章 名${n}` : `可疑${i}`);
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return chapterJson(idsIn(prompt));
+    });
+    const res = await judgeCandidates(mk(texts), book, db, undefined, 'fast');
+    const odd = (from: number, count: number) => Array.from({ length: count }, (_, i) => 2 * (from + i) + 1);
+    expect(prompts).toHaveLength(2);
+    expect(idsIn(prompts[0])).toEqual(odd(0, 300));
+    expect(idsIn(prompts[1])).toEqual(odd(280, 70));
+    // 上文 #561 之前最近的 chapter 是规则判定的 #560
+    expect(prompts[1].split('\n').find(l => l.startsWith('#561\t'))).toContain('\tprevChapter=第281章 名281');
+    expect(res.batches).toBe(2);
+    expect(res.labels).toHaveLength(700);
+    expect(res.notes[res.notes.length - 1]).toBe('快速模式：规则判定 350 行，AI 判定 350 行');
+  });
+
+  it('fast prevChapter 与结构摘要使用前批 AI 判定的 chapter', async () => {
+    // #0 规则判定为章节，#1..#400 全是可疑行；AI 把 #300 判为 chapter、其余判为 noise
+    const cands = mk(['第一章 起', ...Array.from({ length: 400 }, (_, i) => `可疑${i + 1}`)]);
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return JSON.stringify({
+        labels: idsIn(prompt).map(id => id === 300 ? { id, type: 'chapter' } : { id, type: 'noise', noiseKind: 'text' }),
+        notes: [],
+      });
+    });
+    await judgeCandidates(cands, book, db, undefined, 'fast');
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0].split('\n').find(l => l.startsWith('#300\t'))).toContain('\tprevChapter=第一章 起');
+    expect(prompts[1].split('\n').find(l => l.startsWith('#301\t'))).toContain('\tprevChapter=可疑300');
+    expect(prompts[1].split('\n').find(l => l.startsWith('#300\t'))).toContain('\tprevChapter=第一章 起');
+    expect(prompts[1]).toContain('最近章节标题：第一章 起 / 可疑300');
+  });
+
+  it('fast 全部被规则判定 → 不调用 AI', async () => {
+    const spy = jest.spyOn(aiManager, 'chat');
+    const progress: Array<[number, number]> = [];
+    const res = await judgeCandidates(mk(['第一章 山边小村', '第二章 青牛镇', '第三章 七玄门']), book, db, (d, t) => progress.push([d, t]), 'fast');
+    expect(spy).toHaveBeenCalledTimes(0);
+    expect(res.batches).toBe(0);
+    expect(progress).toEqual([]);
+    expect(res.labels.map(l => l.type)).toEqual(['chapter', 'chapter', 'chapter']);
+    expect(res.notes).toContain('快速模式：规则判定 3 行，AI 判定 0 行');
+  });
+
+  it('full 的提示词不含 prevChapter 和快速模式说明，notes 不加快速模式统计', async () => {
+    const prompts: string[] = [];
+    jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return chapterJson(idsIn(prompt));
+    });
+    const res = await judgeCandidates(fiveCands(), book, db, undefined, 'full');
+    expect(idsIn(prompts[0])).toEqual([0, 1, 2, 3, 4]);
+    expect(prompts[0]).not.toContain('prevChapter');
+    expect(prompts[0]).not.toContain(FAST_NOTE);
+    expect(res.notes.some(n => n.startsWith('快速模式'))).toBe(false);
+  });
+});
