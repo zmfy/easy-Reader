@@ -42,7 +42,7 @@ const INSTRUCTIONS = `你是中文网络小说 TXT 的目录整理助手。下�
 
 只需判断类型，不要给出或改写标题（目录标题由程序从原文得出）。
 
-例外：若某个 chapter 行同时表明开始了新的一卷，而前面没有对应的独立卷标题行（例如「《鬼吹灯之云南虫谷》 第一百章 人皮地图」，章名前的书名前缀与前面的章节不同），请在该 chapter 标签上给出 "volumeTitle"：卷名，必须原样摘自这一行（本例为「云南虫谷」）。卷名与当前卷相同、或前面已有该卷的独立卷标题行时不要给。
+例外：若某个 chapter 行同时表明开始了新的一卷，而前面没有对应的独立卷标题行（例如「《鬼吹灯之云南虫谷》 第一百章 人皮地图」，章名前的书名前缀与前面的章节不同），请在该 chapter 标签上给出 "volumeTitle"：卷名，必须原样摘自这一行（本例为「云南虫谷」），取书名 / 卷名部分，不是章名。卷名与当前卷相同、或前面已有该卷的独立卷标题行时不要给。
 
 只返回一个 JSON 对象，不要任何额外说明：
 {"labels":[{"id":0,"type":"chapter"},{"id":1,"type":"noise","noiseKind":"text"},{"id":2,"type":"chapter","volumeTitle":"云南虫谷"}],"notes":["需要提醒审核人的问题，可为空数组"]}
@@ -137,6 +137,17 @@ function listIds(ids: number[]): string {
   return ids.length > MAX_LISTED_IDS ? `${shown} 等 ${ids.length} 个` : shown;
 }
 
+/**
+ * 重叠部分用后一次的标签覆盖前一次；但后一次仍判为 chapter 却没给 volumeTitle 时保留前一次的 volumeTitle
+ * （卷切换行落在重叠区时，后一批的摘要已是新卷，按提示词不会再报）。改判为其他类型则不保留。
+ */
+function overrideLabel(prev: Label | undefined, next: Label): Label {
+  if (prev && prev.type === 'chapter' && prev.volumeTitle && next.type === 'chapter' && !next.volumeTitle) {
+    return { ...next, volumeTitle: prev.volumeTitle };
+  }
+  return next;
+}
+
 /** 去掉所有空白，用于比较卷名是否摘自原行 */
 function compact(s: string): string {
   return s.replace(/\s+/g, '');
@@ -170,9 +181,10 @@ function parseBatch(raw: string, expected: Candidate[]): ParsedBatch {
       if (item.noiseKind === 'stray_number' || item.noiseKind === 'text') label.noiseKind = item.noiseKind;
       else { label.noiseKind = 'text'; repaired++; }
     }
-    if (item.volumeTitle !== undefined) {
-      const volumeTitle = typeof item.volumeTitle === 'string' ? item.volumeTitle.trim() : '';
-      if (type === 'chapter' && volumeTitle && compact(textById.get(id)!).includes(compact(volumeTitle))) label.volumeTitle = volumeTitle;
+    // null、空串视为没给；其他非字符串或不在原行中的值丢弃并计入补全
+    const rawVolumeTitle = typeof item.volumeTitle === 'string' ? item.volumeTitle.trim() : item.volumeTitle;
+    if (rawVolumeTitle !== undefined && rawVolumeTitle !== null && rawVolumeTitle !== '') {
+      if (type === 'chapter' && typeof rawVolumeTitle === 'string' && compact(textById.get(id)!).includes(compact(rawVolumeTitle))) label.volumeTitle = rawVolumeTitle;
       else repaired++;
     }
     byId.set(id, label);
@@ -216,7 +228,7 @@ async function judgeBatch(
   const second = await judgeBatch(book, summary, context, batch.slice(mid), db);
   // 上文部分以后一半为准（与「重叠部分以后一批为准」一致）
   const byId = new Map<number, Label>();
-  for (const l of [...first.labels, ...second.labels]) byId.set(l.id, l);
+  for (const l of [...first.labels, ...second.labels]) byId.set(l.id, overrideLabel(byId.get(l.id), l));
   return {
     labels: [...context, ...batch].map(c => byId.get(c.id)!),
     notes: [...first.notes, ...second.notes],
@@ -249,7 +261,7 @@ export async function judgeCandidates(
     }
 
     // 候选 id 即其在数组中的位置
-    parsed.labels.forEach(l => { labels[l.id] = l; });
+    parsed.labels.forEach(l => { labels[l.id] = overrideLabel(labels[l.id], l); });
     notes.push(...parsed.notes);
     if (parsed.repaired > 0) notes.push(`第 ${b + 1} 批有 ${parsed.repaired} 条标签格式不全，已按保守方式处理`);
     onBatch?.(b + 1, total);

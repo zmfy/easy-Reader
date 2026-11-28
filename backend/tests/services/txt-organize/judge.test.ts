@@ -309,17 +309,69 @@ describe('judgeCandidates', () => {
       expect(res.notes).toEqual(['第 1 批有 1 条标签格式不全，已按保守方式处理']);
     });
 
-    it('非字符串 / 空白 → 丢弃；原行有空白时按去空白比较', async () => {
+    it('非字符串 → 丢弃并计入补全；null / 空白视为没给不计入；原行有空白时按去空白比较', async () => {
       jest.spyOn(aiManager, 'chat').mockImplementation(withExtra({
         0: { volumeTitle: 123 }, 1: { volumeTitle: '  ' }, 2: { volumeTitle: ' 云南 虫谷 ' },
+        3: { volumeTitle: null }, 4: { volumeTitle: { name: '云南虫谷' } }, 5: { volumeTitle: '' },
       }));
-      const cands = makeCands(3);
+      const cands = makeCands(6);
       cands[2].text = '《鬼吹灯之云南虫 谷》 第一百章 人皮地图';
       const res = await judgeCandidates(cands, book, db);
-      expect(res.labels[0]).toEqual({ id: 0, type: 'chapter' });
-      expect(res.labels[1]).toEqual({ id: 1, type: 'chapter' });
+      for (const i of [0, 1, 3, 4, 5]) expect(res.labels[i]).toEqual({ id: i, type: 'chapter' });
       expect(res.labels[2]).toEqual({ id: 2, type: 'chapter', volumeTitle: '云南 虫谷' });
+      // 只有 123 和对象计入
       expect(res.notes).toEqual(['第 1 批有 2 条标签格式不全，已按保守方式处理']);
+    });
+
+    it('全部 chapter 都带 null → 不产生补全提示', async () => {
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => JSON.stringify({
+        labels: idsIn(prompt).map(id => ({ id, type: 'chapter', volumeTitle: null })), notes: [],
+      }));
+      const res = await judgeCandidates(makeCands(5), book, db);
+      expect(res.notes).toEqual([]);
+      expect(res.labels.every(l => !('volumeTitle' in l))).toBe(true);
+    });
+
+    it('卷切换行落在重叠区：下一批重标为 chapter 但没给 volumeTitle → 保留前一批的', async () => {
+      let call = 0;
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+        call++;
+        return withExtra(call === 1 ? { 290: { volumeTitle: '云南虫谷' } } : {})(prompt);
+      });
+      const cands = makeCands(400);
+      cands[290].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(call).toBe(2);
+      expect(res.labels[290]).toEqual({ id: 290, type: 'chapter', volumeTitle: '云南虫谷' });
+    });
+
+    it('卷切换行落在重叠区：下一批改判为 noise → 不保留 volumeTitle', async () => {
+      let call = 0;
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+        call++;
+        return withExtra(call === 1 ? { 290: { volumeTitle: '云南虫谷' } } : { 290: { type: 'noise', noiseKind: 'text' } })(prompt);
+      });
+      const cands = makeCands(400);
+      cands[290].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(res.labels[290]).toEqual({ id: 290, type: 'noise', noiseKind: 'text' });
+    });
+
+    it('拆半合并：后一半重标上文为 chapter 但没给 volumeTitle → 保留前一半的', async () => {
+      // 第二批（上文 280–299 + 本批 300–399）两次缺 id → 拆成两半，前一半给 290 带 volumeTitle，后一半不给
+      let call = 0;
+      jest.spyOn(aiManager, 'chat').mockImplementation(async (prompt: string) => {
+        call++;
+        const ids = idsIn(prompt);
+        if (call === 2 || call === 3) return chapterJson(ids.slice(1));
+        const extra: Record<number, object> = call === 4 ? { 290: { volumeTitle: '云南虫谷' } } : {};
+        return JSON.stringify({ labels: ids.map(id => ({ id, type: 'chapter', ...(extra[id] || {}) })), notes: [] });
+      });
+      const cands = makeCands(400);
+      cands[290].text = '《鬼吹灯之云南虫谷》 第一百章 人皮地图';
+      const res = await judgeCandidates(cands, book, db);
+      expect(call).toBe(5);
+      expect(res.labels[290]).toEqual({ id: 290, type: 'chapter', volumeTitle: '云南虫谷' });
     });
 
     it('提示词含新说明', async () => {
