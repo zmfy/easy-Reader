@@ -156,9 +156,19 @@ describe('POST / GET /api/reader/:bookId/organize', () => {
     expect(j.data.job).toMatchObject({ book_id: 'b1', status: 'review' });
     expect(j.data.job.notes).toBeUndefined();
 
+    expect(j.data.job.requested_by).toBe('u-reader');
+
+    // 别的读者看不到发起人
+    mockUser = { userId: 'u-other', role: 'user' };
+    j = await (await api('/reader/b1/organize')).json();
+    expect(j.data.job).toMatchObject({ book_id: 'b1', status: 'review' });
+    expect(j.data.job).not.toHaveProperty('requested_by');
+    expect(j.data.job).not.toHaveProperty('notes');
+
     mockUser = ADMIN;
     j = await (await api('/reader/b1/organize')).json();
     expect(j.data.job.notes).toEqual(['第二章疑似缺字']);
+    expect(j.data.job.requested_by).toBe('u-reader');
 
     // 有拒绝记录时返回拒绝时间
     db.prepare("INSERT INTO txt_organize_rejections (book_id, file_size, rejected_at) VALUES ('b1', ?, '2026-11-20 01:02:03')")

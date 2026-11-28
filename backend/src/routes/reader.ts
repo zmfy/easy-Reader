@@ -268,8 +268,9 @@ const ORGANIZE_ERROR_MESSAGES: Record<OrganizeRequestErrorCode, string> = {
 // 整理说明（AI 判定的备注）只给管理员看
 function organizeJobView(job: ReturnType<typeof getActiveOrganizeJob>, req: Request) {
   if (!job || req.user!.role === 'admin') return job;
-  const { notes: _notes, ...rest } = job;
-  return rest;
+  const { notes: _notes, requested_by: requestedBy, ...rest } = job;
+  // 发起人是谁只告诉发起人本人
+  return requestedBy === req.user!.userId ? { ...rest, requested_by: requestedBy } : rest;
 }
 
 // 读者也能打开的书才能整理（待审核的整理版对读者不存在）

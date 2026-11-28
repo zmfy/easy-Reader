@@ -194,11 +194,11 @@ export interface ScanBatch {
   organize_title?: string | null
 }
 
-/** TXT 目录 AI 整理任务（notes 只有管理员能看到） */
+/** TXT 目录 AI 整理任务（notes 只有管理员能看到；requested_by 只有管理员和发起人本人能看到） */
 export interface OrganizeJob {
   id: string
   book_id: string
-  requested_by: string
+  requested_by?: string
   status: 'pending' | 'running' | 'review' | 'failed' | 'done'
   phase: 'candidates' | 'judging' | 'writing' | null
   batches_done: number
