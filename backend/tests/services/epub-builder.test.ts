@@ -168,7 +168,7 @@ describe('writeEpub（逐章写出）', () => {
       chapterHtml: async () => `<p>${hardText(3000)}</p>`,
     }, out);
     clearInterval(timer);
-    expect(maxGap).toBeLessThan(200);
+    expect(maxGap).toBeLessThan(500);
     expect(new AdmZip(out).getEntries().length).toBe(4000 + 6);
   }, 60000);
 

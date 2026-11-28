@@ -93,12 +93,13 @@ beforeAll(async () => {
 });
 afterAll(async () => { await new Promise<void>(r => server.close(() => r())); });
 
-async function waitFor(cond: () => boolean): Promise<void> {
+async function waitFor(cond: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 500 && !cond(); i++) await new Promise(r => setTimeout(r, 10));
-  expect(cond()).toBe(true);
+  if (!cond()) throw new Error(`等待超时：${what}`);
 }
 const settle = () => waitFor(() =>
-  (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status IN ('pending', 'running')").get() as { n: number }).n === 0);
+  (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status IN ('pending', 'running')").get() as { n: number }).n === 0,
+  '没有 pending / running 的整理任务');
 
 beforeEach(() => {
   mockUser = ADMIN;
@@ -133,7 +134,7 @@ async function makePendingOrganized(bookId: string): Promise<string> {
   const res = await post(`/reader/${bookId}/organize`);
   expect(res.status).toBe(200);
   const jobId = (await res.json()).data.job.id as string;
-  await waitFor(() => (db.prepare('SELECT status FROM txt_organize_jobs WHERE id = ?').get(jobId) as { status: string }).status === 'review');
+  await waitFor(() => (db.prepare('SELECT status FROM txt_organize_jobs WHERE id = ?').get(jobId) as { status: string }).status === 'review', `任务 ${jobId} 进入 review`);
   return (db.prepare('SELECT result_book_id FROM txt_organize_jobs WHERE id = ?').get(jobId) as { result_book_id: string }).result_book_id;
 }
 
@@ -150,7 +151,7 @@ describe('POST / GET /api/reader/:bookId/organize', () => {
     expect(j.data.job).toMatchObject({ book_id: 'b1', requested_by: 'u-reader' });
     expect(['pending', 'running', 'review']).toContain(j.data.job.status);
 
-    await waitFor(() => (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status = 'review'").get() as { n: number }).n === 1);
+    await waitFor(() => (db.prepare("SELECT COUNT(*) AS n FROM txt_organize_jobs WHERE status = 'review'").get() as { n: number }).n === 1, '有一个 review 的整理任务');
     j = await (await api('/reader/b1/organize')).json();
     expect(j.data.available).toBe(true);
     expect(j.data.job).toMatchObject({ book_id: 'b1', status: 'review' });
@@ -313,7 +314,7 @@ describe('扫描与整理版', () => {
     const res = await post('/library/scan');
     expect(res.status).toBe(200);
     const taskId = (await res.json()).data.taskId as string;
-    await waitFor(() => getScanTaskById(taskId)?.status !== 'running');
+    await waitFor(() => getScanTaskById(taskId)?.status !== 'running', `扫描任务 ${taskId} 结束`);
 
     // 普通扫描批次（kind 默认 'scan'）待审核时仍然拒绝
     db.prepare("DELETE FROM scan_batches WHERE kind = 'scan'").run();

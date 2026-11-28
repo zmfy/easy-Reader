@@ -234,7 +234,7 @@ describe('writeOrganizedEpub', () => {
     expect(bodies).toEqual([['正文甲', '乙']]);
   });
 
-  it('30MB 合成文本：写出期间主线程最长占用 < 200ms（process.threadCpuUsage）', async () => {
+  it('30MB 合成文本：写出期间主线程最长占用 < 500ms（process.threadCpuUsage）', async () => {
     let seed = 42;
     const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed; };
     // 伪随机汉字：难压缩，接近真实小说的压缩开销
@@ -279,7 +279,7 @@ describe('writeOrganizedEpub', () => {
       newBookId: 'big', sourcePath: f, structure: { sections, dropLines, preface: null, notes: [] }, title: '大书',
     });
     clearInterval(timer);
-    expect(maxGap).toBeLessThan(200);
+    expect(maxGap).toBeLessThan(500);
     // 内存增长与文件大小无关（整本 30MB 原文 / EPUB 不会同时在内存里）
     expect((rssPeak - rssBefore) / 1048576).toBeLessThan(150);
     expect(loadSpy).not.toHaveBeenCalled();

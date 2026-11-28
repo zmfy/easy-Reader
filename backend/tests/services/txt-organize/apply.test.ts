@@ -41,9 +41,6 @@ import type { Candidate } from '../../../src/services/txt-organize/candidates';
 import type { Label } from '../../../src/services/txt-organize/judge';
 import type { OrganizedDuplicatePayload } from '../../../src/services/txt-organize/job';
 
-// 每个用例都要写 EPUB、解析原书，有一个还要跑一次扫描：全量并行时 5 秒默认超时偏紧
-jest.setTimeout(20000);
-
 const BOOKS = process.env.BOOKS_DIR!;
 const COVERS = path.join(process.env.DATA_DIR!, 'covers');
 
@@ -461,7 +458,7 @@ describe('applyOrganizeDecision', () => {
   it('批次已处理：不再执行', async () => {
     const fx = await makeOrganized();
     await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_hide_old', 'admin1', db);
-    await expect(applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db)).rejects.toThrow();
+    await expect(applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db)).rejects.toThrow('审核批次不存在或已处理');
     expect(book(fx.orgId)).toMatchObject({ status: 'normal' });
   });
 });
