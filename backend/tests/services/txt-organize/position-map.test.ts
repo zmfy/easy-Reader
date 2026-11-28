@@ -8,6 +8,8 @@ import { Label } from '../../../src/services/txt-organize/judge';
 import { buildStructure } from '../../../src/services/txt-organize/structure';
 import { writeOrganizedEpub } from '../../../src/services/txt-organize/writer';
 import { TxtParser } from '../../../src/plugins/parser-txt';
+import { EpubParser } from '../../../src/plugins/parser-epub';
+import { decodeHtmlEntities } from '../../../src/utils/html';
 import { PositionMapper } from '../../../src/services/txt-organize/position-map';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'txt-position-map-'));
@@ -33,7 +35,7 @@ const LABELS: Record<number, L> = {
 
 let seq = 0;
 /** 写原文、按判定结果生成整理版 EPUB，并建一个只有相关表的内存库 */
-async function setup(text: string, labelsByLine: Record<number, L>) {
+async function setup(text: string, labelsByLine: Record<number, L>, originalCount = 4) {
   const id = `org${seq++}`;
   const f = path.join(dir, `${id}.txt`);
   fs.writeFileSync(f, text);
@@ -57,7 +59,7 @@ async function setup(text: string, labelsByLine: Record<number, L>) {
     CREATE TABLE books (id TEXT PRIMARY KEY, file_path TEXT, chapter_count INTEGER, organized_from TEXT);
     CREATE TABLE txt_organize_chapter_map (book_id TEXT NOT NULL, chapter_index INTEGER NOT NULL, src_start INTEGER NOT NULL, src_end INTEGER NOT NULL, PRIMARY KEY (book_id, chapter_index));
   `);
-  db.prepare('INSERT INTO books (id, file_path, chapter_count, organized_from) VALUES (?, ?, ?, NULL)').run('orig', f, 4);
+  db.prepare('INSERT INTO books (id, file_path, chapter_count, organized_from) VALUES (?, ?, ?, NULL)').run('orig', f, originalCount);
   db.prepare('INSERT INTO books (id, file_path, chapter_count, organized_from) VALUES (?, ?, ?, ?)').run(id, filePath, chapterMap.length, 'orig');
   const ins = db.prepare('INSERT INTO txt_organize_chapter_map (book_id, chapter_index, src_start, src_end) VALUES (?, ?, ?, ?)');
   for (const m of chapterMap) ins.run(id, m.chapterIndex, m.srcStart, m.srcEnd);
@@ -141,5 +143,97 @@ describe('PositionMapper', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  // 阅读器划线偏移 = .chapter-content 的 textContent：去标签、解码实体，块之间的换行照算
+  const plain = (html: string) => decodeHtmlEntities(html.replace(/<[^>]*>/g, ''));
+  const originalText = async (f: string, c: number) => {
+    const t = new TxtParser();
+    await t.load(f);
+    return plain(await t.getChapterContent(c));
+  };
+  const organizedText = async (db: Database.Database, id: string, k: number) => {
+    const e = new EpubParser();
+    await e.load((db.prepare('SELECT file_path FROM books WHERE id = ?').get(id) as { file_path: string }).file_path);
+    return plain(await e.getChapterContent(k));
+  };
+
+  it('mapTextRange：同章找得到，偏移处文字等于划线原文', async () => {
+    const { f, id, db } = await setup(TEXT, LABELS);
+    const m = await PositionMapper.create(f, id, db);
+    for (const text of ['c4', 'c3\nc4', '4']) {
+      const start = (await originalText(f, 3)).indexOf(text);
+      expect(start).toBeGreaterThan(0);
+      const r = await m.mapTextRange(3, start, text);
+      expect(r).toMatchObject({ chapterIndex: 3, located: true });
+      expect((await organizedText(db, id, 3)).slice(r.start, r.end)).toBe(text);
+    }
+    // 原第 2 章（另一套编号的「第七章」）里的 b3 → 整理版第二章
+    const start = (await originalText(f, 2)).indexOf('b3');
+    const r = await m.mapTextRange(2, start, 'b3');
+    expect(r).toMatchObject({ chapterIndex: 2, located: true });
+    expect((await organizedText(db, id, 2)).slice(r.start, r.end)).toBe('b3');
+  });
+
+  it('mapTextRange：原章在整理版被拆成两章，划线在后半 → 后一章', async () => {
+    const text = ['第一章 开端', 'a1', 'a2', '天崩地裂', 'd1', 'd2', '第二章 结局', 'e1'].join('\n');
+    const { f, id, db, chapterMap } = await setup(text, { 0: chap(), 3: chap(), 6: chap() }, 2);
+    expect(chapterMap).toHaveLength(3);
+    const m = await PositionMapper.create(f, id, db);
+    const orig = await originalText(f, 0);
+    expect(orig).toContain('天崩地裂');
+    const r = await m.mapTextRange(0, orig.indexOf('d2'), 'd2');
+    expect(r).toMatchObject({ chapterIndex: 1, located: true });
+    expect((await organizedText(db, id, 1)).slice(r.start, r.end)).toBe('d2');
+    // 前半仍在第一章
+    const a = await m.mapTextRange(0, orig.indexOf('a2'), 'a2');
+    expect(a).toMatchObject({ chapterIndex: 0, located: true });
+  });
+
+  it('mapTextRange：整理版里找不到原文 → located=false，章节为换算章、长度不变', async () => {
+    const { f, id, db } = await setup(TEXT, LABELS);
+    const m = await PositionMapper.create(f, id, db);
+    const start = (await originalText(f, 3)).indexOf('c2');
+    const r = await m.mapTextRange(3, start, '不存在的话');
+    expect(r.chapterIndex).toBe(3);
+    expect(r.located).toBe(false);
+    expect(r.end - r.start).toBe('不存在的话'.length);
+  });
+
+  const nthOf = (s: string, n: number) => {
+    let i = -1;
+    for (let k = 0; k <= n; k++) i = s.indexOf('他说', i + 1);
+    return i;
+  };
+
+  it('mapTextRange：多处相同短文本取离换算位置最近的一处', async () => {
+    // 原书第 0 章开头带着书名（整理版的「前言」章）：同一句话在两边的偏移不同，按原偏移找最近会错到别的一处
+    const text = ['书名：某书', '', '第一章 开端', '他说', 'x1', '他说', 'x2', '他说', '第二章 尾声', 'y1'].join('\n');
+    const { f, id, db } = await setup(text, { 2: chap(), 8: chap() }, 2);
+    const m = await PositionMapper.create(f, id, db);
+    const orig = await originalText(f, 0);
+    const org = await organizedText(db, id, 1);
+    expect(nthOf(orig, 1) - nthOf(org, 1)).not.toBe(0);
+    for (const n of [0, 1, 2]) {
+      const r = await m.mapTextRange(0, nthOf(orig, n), '他说');
+      expect(r).toEqual({ chapterIndex: 1, start: nthOf(org, n), end: nthOf(org, n) + 2, located: true });
+    }
+  });
+
+  it('mapTextRange：forceProportional / 原文件已删除时不抛错，在 mapChapter 的章里找', async () => {
+    const { f, id, db } = await setup(TEXT, LABELS);
+    const start = (await originalText(f, 3)).indexOf('c5');
+    const m = await PositionMapper.create(f, id, db, { forceProportional: true });
+    const r = await m.mapTextRange(3, start, 'c5');
+    expect(r).toMatchObject({ chapterIndex: m.mapChapter(3), located: true });
+    expect((await organizedText(db, id, r.chapterIndex)).slice(r.start, r.end)).toBe('c5');
+
+    fs.rmSync(f);
+    const gone = await PositionMapper.create(f, id, db);
+    const g = await gone.mapTextRange(3, start, 'c5');
+    expect(g).toMatchObject({ chapterIndex: gone.mapChapter(3), located: true });
+    expect((await organizedText(db, id, g.chapterIndex)).slice(g.start, g.end)).toBe('c5');
+    // 换算章里也没有：保留原偏移
+    expect(await gone.mapTextRange(3, 7, '不存在')).toEqual({ chapterIndex: gone.mapChapter(3), start: 7, end: 10, located: false });
   });
 });

@@ -7,12 +7,12 @@ import { deleteBookRelations } from '../relation-cleanup';
 import { recordSkip } from '../scan-skips';
 import { writeAudit } from '../audit-log';
 import type { OrganizedDuplicatePayload } from './job';
-import { PositionMapper, ReadingPos } from './position-map';
+import { PositionMapper, ReadingPos, TextRange } from './position-map';
 import { organizedDir } from './writer';
 
 /**
  * 整理审核的决定（审核项 organized_duplicate）：
- *  - keep_new_*：读者在原书上的进度 / 书签 / 书架 / 历史迁到整理版，整理版改回原书名并上架，原书按决定隐藏 / 删记录 / 删文件；
+ *  - keep_new_*：读者在原书上的进度 / 书签 / 书架 / 历史 / 划线（含批注）/ 导图节点迁到整理版，整理版改回原书名并上架，原书按决定隐藏 / 删记录 / 删文件；
  *  - keep_old：删除整理版（记录、文件、封面副本、章节对照表），记住这个版本被拒绝过，原书不动。
  * 位置换算要解析原书（异步），所以先在事务外算好，事务里只写库。
  */
@@ -26,7 +26,7 @@ export const DEFAULT_ORGANIZE_DECISION: OrganizeDecision = 'keep_new_hide_old';
 
 export interface ApplySummary {
   decision: OrganizeDecision;
-  migrated: { progress: number; bookmarks: number; shelf: number; history: number };
+  migrated: { progress: number; bookmarks: number; shelf: number; history: number; highlights: number; mind_nodes: number };
   /** 提交之后删文件失败等不影响结果的问题 */
   warnings: string[];
 }
@@ -47,6 +47,13 @@ interface ProgressRow {
   paragraph_index: number | null;
   paragraph_offset: number | null;
   updated_at: string | null;
+}
+
+/** 事务外算好的划线 / 导图节点位置 */
+interface StudyMapping {
+  highlights: Map<string, TextRange>;
+  /** 导图节点出处：键为 posKey */
+  sources: Map<string, ReadingPos>;
 }
 
 const posKey = (r: { chapter_index: number | null; paragraph_index: number | null; paragraph_offset: number | null }) =>
@@ -73,11 +80,14 @@ export async function applyOrganizeDecision(
   const srcPath = original ? resolveRealPathInsideRoot(BOOKS_DIR, original.file_path) : null;
   const srcStat = srcPath ? fs.statSync(srcPath) : null;
 
-  const summary: ApplySummary = { decision, migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 }, warnings: [] };
+  const summary: ApplySummary = {
+    decision, migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0, highlights: 0, mind_nodes: 0 }, warnings: [],
+  };
 
   // ---- 事务外：算好进度换算、确认删除文件的路径合法 ----
   let mapper: PositionMapper | null = null;
   const mappedProgress = new Map<string, ReadingPos>();
+  const study: StudyMapping = { highlights: new Map(), sources: new Map() };
   let deleteReq: DeleteRequest | null = null;
   let deleteFileAfterCommit = false;
   let batchId = '';
@@ -94,6 +104,18 @@ export async function applyOrganizeDecision(
       mappedProgress.set(key, await mapper.mapProgress({
         chapterIndex: r.chapter_index ?? 0, paragraphIndex: r.paragraph_index ?? 0, paragraphOffset: r.paragraph_offset ?? 0,
       }));
+    }
+    // 划线：在整理版章节全文里找回原文位置；导图节点出处按段落换算
+    const highlights = db.prepare('SELECT id, chapter_index, start_offset, text FROM highlights WHERE book_id = ?').all(origId) as
+      Array<{ id: string; chapter_index: number; start_offset: number; text: string }>;
+    for (const h of highlights) study.highlights.set(h.id, await mapper.mapTextRange(h.chapter_index, h.start_offset, h.text));
+    const sources = db.prepare(
+      'SELECT source_chapter, source_paragraph FROM mind_nodes WHERE book_id = ? AND source_chapter IS NOT NULL'
+    ).all(origId) as Array<{ source_chapter: number; source_paragraph: number | null }>;
+    for (const n of sources) {
+      const key = posKey({ chapter_index: n.source_chapter, paragraph_index: n.source_paragraph, paragraph_offset: 0 });
+      if (study.sources.has(key)) continue;
+      study.sources.set(key, await mapper.mapProgress({ chapterIndex: n.source_chapter, paragraphIndex: n.source_paragraph ?? 0, paragraphOffset: 0 }));
     }
     if (decision === 'keep_new_delete_record' || decision === 'keep_new_delete_file') {
       deleteReq = { file_path: original.file_path, book_id: origId, cascade_duplicate_ids: [], cascade_duplicate_paths: [], user_id: adminUserId };
@@ -129,7 +151,7 @@ export async function applyOrganizeDecision(
       db.prepare("UPDATE books SET title = ?, status = 'normal', duplicate_of = NULL WHERE id = ?").run(title, orgId);
       // 审核期间原书被删了：没有可迁移的数据
       if (mapper && loadOriginal()) {
-        migrateReaderData(db, origId, orgId, mapper, mappedProgress, item.payload, summary);
+        migrateReaderData(db, origId, orgId, mapper, mappedProgress, study, item.payload, summary);
         // 原来是原书副本的书改为指向整理版
         db.prepare('UPDATE books SET duplicate_of = ? WHERE duplicate_of = ? AND id != ?').run(orgId, origId, orgId);
         if (decision === 'keep_new_hide_old') {
@@ -226,13 +248,14 @@ const INHERITED_COLUMNS = [
 /** 同一用户两本书都有记录时，时间较新的胜出（相同时保留整理版上的） */
 const newer = (a: string | null, b: string | null) => (a ?? '') > (b ?? '');
 
-/** 原书的进度 / 书签 / 书架 / 历史迁到整理版，复制书目信息与 AI 书目信息，删除按章节序号存的数据。在调用方事务内执行 */
+/** 原书的进度 / 书签 / 书架 / 历史 / 划线 / 导图节点迁到整理版，复制书目信息与 AI 书目信息，删除按章节序号存的数据。在调用方事务内执行 */
 function migrateReaderData(
   db: Database.Database,
   origId: string,
   orgId: string,
   mapper: PositionMapper,
   mappedProgress: Map<string, ReadingPos>,
+  study: StudyMapping,
   payload: OrganizedDuplicatePayload,
   summary: ApplySummary,
 ): void {
@@ -267,6 +290,38 @@ function migrateReaderData(
   for (const b of bookmarks) {
     moveBookmark.run(orgId, mapper.mapChapter(b.chapter_index), b.id);
     m.bookmarks++;
+  }
+
+  // 划线（含批注）：位置事务外算好；找不到原文的保留在换算出的章节（阅读器定位不到时不画，批注照样在）；
+  // 事务外之后才新建的划线按章节换算、偏移原样。updated_at 不变（批注没改）
+  const highlights = db.prepare('SELECT id, chapter_index, start_offset, end_offset FROM highlights WHERE book_id = ?').all(origId) as
+    Array<{ id: string; chapter_index: number; start_offset: number; end_offset: number }>;
+  const moveHighlight = db.prepare('UPDATE highlights SET book_id = ?, chapter_index = ?, start_offset = ?, end_offset = ? WHERE id = ?');
+  const highlightChapter = new Map<string, number>();
+  let unlocated = 0;
+  for (const h of highlights) {
+    const r = study.highlights.get(h.id)
+      ?? { chapterIndex: mapper.mapChapter(h.chapter_index), start: h.start_offset, end: h.end_offset, located: true };
+    if (!r.located) unlocated++;
+    moveHighlight.run(orgId, r.chapterIndex, r.start, r.end, h.id);
+    highlightChapter.set(h.id, r.chapterIndex);
+    m.highlights++;
+  }
+  if (unlocated > 0) summary.warnings.push(`${unlocated} 条划线在整理版中没找到原文位置，已保留在对应章节（批注不受影响）`);
+
+  // 导图节点：挂在已迁移划线下的跟划线同章，其余按章节换算；出处按段落换算（ai_expansions 是缓存，不迁移）
+  const nodes = db.prepare('SELECT id, chapter_index, highlight_id, source_chapter, source_paragraph FROM mind_nodes WHERE book_id = ?').all(origId) as
+    Array<{ id: string; chapter_index: number; highlight_id: string | null; source_chapter: number | null; source_paragraph: number | null }>;
+  const moveNode = db.prepare('UPDATE mind_nodes SET book_id = ?, chapter_index = ?, source_chapter = ?, source_paragraph = ? WHERE id = ?');
+  for (const n of nodes) {
+    const chapter = (n.highlight_id ? highlightChapter.get(n.highlight_id) : undefined) ?? mapper.mapChapter(n.chapter_index);
+    let source: ReadingPos | null = null;
+    if (n.source_chapter != null) {
+      source = study.sources.get(posKey({ chapter_index: n.source_chapter, paragraph_index: n.source_paragraph, paragraph_offset: 0 }))
+        ?? { chapterIndex: mapper.mapChapter(n.source_chapter), paragraphIndex: 0, paragraphOffset: 0 };
+    }
+    moveNode.run(orgId, chapter, source ? source.chapterIndex : null, source ? source.paragraphIndex : null, n.id);
+    m.mind_nodes++;
   }
 
   // 书架：以最近阅读（没有则加入时间）比较

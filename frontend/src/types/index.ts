@@ -289,7 +289,8 @@ export interface OrganizedDuplicatePayload {
 /** 应用整理审核批次的结果（存在 scan_batches.apply_summary） */
 export interface OrganizeApplySummary {
   decision: OrganizeDecision
-  migrated: { progress: number; bookmarks: number; shelf: number; history: number }
+  // highlights / mind_nodes：学习版迁移划线 / 导图节点后才有，旧的审核结果没有
+  migrated: { progress: number; bookmarks: number; shelf: number; history: number; highlights?: number; mind_nodes?: number }
   warnings?: string[]
 }
 

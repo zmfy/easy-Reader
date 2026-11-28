@@ -36,6 +36,9 @@ const { createScanTask } = require('../../../src/services/scan-task');
 const { readTxtLines } = require('../../../src/services/txt-organize/lines') as typeof import('../../../src/services/txt-organize/lines');
 const { buildStructure } = require('../../../src/services/txt-organize/structure') as typeof import('../../../src/services/txt-organize/structure');
 const { writeOrganizedEpub } = require('../../../src/services/txt-organize/writer') as typeof import('../../../src/services/txt-organize/writer');
+const { TxtParser } = require('../../../src/plugins/parser-txt') as typeof import('../../../src/plugins/parser-txt');
+const { EpubParser } = require('../../../src/plugins/parser-epub') as typeof import('../../../src/plugins/parser-epub');
+const { decodeHtmlEntities } = require('../../../src/utils/html') as typeof import('../../../src/utils/html');
 /* eslint-enable @typescript-eslint/no-var-requires */
 import type { Candidate } from '../../../src/services/txt-organize/candidates';
 import type { Label } from '../../../src/services/txt-organize/judge';
@@ -153,6 +156,37 @@ function addReaderData(origId: string): void {
   db.prepare("INSERT INTO book_chapter_overrides (book_id, chapter_index, normalized_title) VALUES (?, 1, '第一章')").run(origId);
 }
 
+// 阅读器划线偏移 = .chapter-content 的 textContent：去标签、解码实体
+const plain = (html: string) => decodeHtmlEntities(html.replace(/<[^>]*>/g, ''));
+async function originalText(src: string, c: number): Promise<string> {
+  const t = new TxtParser();
+  await t.load(src);
+  return plain(await t.getChapterContent(c));
+}
+async function organizedText(file: string, k: number): Promise<string> {
+  const e = new EpubParser();
+  await e.load(file);
+  return plain(await e.getChapterContent(k));
+}
+
+/** 学习版数据：u1 两条划线（一条带批注）、一个挂在划线下的导图节点（带出处）、一个不挂划线的导图节点 */
+async function addStudyData(fx: Fixture): Promise<void> {
+  const hl = db.prepare(
+    `INSERT INTO highlights (id, user_id, book_id, chapter_index, start_offset, end_offset, text, note, updated_at)
+     VALUES (?, 'u1', ?, ?, ?, ?, ?, ?, '2026-11-20 10:00:00')`
+  );
+  const c4 = (await originalText(fx.src, 3)).indexOf('c4');
+  const b3 = (await originalText(fx.src, 2)).indexOf('b3');
+  hl.run(`h1-${fx.origId}`, fx.origId, 3, c4, c4 + 2, 'c4', '批注一');
+  hl.run(`h2-${fx.origId}`, fx.origId, 2, b3, b3 + 2, 'b3', null);
+  const node = db.prepare(
+    `INSERT INTO mind_nodes (id, user_id, book_id, parent_id, chapter_index, highlight_id, label, kind, source_chapter, source_paragraph)
+     VALUES (?, 'u1', ?, NULL, ?, ?, ?, ?, ?, ?)`
+  );
+  node.run(`n1-${fx.origId}`, fx.origId, 3, `h1-${fx.origId}`, 'c4', 'highlight', 2, 1);
+  node.run(`n2-${fx.origId}`, fx.origId, 1, null, '自建', 'custom', null, null);
+}
+
 const book = (id: string) => db.prepare('SELECT * FROM books WHERE id = ?').get(id) as Record<string, unknown> | undefined;
 const rowsOf = (table: string, bookId: string, order = 'user_id') =>
   db.prepare(`SELECT * FROM ${table} WHERE book_id = ? ORDER BY ${order}`).all(bookId) as Array<Record<string, unknown>>;
@@ -187,7 +221,7 @@ beforeEach(() => {
     DELETE FROM scan_batch_items; DELETE FROM scan_batches; DELETE FROM scan_tasks; DELETE FROM books;
     DELETE FROM reading_progress; DELETE FROM bookmarks; DELETE FROM shelf; DELETE FROM reading_history;
     DELETE FROM book_ai_metadata; DELETE FROM ai_recaps; DELETE FROM ai_suggestions; DELETE FROM book_chapter_overrides;
-    DELETE FROM scan_skipped_files; DELETE FROM audit_log;
+    DELETE FROM scan_skipped_files; DELETE FROM audit_log; DELETE FROM highlights; DELETE FROM mind_nodes;
   `);
   for (const f of fs.readdirSync(BOOKS)) fs.rmSync(path.join(BOOKS, f), { force: true });
 });
@@ -201,7 +235,7 @@ describe('applyOrganizeDecision', () => {
       .run(fx.origId);
 
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_hide_old', 'admin1', db);
-    expect(summary).toEqual({ decision: 'keep_new_hide_old', migrated: { progress: 2, bookmarks: 3, shelf: 2, history: 2 }, warnings: [] });
+    expect(summary).toEqual({ decision: 'keep_new_hide_old', migrated: { progress: 2, bookmarks: 3, shelf: 2, history: 2, highlights: 0, mind_nodes: 0 }, warnings: [] });
 
     expect(book(fx.orgId)).toMatchObject({ title: '青牛记', status: 'normal' });
     expect(book(fx.origId)).toMatchObject({ status: 'duplicate', duplicate_of: fx.orgId });
@@ -240,7 +274,7 @@ describe('applyOrganizeDecision', () => {
     const fx = await makeOrganized();
     addReaderData(fx.origId);
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_record', 'admin1', db);
-    expect(summary.migrated).toEqual({ progress: 2, bookmarks: 3, shelf: 2, history: 2 });
+    expect(summary.migrated).toEqual({ progress: 2, bookmarks: 3, shelf: 2, history: 2, highlights: 0, mind_nodes: 0 });
     expect(book(fx.origId)).toBeUndefined();
     expect(fs.existsSync(fx.src)).toBe(true);
     expect(rowsOf('reading_progress', fx.orgId)).toHaveLength(2);
@@ -359,7 +393,7 @@ describe('applyOrganizeDecision', () => {
     addReaderData(fx.origId);
     const before = Object.fromEntries(['reading_progress', 'bookmarks', 'shelf', 'reading_history'].map(t => [t, rowsOf(t, fx.origId)]));
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db);
-    expect(summary).toEqual({ decision: 'keep_old', migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0 }, warnings: [] });
+    expect(summary).toEqual({ decision: 'keep_old', migrated: { progress: 0, bookmarks: 0, shelf: 0, history: 0, highlights: 0, mind_nodes: 0 }, warnings: [] });
 
     expect(book(fx.orgId)).toBeUndefined();
     expect(fs.existsSync(fx.orgFile)).toBe(false);
@@ -428,7 +462,7 @@ describe('applyOrganizeDecision', () => {
     db.prepare("INSERT INTO reading_history (user_id, book_id, opened_at) VALUES ('u2', ?, '2026-11-01 00:00:00')").run(fx.orgId);
 
     const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_hide_old', 'admin1', db);
-    expect(summary.migrated).toEqual({ progress: 1, bookmarks: 3, shelf: 1, history: 2 });
+    expect(summary.migrated).toEqual({ progress: 1, bookmarks: 3, shelf: 1, history: 2, highlights: 0, mind_nodes: 0 });
     expect(rowsOf('reading_progress', fx.orgId).map(r => [r.user_id, r.chapter_index, r.paragraph_index, r.chapter_title]))
       .toEqual([['u1', 1, 2, '整理版上读的'], ['u2', 2, 3, '第二章 青牛镇']]);
     expect(rowsOf('shelf', fx.orgId).map(r => [r.user_id, r.id])).toEqual([['u1', 'so-u1'], ['u2', `s-u2-${fx.origId}`]]);
@@ -454,6 +488,55 @@ describe('applyOrganizeDecision', () => {
       expect(db.prepare(`SELECT ${cols.join(', ')} FROM books WHERE id = ?`).get(fx.orgId)).toEqual(expected);
       expect(selectFillCandidates(db, false).map(c => c.id)).not.toContain(fx.orgId);
     });
+
+  it.each(['keep_new_hide_old', 'keep_new_delete_record', 'keep_new_delete_file'] as const)(
+    '%s：划线（含批注）与导图节点迁到整理版，位置换算、文字对得上', async (decision) => {
+      const fx = await makeOrganized();
+      await addStudyData(fx);
+      const summary = await applyOrganizeDecision({ payload: fx.payload }, decision, 'admin1', db);
+      expect(summary.migrated).toMatchObject({ highlights: 2, mind_nodes: 2 });
+      expect(summary.warnings).toEqual([]);
+
+      expect(rowsOf('highlights', fx.origId)).toEqual([]);
+      expect(rowsOf('mind_nodes', fx.origId)).toEqual([]);
+      const hls = rowsOf('highlights', fx.orgId, 'id');
+      expect(hls.map(h => [h.id, h.chapter_index, h.text, h.note, h.updated_at])).toEqual([
+        [`h1-${fx.origId}`, 3, 'c4', '批注一', '2026-11-20 10:00:00'],
+        [`h2-${fx.origId}`, 2, 'b3', null, '2026-11-20 10:00:00'],
+      ]);
+      for (const h of hls) {
+        expect((await organizedText(fx.orgFile, h.chapter_index as number)).slice(h.start_offset as number, h.end_offset as number)).toBe(h.text);
+      }
+      // 挂划线的节点跟划线走、出处按段落换算（原第 2 章第 1 段 → 整理版第 2 章第 3 段）；不挂划线的按章节换算
+      expect(rowsOf('mind_nodes', fx.orgId, 'id').map(n => [n.id, n.chapter_index, n.highlight_id, n.source_chapter, n.source_paragraph])).toEqual([
+        [`n1-${fx.origId}`, 3, `h1-${fx.origId}`, 2, 3],
+        [`n2-${fx.origId}`, 2, null, null, null],
+      ]);
+    });
+
+  it('keep_new_delete_file：整理版里找不到原文的划线保留在换算章节并记警告', async () => {
+    const fx = await makeOrganized();
+    await addStudyData(fx);
+    db.prepare(
+      `INSERT INTO highlights (id, user_id, book_id, chapter_index, start_offset, end_offset, text, note)
+       VALUES ('h-lost', 'u1', ?, 3, 5, 10, '不存在的话', '找不到也要留着')`
+    ).run(fx.origId);
+    const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_new_delete_file', 'admin1', db);
+    expect(summary.migrated).toMatchObject({ highlights: 3, mind_nodes: 2 });
+    expect(summary.warnings).toEqual(['1 条划线在整理版中没找到原文位置，已保留在对应章节（批注不受影响）']);
+    expect(db.prepare("SELECT book_id, chapter_index, end_offset - start_offset AS len, note FROM highlights WHERE id = 'h-lost'").get())
+      .toEqual({ book_id: fx.orgId, chapter_index: 3, len: 5, note: '找不到也要留着' });
+    expect(JSON.parse(batch(fx.batchId).apply_summary as string)).toEqual(summary);
+  });
+
+  it('keep_old：划线与导图节点留在原书不动', async () => {
+    const fx = await makeOrganized();
+    await addStudyData(fx);
+    const before = [rowsOf('highlights', fx.origId, 'id'), rowsOf('mind_nodes', fx.origId, 'id')];
+    const summary = await applyOrganizeDecision({ payload: fx.payload }, 'keep_old', 'admin1', db);
+    expect(summary.migrated).toMatchObject({ highlights: 0, mind_nodes: 0 });
+    expect([rowsOf('highlights', fx.origId, 'id'), rowsOf('mind_nodes', fx.origId, 'id')]).toEqual(before);
+  });
 
   it('批次已处理：不再执行', async () => {
     const fx = await makeOrganized();

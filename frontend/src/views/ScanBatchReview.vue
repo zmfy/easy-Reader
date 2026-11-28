@@ -32,6 +32,7 @@
           <template v-if="organizeSummary.decision !== 'keep_old'">
             · 迁移阅读进度 {{ organizeSummary.migrated.progress }} · 书签 {{ organizeSummary.migrated.bookmarks }} ·
             书架 {{ organizeSummary.migrated.shelf }} · 阅读历史 {{ organizeSummary.migrated.history }}
+            · 划线 {{ organizeSummary.migrated.highlights ?? 0 }} · 导图节点 {{ organizeSummary.migrated.mind_nodes ?? 0 }}
           </template>
           <div v-for="(w, i) in organizeSummary.warnings ?? []" :key="i" class="errors">{{ w }}</div>
         </div>

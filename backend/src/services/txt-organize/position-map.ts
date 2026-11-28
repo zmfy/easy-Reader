@@ -17,10 +17,46 @@ interface MapRow {
   src_end: number;
 }
 
+/** 划线换算结果：located=false 表示整理版里没找到原文，位置是按段落换算出的候选位置 */
+export interface TextRange {
+  chapterIndex: number;
+  start: number;
+  end: number;
+  located: boolean;
+}
+
 /** 整理版一章：正文行在原文的字节位置 → 阅读器段落序号（升序） */
 type OrganizedIndex = Array<{ byte: number; block: number }>;
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, Math.floor(Number(n) || 0)));
+
+/**
+ * 章节 HTML → 与阅读器 .chapter-content 的 textContent 一致的纯文本（去标签、解码实体，标签之间的换行照算，不另加分隔），
+ * 以及各块（<p> / <h1>–<h6>，与阅读器段落计数一致）在其中的起点
+ */
+function chapterText(html: string): { text: string; blocks: number[] } {
+  let text = '';
+  const blocks: number[] = [];
+  for (const part of html.split(/(<[^>]*>)/)) {
+    if (part.startsWith('<')) {
+      if (/^<(p|h[1-6])\b/i.test(part)) blocks.push(text.length);
+    } else {
+      text += decodeHtmlEntities(part);
+    }
+  }
+  return { text, blocks };
+}
+
+/** 同阅读器 locateHighlight：候选位置处就是原文则直接用，否则取离候选最近的一处；找不到为 -1 */
+function locateText(full: string, candidate: number, text: string): number {
+  if (!text) return -1;
+  if (full.slice(candidate, candidate + text.length) === text) return candidate;
+  let best = -1;
+  for (let i = full.indexOf(text); i !== -1; i = full.indexOf(text, i + 1)) {
+    if (best === -1 || Math.abs(i - candidate) < Math.abs(best - candidate)) best = i;
+  }
+  return best;
+}
 
 /**
  * 原 TXT 与整理版 EPUB 之间的阅读位置换算（审核保留整理版时迁移读者进度 / 书签）。
@@ -34,6 +70,7 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
  * 一本书的所有读者一起换算：各章索引第一次用到时才建（只读该章的原文区间），之后缓存。
  * 原文件不存在 / 解析失败时退化为按章节序号比例换算，不抛错；原文件在整理后被改过时由调用方传 forceProportional，
  * 同样按比例换算（对照表的字节区间已对不上）。原书章节数未知时章节序号一一对应、夹到整理版范围内。
+ * 划线（mapTextRange）还要读整理版 EPUB 在章里找原文，所以比例换算模式下也尽量加载整理版。
  */
 export class PositionMapper {
   private txt: TxtParser | null = null;
@@ -42,6 +79,9 @@ export class PositionMapper {
   private originalStarts: number[] = [];
   private originalCache = new Map<number, Promise<Array<number | null>>>();
   private organizedCache = new Map<number, Promise<OrganizedIndex>>();
+  /** 各章 HTML（段落索引与划线换算共用，每章只解析一次） */
+  private originalHtmlCache = new Map<number, Promise<string>>();
+  private organizedHtmlCache = new Map<number, Promise<string>>();
 
   private constructor(
     private originalPath: string,
@@ -64,16 +104,21 @@ export class PositionMapper {
        FROM books b LEFT JOIN books o ON o.id = b.organized_from WHERE b.id = ?`
     ).get(organizedBookId) as { file_path: string; original_count: number | null } | undefined;
     const mapper = new PositionMapper(originalPath, rows, book?.original_count ?? 0);
-    if (!book || rows.length === 0 || opts.forceProportional) return mapper;
+    if (!book || rows.length === 0) return mapper;
+    try {
+      const epub = new EpubParser();
+      await epub.load(book.file_path);
+      mapper.epub = epub;
+    } catch {
+      return mapper;
+    }
+    if (opts.forceProportional) return mapper;
     try {
       const txt = new TxtParser();
       await txt.load(originalPath);
       const starts = txt.getHeadingStarts().map(s => s.byte);
       if (starts.length === 0) return mapper;
-      const epub = new EpubParser();
-      await epub.load(book.file_path);
       mapper.txt = txt;
-      mapper.epub = epub;
       mapper.originalStarts = starts.map((s, i) => (i === 0 ? 0 : s));
       mapper.originalCount = starts.length;
     } catch {
@@ -99,6 +144,46 @@ export class PositionMapper {
     } catch {
       // 原文件在换算途中被删 / 改动等：退回按章节比例
       return { chapterIndex: this.mapChapter(pos.chapterIndex), paragraphIndex: 0, paragraphOffset: 0 };
+    }
+  }
+
+  /**
+   * 划线：原书第 c 章 textContent 偏移 start 处的 text → 整理版的章节与偏移。
+   * start 所在块按 mapProgress 换到整理版 (章 k, 段 q)，候选位置 = 第 q 块起点 + 块内偏移；在第 k 章全文里按阅读器规则找 text，
+   * 找不到再试 k−1、k+1 章；都找不到 → 第 k 章候选位置（located=false）。
+   * 比例换算模式：章节按 mapChapter、偏移原样，只在该章里找。不抛错
+   */
+  async mapTextRange(chapterIndex: number, start: number, text: string): Promise<TextRange> {
+    const miss = (k: number, s: number): TextRange => ({ chapterIndex: k, start: s, end: s + text.length, located: false });
+    if (this.rows.length === 0) return miss(0, start);
+    try {
+      let k = this.mapChapter(chapterIndex);
+      let candidate = start;
+      let tries = [k];
+      if (this.txt) {
+        const c = clamp(chapterIndex, 0, this.originalStarts.length - 1);
+        const { blocks } = chapterText(await this.originalHtml(c));
+        let p = 0;
+        while (p + 1 < blocks.length && blocks[p + 1] <= start) p++;
+        const d = Math.max(0, start - (blocks[p] ?? 0));
+        const pos = await this.mapProgress({ chapterIndex: c, paragraphIndex: p, paragraphOffset: 0 });
+        k = pos.chapterIndex;
+        const organized = chapterText(await this.organizedHtml(k));
+        candidate = (organized.blocks[Math.min(pos.paragraphIndex, organized.blocks.length - 1)] ?? 0) + d;
+        tries = [k, k - 1, k + 1];
+      }
+      if (!this.epub) return miss(k, candidate);
+      for (const j of tries) {
+        if (j < 0 || j >= this.rows.length) continue;
+        const full = chapterText(await this.organizedHtml(j)).text;
+        // 相邻章：前一章从章末、后一章从章首找最近的
+        const found = locateText(full, j === k ? candidate : j < k ? full.length : 0, text);
+        if (found >= 0) return { chapterIndex: j, start: found, end: found + text.length, located: true };
+      }
+      return miss(k, candidate);
+    } catch {
+      // 原文件 / 整理版在换算途中被删 / 改动等：章节按比例，偏移原样
+      return miss(this.mapChapter(chapterIndex), start);
     }
   }
 
@@ -144,7 +229,7 @@ export class PositionMapper {
     let cached = this.originalCache.get(c);
     if (!cached) {
       cached = (async () => {
-        const html = await this.txt!.getChapterContent(c);
+        const html = await this.originalHtml(c);
         const paragraphs = [...html.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(m => unescapeHtml(m[1]).trim());
         const lines: Array<{ byte: number; text: string }> = [];
         for await (const line of readTxtLines(this.originalPath, { start: this.originalStarts[c], end: this.originalStarts[c + 1] })) {
@@ -174,7 +259,7 @@ export class PositionMapper {
       cached = (async () => {
         const row = this.rows[k];
         if (row.src_end <= row.src_start) return [];
-        const html = await this.epub!.getChapterContent(k);
+        const html = await this.organizedHtml(k);
         const blocks = [...html.matchAll(/<(p|h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi)].map((m, block) => ({
           block,
           isParagraph: m[1].toLowerCase() === 'p',
@@ -193,6 +278,24 @@ export class PositionMapper {
         return index;
       })();
       this.organizedCache.set(k, cached);
+    }
+    return cached;
+  }
+
+  private originalHtml(c: number): Promise<string> {
+    let cached = this.originalHtmlCache.get(c);
+    if (!cached) {
+      cached = this.txt!.getChapterContent(c);
+      this.originalHtmlCache.set(c, cached);
+    }
+    return cached;
+  }
+
+  private organizedHtml(k: number): Promise<string> {
+    let cached = this.organizedHtmlCache.get(k);
+    if (!cached) {
+      cached = this.epub!.getChapterContent(k);
+      this.organizedHtmlCache.set(k, cached);
     }
     return cached;
   }
