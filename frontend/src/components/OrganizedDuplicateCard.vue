@@ -20,6 +20,7 @@
       <span>章节 {{ payload.original.chapter_count }} → {{ payload.organized.chapter_count }}</span>
       <span>AI 调用 {{ payload.batches }} 批</span>
       <span>候选行 {{ payload.candidate_count }}</span>
+      <span v-if="payload.mode">整理方式 {{ payload.mode === 'fast' ? '快速' : '完全 AI' }}</span>
     </div>
 
     <div v-if="payload.notes.length > 0" class="note notes">

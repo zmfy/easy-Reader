@@ -471,14 +471,14 @@
             <template v-if="organizeJob && (organizeJob.status === 'pending' || organizeJob.status === 'running')">
               <span class="toc-organize-status">
                 <el-icon class="is-loading"><IconLoader2 /></el-icon>
-                正在整理…<template v-if="organizeJob.batches_total > 0">（第 {{ Math.min(organizeJob.batches_done + 1, organizeJob.batches_total) }} / {{ organizeJob.batches_total }} 批）</template>
+                正在整理{{ organizeModeLabel ? `（${organizeModeLabel}）` : '' }}…<template v-if="organizeJob.batches_total > 0">（第 {{ Math.min(organizeJob.batches_done + 1, organizeJob.batches_total) }} / {{ organizeJob.batches_total }} 批）</template>
               </span>
             </template>
             <span v-else-if="organizeJob?.status === 'review'" class="toc-organize-status">已提交，等待管理员审核</span>
             <template v-else>
               <span v-if="organizeJob?.status === 'failed'" class="toc-organize-status error">整理失败：{{ organizeJob.error || '未知原因' }}</span>
               <span v-else-if="organize.lastRejectedAt" class="toc-organize-status">上次的整理结果未被采用</span>
-              <button class="toc-action" :disabled="organizeRequesting" @click="handleRequestOrganize">
+              <button class="toc-action" :disabled="organizeRequesting" @click="organizeDialogVisible = true">
                 <IconSparkles :size="15" :stroke-width="1.75" />{{ organizeJob?.status === 'failed' ? '重试' : '目录不对？让 AI 整理' }}
               </button>
             </template>
@@ -488,6 +488,24 @@
     </Transition>
 
     </template><!-- end 章节模式 -->
+
+    <el-dialog v-model="organizeDialogVisible" title="AI 整理目录" width="460px" append-to-body>
+      <p class="section-desc">AI 会重新整理这本书的目录，管理员审核后对所有读者生效。</p>
+      <el-radio-group v-model="organizeMode" class="organize-modes">
+        <el-radio value="fast">
+          <span class="organize-mode-name">快速（推荐）</span>
+          <span class="form-hint">程序先判断明显的章节和正文里夹杂的编号，AI 只看拿不准的行。长篇约快 3–4 倍。原书若在某处写错（如重复的章节标题），可能不会被发现。</span>
+        </el-radio>
+        <el-radio value="full">
+          <span class="organize-mode-name">完全 AI</span>
+          <span class="form-hint">每一行都由 AI 判断，结果最稳，长篇可能要半小时以上。</span>
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="organizeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleRequestOrganize">开始整理</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -500,7 +518,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useReader, errorMessage } from '@/composables/useReader'
 import { useReaderStore } from '@/stores/reader'
 import { readerApi } from '@/api/reader'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import type { PDFDocumentProxy } from '@/utils/pdf'
 import PdfPage from '@/components/PdfPage.vue'
 import type { ReaderTheme, ReadingAnchor, OrganizeStatus } from '@/types'
@@ -1091,6 +1109,12 @@ const ORGANIZE_POLL_MS = 5000
 const organize = ref<OrganizeStatus | null>(null)
 const organizeJob = computed(() => organize.value?.job ?? null)
 const organizeRequesting = ref(false)
+const organizeDialogVisible = ref(false)
+const organizeMode = ref<'fast' | 'full'>('fast')
+const organizeModeLabel = computed(() => {
+  const mode = organizeJob.value?.mode
+  return mode === 'fast' ? '快速' : mode === 'full' ? '完全 AI' : ''
+})
 let organizePollTimer: ReturnType<typeof setTimeout> | undefined
 let organizeUnmounted = false
 // 请求序号：发起整理前后各加一，在此之前发出的轮询结果作废，免得旧状态覆盖 POST 返回的任务
@@ -1121,16 +1145,12 @@ async function loadOrganize() {
 }
 
 async function handleRequestOrganize() {
-  try {
-    await ElMessageBox.confirm('AI 会重新整理这本书的目录，管理员审核后对所有读者生效。', 'AI 整理目录', {
-      type: 'info', confirmButtonText: '开始整理', cancelButtonText: '取消',
-    })
-  } catch { return }
+  organizeDialogVisible.value = false
   organizeRequesting.value = true
   clearTimeout(organizePollTimer)
   organizeSeq++
   try {
-    const job = (await readerApi.requestOrganize(bookId)).data.data?.job ?? null
+    const job = (await readerApi.requestOrganize(bookId, organizeMode.value)).data.data?.job ?? null
     organizeSeq++
     if (organize.value) organize.value = { ...organize.value, job }
     scheduleOrganizePoll()
@@ -2055,6 +2075,10 @@ onUnmounted(() => {
   color: var(--reader-text-secondary);
 }
 .toc-organize-status.error { color: var(--danger); }
+.organize-modes { display: flex; flex-direction: column; align-items: stretch; gap: 14px; margin-top: 12px; }
+.organize-modes .el-radio { height: auto; align-items: flex-start; white-space: normal; margin-right: 0; }
+.organize-modes .el-radio :deep(.el-radio__label) { display: flex; flex-direction: column; gap: 2px; line-height: 1.5; }
+.organize-mode-name { font-weight: 600; }
 .toc-organize .toc-action { margin-left: auto; }
 .toc-organize .toc-action:disabled { opacity: 0.5; cursor: default; }
 
