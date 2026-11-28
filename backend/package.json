@@ -1,6 +1,6 @@
 {
   "name": "novel-reader-backend",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "NAS Novel Reader Backend",
   "main": "dist/index.js",
   "scripts": {
